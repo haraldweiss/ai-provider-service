@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaClient(BaseClient):
-    timeout = 60  # lokale Models können langsamer antworten
+    timeout = 180  # lokale Models können sehr lange brauchen (Cold-Start, große Modelle)
 
     def __init__(self, config: dict):
         # Wenn config keine URL hat → fallback auf system-default (OLLAMA_URL).
