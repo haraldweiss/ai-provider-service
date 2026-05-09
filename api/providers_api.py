@@ -16,6 +16,8 @@ providers_bp = Blueprint('providers', __name__, url_prefix='/providers')
 @require_token
 def list_providers():
     """Liste aller bekannten Provider mit Status pro user_id (optional via query)."""
+    from dispatcher import _is_claude_server_key_allowed
+
     user_id = request.args.get('user_id')
 
     out = []
@@ -25,10 +27,16 @@ def list_providers():
             pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=pid).first()
             configured = pc is not None
 
-        # System-Provider gelten als "configured" wenn das Service Env-Vars dafür hat,
-        # oder wenn sie überhaupt keine Credentials brauchen (Ollama).
+        # System-Provider gelten als "configured" — Ollama gar keine Credentials
+        # nötig, Claude wenn ANTHROPIC_API_KEY gesetzt ist + User darf den
+        # Server-Key benutzen (Allowlist).
         if meta['system']:
-            configured = True
+            if pid == 'claude' and user_id and not _is_claude_server_key_allowed(user_id):
+                # User darf den Server-Key nicht — zeigt sich im Frontend als
+                # "nicht konfiguriert" und löst das Config-Form aus.
+                pass
+            else:
+                configured = True
 
         health = health_tracker.get_status(pid)
         out.append({

@@ -6,6 +6,7 @@ Das ist der Kern des Services: jeder /chat-Aufruf läuft hier durch.
 from __future__ import annotations
 import json
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
@@ -17,13 +18,38 @@ import health_tracker
 logger = logging.getLogger(__name__)
 
 
+def _is_claude_server_key_allowed(user_id: str) -> bool:
+    """Allowlist für den zentralen ANTHROPIC_API_KEY (Server-Key).
+
+    Steuert, welche User-IDs den server-seitigen Claude-Key benutzen dürfen.
+    Wenn `CLAUDE_SERVER_KEY_ALLOWED_USERS` leer/nicht gesetzt ist, ist der
+    Server-Key OFFEN (Backward-Compat / single-tenant Setups).
+    Wenn gesetzt, dürfen NUR die gelisteten user_ids den Server-Key nutzen,
+    alle anderen müssen einen eigenen Claude-API-Key konfigurieren.
+    """
+    allowed_raw = os.getenv('CLAUDE_SERVER_KEY_ALLOWED_USERS', '').strip()
+    if not allowed_raw:
+        return True  # offen — wie bisher
+    allowed = {u.strip() for u in allowed_raw.split(',') if u.strip()}
+    return user_id in allowed
+
+
 def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     """Lädt + entschlüsselt Provider-Config aus DB. Für System-Provider (Claude,
-    Ollama) leeres Dict, falls keine User-Config existiert."""
+    Ollama) leeres Dict, falls keine User-Config existiert.
+
+    Sonderfall Claude: der zentrale ANTHROPIC_API_KEY ist nur für allowlistete
+    User verfügbar — andere müssen ihren eigenen Key konfigurieren oder einen
+    anderen Provider wählen.
+    """
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     if pc:
         return pc.get_config()
     if PROVIDER_REGISTRY.get(provider_id, {}).get('system'):
+        if provider_id == 'claude' and not _is_claude_server_key_allowed(user_id):
+            # → ValueError 'nicht konfiguriert' im _execute, sodass das Frontend
+            #    den User auf die Config-UI hinweisen kann.
+            return None
         return {}
     return None
 
