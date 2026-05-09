@@ -43,13 +43,19 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
               └──────────────────────┘
 ```
 
+## Voraussetzungen
+
+- **Python 3.9+** (auf VPS aktuell 3.12 — Rocky 9 Standard-Repos)
+- SQLite (im Standard-Library-Set)
+- Optional: Ollama lokal für Local-LLM-Provider
+
 ## Local Dev Setup
 
 ```bash
 git clone <this-repo>
 cd ai-provider-service
 
-python3 -m venv venv
+python3.12 -m venv venv     # oder python3, mindestens 3.9
 . venv/bin/activate
 pip install -r requirements.txt
 
