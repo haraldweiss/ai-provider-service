@@ -1,5 +1,7 @@
 """Provider-Factory: erstellt Clients basierend auf provider_id + Config."""
 
+from __future__ import annotations
+from typing import Optional
 from providers.base import BaseClient
 
 
@@ -37,7 +39,7 @@ PROVIDER_REGISTRY = {
 }
 
 
-def get_client(provider_id: str, config: dict | None = None) -> BaseClient:
+def get_client(provider_id: str, config: Optional[dict] = None) -> BaseClient:
     """Erstellt einen Client für den angegebenen Provider.
 
     `config` enthält die provider-spezifischen Felder (api_key, api_endpoint, ...).

@@ -1,5 +1,6 @@
 """Generischer OpenAI-kompatibler Endpoint (LM Studio, llama.cpp server, vLLM)."""
 
+from __future__ import annotations
 import logging
 import requests
 from providers.base import BaseClient

@@ -7,9 +7,11 @@ jeder Worker eigenständig — das ist OK, weil:
   wird sofort committed, andere Worker überspringen den Eintrag).
 """
 
+from __future__ import annotations
 import logging
 import threading
 import time
+from typing import Optional
 from flask import Flask
 from config import Config
 from providers import get_client, PROVIDER_REGISTRY
@@ -20,7 +22,7 @@ from dispatcher import drain_queue_for_provider
 
 logger = logging.getLogger(__name__)
 
-_worker_thread: threading.Thread | None = None
+_worker_thread: Optional[threading.Thread] = None
 _stop_event = threading.Event()
 
 

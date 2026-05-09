@@ -3,10 +3,12 @@
 Das ist der Kern des Services: jeder /chat-Aufruf läuft hier durch.
 """
 
+from __future__ import annotations
 import json
 import logging
 import uuid
 from datetime import datetime, timedelta
+from typing import Optional
 from database import db
 from storage.models import ProviderConfig, RequestQueue
 from providers import get_client, PROVIDER_REGISTRY
@@ -15,7 +17,7 @@ import health_tracker
 logger = logging.getLogger(__name__)
 
 
-def _load_config(user_id: str, provider_id: str) -> dict | None:
+def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     """Lädt + entschlüsselt Provider-Config aus DB. Für System-Provider (Claude,
     Ollama) leeres Dict, falls keine User-Config existiert."""
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()

@@ -1,5 +1,6 @@
 """OpenAI / ChatGPT Client."""
 
+from __future__ import annotations
 import logging
 from providers.base import BaseClient
 

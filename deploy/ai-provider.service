@@ -4,20 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
 WorkingDirectory=/var/www/ai-provider-service
-EnvironmentFile=/var/www/ai-provider-service/.env
-ExecStart=/var/www/ai-provider-service/venv/bin/gunicorn \
-    --workers 2 \
-    --worker-class sync \
-    --bind 127.0.0.1:8767 \
-    --timeout 120 \
-    --access-logfile /var/log/ai-provider/access.log \
-    --error-logfile /var/log/ai-provider/error.log \
-    'app:create_app()'
-Restart=on-failure
-RestartSec=5
+# bash-Wrapper notwendig wegen SELinux-Behandlung von venv-Symlinks (gleiches
+# Pattern wie bewerbungen.service). .env wird von python-dotenv geladen.
+ExecStart=/bin/bash -c 'exec /var/www/ai-provider-service/venv/bin/gunicorn --workers 2 --worker-class sync --bind 127.0.0.1:8767 --timeout 120 --access-logfile /var/log/ai-provider/access.log --error-logfile /var/log/ai-provider/error.log "app:create_app()"'
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

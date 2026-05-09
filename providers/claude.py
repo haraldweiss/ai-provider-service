@@ -1,5 +1,6 @@
 """Claude (Anthropic) Client."""
 
+from __future__ import annotations
 import logging
 from providers.base import BaseClient
 from config import Config

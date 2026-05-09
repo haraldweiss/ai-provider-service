@@ -9,6 +9,7 @@ eigenen Cache. Für stabile Recovery-Detection (Queue-Drain) reicht das aus,
 weil der Worker alle paar Sekunden neu pollt.
 """
 
+from __future__ import annotations
 import threading
 import time
 from typing import Dict

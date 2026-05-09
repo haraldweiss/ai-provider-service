@@ -8,6 +8,7 @@ Antwort-Format ist Claude-kompatibel (für Drop-in-Migration):
   }
 """
 
+from __future__ import annotations
 from abc import ABC, abstractmethod
 
 

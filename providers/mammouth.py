@@ -1,5 +1,6 @@
 """Mammouth Client (lokales Modell mit OpenAI-kompatiblem Endpoint)."""
 
+from __future__ import annotations
 import logging
 import requests
 from providers.base import BaseClient

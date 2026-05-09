@@ -1,5 +1,6 @@
 """Ollama Client (lokal, /api/tags + /api/chat)."""
 
+from __future__ import annotations
 import logging
 import requests
 from providers.base import BaseClient
