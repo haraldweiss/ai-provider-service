@@ -1,0 +1,93 @@
+"""Background-Worker: Health-Check polling + Queue-Drain.
+
+Läuft als Daemon-Thread im Flask-Prozess. Bei Multi-Worker-Gunicorn pollt
+jeder Worker eigenständig — das ist OK, weil:
+- Health-Status ist in-memory pro Worker (keine globale Konsistenz nötig).
+- Queue-Drain ist DB-basiert + transactional (RequestQueue.status='processing'
+  wird sofort committed, andere Worker überspringen den Eintrag).
+"""
+
+import logging
+import threading
+import time
+from flask import Flask
+from config import Config
+from providers import get_client, PROVIDER_REGISTRY
+from storage.models import ProviderConfig
+from database import db
+import health_tracker
+from dispatcher import drain_queue_for_provider
+
+logger = logging.getLogger(__name__)
+
+_worker_thread: threading.Thread | None = None
+_stop_event = threading.Event()
+
+
+def _check_provider(provider_id: str) -> bool:
+    """Health-Check für einen Provider. Nutzt eine beliebige user-Config oder
+    System-Defaults."""
+    cfg = {}
+    # Wenn user-Provider, brauchen wir eine Config — nimm die erste verfügbare.
+    if not PROVIDER_REGISTRY[provider_id]['system']:
+        pc = ProviderConfig.query.filter_by(provider_id=provider_id).first()
+        if not pc:
+            # Kein User hat diesen Provider konfiguriert → Health irrelevant.
+            return True
+        cfg = pc.get_config()
+
+    try:
+        client = get_client(provider_id, cfg)
+        ok = client.health()
+        health_tracker.set_status(provider_id, ok, reason='' if ok else 'health_check_failed')
+        return ok
+    except Exception as e:
+        health_tracker.set_status(provider_id, False, reason=f'{type(e).__name__}: {e}')
+        return False
+
+
+def _tick(app: Flask) -> None:
+    """Ein Worker-Durchlauf: alle Provider pingen + bei Recovery Queue drainen."""
+    with app.app_context():
+        for pid in PROVIDER_REGISTRY:
+            try:
+                _check_provider(pid)
+            except Exception as e:
+                logger.warning(f'health-check {pid} crashed: {e}')
+
+            if health_tracker.just_recovered(pid):
+                logger.info(f'{pid} recovered → draining queue')
+                try:
+                    res = drain_queue_for_provider(pid)
+                    logger.info(f'drain {pid}: {res}')
+                except Exception as e:
+                    logger.warning(f'drain {pid} crashed: {e}')
+
+
+def _run(app: Flask) -> None:
+    interval = min(Config.HEALTH_CHECK_INTERVAL_SEC, Config.QUEUE_DRAIN_INTERVAL_SEC)
+    logger.info(f'Worker startet, interval={interval}s')
+    while not _stop_event.is_set():
+        try:
+            _tick(app)
+        except Exception as e:
+            logger.exception(f'tick crashed: {e}')
+        # in kleinen Steps schlafen, damit Stop schnell greift
+        for _ in range(interval):
+            if _stop_event.is_set():
+                break
+            time.sleep(1)
+
+
+def start(app: Flask) -> None:
+    """Idempotent — startet Worker einmal."""
+    global _worker_thread
+    if _worker_thread and _worker_thread.is_alive():
+        return
+    _stop_event.clear()
+    _worker_thread = threading.Thread(target=_run, args=(app,), daemon=True, name='ai-provider-worker')
+    _worker_thread.start()
+
+
+def stop() -> None:
+    _stop_event.set()

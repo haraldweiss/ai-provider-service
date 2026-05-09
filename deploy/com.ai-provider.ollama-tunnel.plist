@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+LaunchAgent für autossh-Reverse-Tunnel: macht lokales Ollama (Mac, Port 11434)
+auf dem VPS unter 127.0.0.1:11434 erreichbar.
+
+Installation:
+  1) autossh installieren:        brew install autossh
+  2) Datei an Standard-Pfad legen:
+     mv com.ai-provider.ollama-tunnel.plist ~/Library/LaunchAgents/
+  3) ssh-Key auf dem VPS hinterlegen (passwordless login muss gehen):
+     ssh-copy-id root@bewerbungen.wolfinisoftware.de
+  4) Im Plist unten die Pfade anpassen:
+     - <UserName>: dein Mac-Username
+     - <key>UserName</key> + Pfad zum Logfile
+  5) Laden:                        launchctl load ~/Library/LaunchAgents/com.ai-provider.ollama-tunnel.plist
+  6) Status prüfen:                launchctl list | grep ai-provider
+  7) Auf dem VPS testen:           ssh root@... 'curl -s http://127.0.0.1:11434/api/tags'
+
+Wichtig: VPS-sshd_config muss `GatewayPorts no` (default) und
+`AllowTcpForwarding yes` haben — letzteres ist Standard.
+
+Bei Connection-Drops verbindet autossh automatisch neu.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-provider.ollama-tunnel</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/autossh</string>
+        <string>-M</string>
+        <string>0</string>
+        <string>-N</string>
+        <string>-o</string>
+        <string>ServerAliveInterval=30</string>
+        <string>-o</string>
+        <string>ServerAliveCountMax=3</string>
+        <string>-o</string>
+        <string>ExitOnForwardFailure=yes</string>
+        <string>-o</string>
+        <string>StrictHostKeyChecking=accept-new</string>
+        <string>-R</string>
+        <string>11434:127.0.0.1:11434</string>
+        <string>root@bewerbungen.wolfinisoftware.de</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/haraldweiss/Library/Logs/ai-provider-tunnel.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/haraldweiss/Library/Logs/ai-provider-tunnel.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>AUTOSSH_GATETIME</key>
+        <string>30</string>
+    </dict>
+</dict>
+</plist>
