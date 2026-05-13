@@ -37,12 +37,14 @@ def create_app() -> Flask:
     from api.chat_api import chat_bp
     from api.queue_api import queue_bp
     from api.health_api import health_bp
+    from api.models_api import models_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(queue_bp)
     app.register_blueprint(health_bp)
+    app.register_blueprint(models_bp)
 
     @app.route('/')
     def index():
@@ -59,6 +61,9 @@ def create_app() -> Flask:
                 'GET  /configs/<user_id>/<provider_id>',
                 'POST /configs/<user_id>/<provider_id>',
                 'DEL  /configs/<user_id>/<provider_id>',
+                'GET  /models/status',
+                'POST /models/load',
+                'POST /models/unload',
                 'POST /chat',
                 'GET  /queue/<id>',
                 'GET  /queue?user_id=<id>&status=<s>',
