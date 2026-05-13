@@ -49,6 +49,14 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 - SQLite (im Standard-Library-Set)
 - Optional: Ollama lokal für Local-LLM-Provider
 
+## Documentation Index
+
+- **[README.md](README.md)** — Overview, setup, and API reference (this file)
+- **[OPERATIONS.md](OPERATIONS.md)** — Production operations, monitoring, troubleshooting
+- **[MIGRATION.md](MIGRATION.md)** — Integration guide for client apps
+- **[INTEGRATION_TEMPLATES.md](INTEGRATION_TEMPLATES.md)** — Copy-paste code templates
+- **[ROLLOUT_PLAN.md](ROLLOUT_PLAN.md)** — Phase-by-phase implementation timeline
+
 ## Local Dev Setup
 
 ```bash
