@@ -20,7 +20,11 @@ def chat():
         "provider": "ollama",
         "model": "mistral",
         "messages": [{"role": "user", "content": "..."}],
-        "max_tokens": 600
+        "max_tokens": 600,
+        // optional Per-Request-Fallback (übersteuert DB-Config):
+        "fallback_provider": "claude",
+        "fallback_model": "claude-haiku-4-5-20251001",
+        "fallback_config": {"api_key": "..."}  // optional (z.B. Admin-Server-Key)
       }
 
     Response (sync):  { "result": {...}, "via": "ollama", "fallback_used": false }
@@ -37,6 +41,10 @@ def chat():
     if provider not in PROVIDER_REGISTRY:
         return jsonify({'error': f'Unbekannter Provider: {provider}'}), 400
 
+    fallback_provider = body.get('fallback_provider')
+    if fallback_provider and fallback_provider not in PROVIDER_REGISTRY:
+        return jsonify({'error': f'Unbekannter Fallback-Provider: {fallback_provider}'}), 400
+
     try:
         result = dispatch(
             user_id=body['user_id'],
@@ -44,6 +52,9 @@ def chat():
             model=body.get('model', ''),
             messages=body['messages'],
             max_tokens=int(body.get('max_tokens', 600)),
+            fallback_provider_override=fallback_provider,
+            fallback_model_override=body.get('fallback_model'),
+            fallback_config_override=body.get('fallback_config'),
         )
         return jsonify(result)
     except ValueError as e:

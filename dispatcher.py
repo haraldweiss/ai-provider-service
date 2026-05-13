@@ -54,9 +54,16 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     return None
 
 
-def _execute(user_id: str, provider_id: str, model: str, messages: list, max_tokens: int) -> dict:
-    """Führt einen Request synchron aus. Updated Health-Status."""
-    cfg = _load_config(user_id, provider_id)
+def _execute(
+    user_id: str, provider_id: str, model: str, messages: list, max_tokens: int,
+    config_override: Optional[dict] = None,
+) -> dict:
+    """Führt einen Request synchron aus. Updated Health-Status.
+
+    `config_override` (optional) ersetzt die DB-Config — nützlich für Per-Request
+    Fallback-Configs, die nicht persistiert werden sollen (z.B. Server-Key des Admins).
+    """
+    cfg = config_override if config_override is not None else _load_config(user_id, provider_id)
     if cfg is None:
         raise ValueError(f"Provider {provider_id} ist nicht konfiguriert für user_id={user_id}")
 
@@ -76,6 +83,10 @@ def dispatch(
     model: str,
     messages: list,
     max_tokens: int = 600,
+    *,
+    fallback_provider_override: Optional[str] = None,
+    fallback_model_override: Optional[str] = None,
+    fallback_config_override: Optional[dict] = None,
 ) -> dict:
     """Hauptmethode. Verhalten:
 
@@ -83,11 +94,25 @@ def dispatch(
     2. Primary down + Fallback konfiguriert → execute via Fallback
     3. Primary down + queue_when_unavailable=True → in Queue
     4. Sonst → Fehler werfen
+
+    Fallback-Quellen (Priorität): Per-Request-Override > DB-ProviderConfig.fallback_provider.
+    Per-Request-Override erlaubt Clients (z.B. Bewerbungstracker) ihre eigene
+    Fallback-Strategie pro Aufruf zu übergeben, ohne sie in der Service-DB zu
+    persistieren.
     """
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
-    fallback = pc.fallback_provider if pc else None
     should_queue = pc.queue_when_unavailable if pc else False
     queue_ttl_h = pc.queue_ttl_hours if pc else 24
+
+    # Effektiver Fallback: Per-Request-Override gewinnt vor DB-Config
+    if fallback_provider_override:
+        fallback = fallback_provider_override
+        fallback_model = fallback_model_override or model
+        fallback_cfg = fallback_config_override  # None → _load_config aus DB
+    else:
+        fallback = pc.fallback_provider if pc else None
+        fallback_model = model
+        fallback_cfg = None
 
     primary_healthy = health_tracker.is_healthy(provider_id)
 
@@ -103,8 +128,8 @@ def dispatch(
     # 2) Fallback versuchen
     if fallback:
         try:
-            logger.info(f'Trying fallback {fallback} for user={user_id}')
-            result = _execute(user_id, fallback, model, messages, max_tokens)
+            logger.info(f'Trying fallback {fallback} (model={fallback_model}) for user={user_id}')
+            result = _execute(user_id, fallback, fallback_model, messages, max_tokens, fallback_cfg)
             return {
                 'result': result, 'via': fallback,
                 'fallback_used': True, 'primary_provider': provider_id,
