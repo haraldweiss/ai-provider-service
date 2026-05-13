@@ -209,8 +209,25 @@ POST-Body Beispiel (Ollama mit Fallback auf Claude):
 
 ```
 POST /chat
-  Body: { user_id, provider, model, messages, max_tokens }
+  Body: {
+    user_id, provider, model, messages, max_tokens,
+    // optional Per-Request-Fallback (übersteuert DB-stored ProviderConfig.fallback_provider):
+    fallback_provider?, fallback_model?, fallback_config?
+  }
 ```
+
+**Fallback-Quellen** (Priorität von hoch nach niedrig):
+1. `fallback_provider` im Request-Body — pro Aufruf
+2. `ProviderConfig.fallback_provider` in der DB — pro User+Provider gespeichert
+
+Per-Request-Override erlaubt Clients, eine eigene Fallback-Strategie pro Aufruf
+mitzugeben, ohne sie in der Service-DB zu persistieren. Nützlich, wenn der
+Client (z.B. Bewerbungstracker) den Fallback-Provider in seiner eigenen User-DB
+verwaltet (`user.ai_provider_backup`).
+
+`fallback_config` ist ein optionales Dict (z.B. `{"api_key": "..."}`), das
+einmalig statt der DB-Config verwendet wird — nützlich für Admin-User mit
+Server-Key, wo nichts persistiert werden soll.
 
 Antwort sync:
 ```json
@@ -248,11 +265,19 @@ import requests, os
 SVC = 'http://127.0.0.1:8767'
 TOKEN = os.getenv('AI_PROVIDER_TOKEN')
 
-def chat(user_id, provider, model, messages, max_tokens=600):
-    r = requests.post(f'{SVC}/chat', json={
+def chat(user_id, provider, model, messages, max_tokens=600,
+         fallback_provider=None, fallback_model=None):
+    body = {
         'user_id': user_id, 'provider': provider,
         'model': model, 'messages': messages, 'max_tokens': max_tokens,
-    }, headers={'Authorization': f'Bearer {TOKEN}'}, timeout=120)
+    }
+    # Optional: Per-Request-Fallback (übersteuert DB-Config)
+    if fallback_provider:
+        body['fallback_provider'] = fallback_provider
+    if fallback_model:
+        body['fallback_model'] = fallback_model
+    r = requests.post(f'{SVC}/chat', json=body,
+                      headers={'Authorization': f'Bearer {TOKEN}'}, timeout=120)
     r.raise_for_status()
     return r.json()
 ```

@@ -55,6 +55,9 @@ class AIProviderClient:
         model: str,
         provider: str = "claude",
         max_tokens: int = 600,
+        fallback_provider: Optional[str] = None,
+        fallback_model: Optional[str] = None,
+        fallback_config: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -62,9 +65,18 @@ class AIProviderClient:
         
         Args:
             messages: List of message dicts with 'role' and 'content'
-            model: Model name (e.g., 'claude-3-5-sonnet-20241022')
+            model: Model name (e.g., 'claude-haiku-4-5-20251001')
             provider: Provider ID (default: 'claude')
             max_tokens: Max response tokens (default: 600)
+            fallback_provider: (Optional) Per-Request-Fallback-Provider.
+                Übersteuert die DB-stored ProviderConfig.fallback_provider.
+                Nützlich, wenn deine App den Backup-Provider in ihrer eigenen
+                User-DB verwaltet statt im Service.
+            fallback_model: (Optional) Model für den Fallback-Provider.
+                Wenn nicht gesetzt, wird das primary `model` auch für Fallback genutzt.
+            fallback_config: (Optional) Dict mit Provider-Config (z.B. {'api_key': '...'}),
+                das einmalig statt der DB-Config verwendet wird — nützlich für
+                Admin-User mit Server-Key.
             **kwargs: Additional parameters passed to service
         
         Returns:
@@ -95,6 +107,12 @@ class AIProviderClient:
             "max_tokens": max_tokens,
             **kwargs
         }
+        if fallback_provider:
+            payload["fallback_provider"] = fallback_provider
+        if fallback_model:
+            payload["fallback_model"] = fallback_model
+        if fallback_config:
+            payload["fallback_config"] = fallback_config
         
         response = requests.post(url, json=payload, headers=headers, timeout=60)
         response.raise_for_status()
@@ -251,6 +269,31 @@ def analyze():
             {"role": "user", "content": data['text']}
         ]
     )
+    return {'result': response['result']['content'][0]['text']}
+```
+
+**Pattern: Per-Request-Fallback aus eigener User-DB**
+
+Wenn deine App den Backup-Provider pro User in der eigenen DB verwaltet
+(statt im ai-provider-service), gibst du ihn pro Aufruf mit. Der Service
+fällt automatisch zurück, wenn der Primary fehlschlägt — ohne dass du
+in deinem Code try/except + Retry-Logik schreiben musst:
+
+```python
+@app.route('/api/analyze', methods=['POST'])
+def analyze(user):
+    data = request.get_json()
+    response = ai_client.chat(
+        model=user.preferred_model,
+        provider=user.preferred_provider,
+        # Fallback aus eigener User-DB — Service nutzt das automatisch bei Primary-Ausfall:
+        fallback_provider=user.backup_provider,  # z.B. 'claude'
+        fallback_model=user.backup_model,        # z.B. 'claude-haiku-4-5-20251001'
+        messages=[{"role": "user", "content": data['text']}],
+        max_tokens=2000,
+    )
+    if response.get('fallback_used'):
+        logger.info(f"Primary {user.preferred_provider} war down, Fallback {response['via']} genutzt")
     return {'result': response['result']['content'][0]['text']}
 ```
 
