@@ -1,0 +1,33 @@
+[Unit]
+Description=Centralized AI Provider Service
+After=network.target
+Documentation=https://github.com/anthropics/ai-provider-service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/ai-provider-service
+
+# Environment variables
+Environment="HOST=0.0.0.0"
+Environment="PORT=8767"
+Environment="STARTUP_MODE=lazy"
+Environment="SERVICE_TOKEN=test-token"
+
+# Start command
+ExecStart=/usr/bin/python3 /var/www/ai-provider-service/app.py
+
+# Restart policy — service auto-restarts on failure or server reboot
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ai-provider-service
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

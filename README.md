@@ -87,22 +87,34 @@ scp -r . root@bewerbungen.wolfinisoftware.de:/var/www/ai-provider-service/
 ssh root@bewerbungen.wolfinisoftware.de
 cd /var/www/ai-provider-service
 bash deploy/setup-vps.sh
-# → installiert venv, requirements, systemd-Unit
-# → erstellt /var/log/ai-provider/
+# → installiert requirements, systemd-Unit
+# → enabled Service für Auto-Start beim Server-Neustart
 ```
 
-3) `.env` auf dem VPS füllen (MASTER_KEY, SERVICE_TOKEN, ALLOWED_ORIGINS).
+3) `.env` auf dem VPS füllen:
+   - `ANTHROPIC_API_KEY` (falls Claude verwendet)
+   - `SERVICE_TOKEN` (für Client-Apps)
+   - `ALLOWED_ORIGINS` (für CORS)
 
 4) Apache-Config einfügen — Inhalt von `deploy/apache-vhost.conf` in den
    bestehenden vhost (z.B. `/etc/httpd/conf.d/bewerbungen.conf`) kopieren,
    dann `systemctl reload httpd`.
 
-5) Service starten:
+5) Service starten und überprüfen:
 ```bash
-systemctl start ai-provider.service
-systemctl status ai-provider.service
+systemctl start ai-provider-service.service
+systemctl status ai-provider-service.service
 curl http://127.0.0.1:8767/health
+
+# Service ist auto-enabled — startet automatisch nach Server-Neustart
+systemctl is-enabled ai-provider-service.service
+# → enabled
 ```
+
+**Auto-Restart-Verhalten:** Die systemd-Unit ist konfiguriert mit:
+- `Restart=always` — Service restartet bei Crash oder Server-Reboot
+- `RestartSec=10` — 10 Sekunden Pause zwischen Restart-Versuchen
+- `WantedBy=multi-user.target` — Auto-Start beim Boot
 
 ### Mac (für Ollama-Tunnel)
 

@@ -6,39 +6,34 @@ set -euo pipefail
 
 INSTALL_DIR=${INSTALL_DIR:-/var/www/ai-provider-service}
 LOG_DIR=${LOG_DIR:-/var/log/ai-provider}
-SERVICE_NAME=ai-provider.service
+SERVICE_NAME=ai-provider-service.service
 
 echo "▶ Installations-Verzeichnis: $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$LOG_DIR"
-chown -R www-data:www-data "$LOG_DIR" || chown -R www-data:www-data "$LOG_DIR" || true
 
 cd "$INSTALL_DIR"
 
-# venv anlegen falls nicht da
-if [ ! -d venv ]; then
-    echo "▶ Lege venv an"
-    python3 -m venv venv
-fi
-
-# Dependencies
-./venv/bin/pip install --quiet --upgrade pip
+# Python-Abhängigkeiten (venv nicht nötig — nutzen System-Python 3.12)
+echo "▶ Installiere Python-Abhängigkeiten"
 if [ -f requirements.txt ]; then
-    ./venv/bin/pip install --quiet -r requirements.txt
+    pip install --quiet -r requirements.txt
 fi
 
 # .env-Template falls noch nicht vorhanden
 if [ ! -f .env ]; then
-    echo "▶ Erstelle .env aus .env.example — bitte MASTER_KEY + SERVICE_TOKEN setzen!"
+    echo "▶ Erstelle .env aus .env.example — bitte ANTHROPIC_API_KEY + SERVICE_TOKEN setzen!"
     cp .env.example .env
     chmod 600 .env
 fi
 
 # systemd-Unit installieren
-if [ -f deploy/ai-provider.service ]; then
-    cp deploy/ai-provider.service /etc/systemd/system/$SERVICE_NAME
+if [ -f deploy/ai-provider-service.service ]; then
+    echo "▶ Installiere systemd-Unit $SERVICE_NAME"
+    cp deploy/ai-provider-service.service /etc/systemd/system/$SERVICE_NAME
     systemctl daemon-reload
     systemctl enable $SERVICE_NAME
+    echo "✓ Service ist enabled — startet automatisch nach Neustart"
 fi
 
 chown -R www-data:www-data "$INSTALL_DIR"
