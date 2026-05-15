@@ -143,9 +143,14 @@ class OllamaClient(BaseClient):
                 logger.warning(f'Ollama endpoint {url} unreachable ({type(e).__name__}); trying next')
                 continue
             except requests.HTTPError as e:
-                # 5xx might be transient (model loading, OOM) — try next; 4xx is deterministic, give up.
+                # 5xx might be transient (model loading, OOM) — try next.
+                # 404 means "this endpoint doesn't have this model" — perfect
+                # case for per-model failover when machines in the pool host
+                # different subsets of models (e.g. Mini has dev-coder but
+                # not qwen3.6:latest, Macbook has both). Retry on 404 too.
+                # Other 4xx (400, 401, 403) are deterministic bugs — give up.
                 status = getattr(e.response, 'status_code', 0)
-                if 500 <= status < 600 and len(order) > 1:
+                if (500 <= status < 600 or status == 404) and len(order) > 1:
                     last_exc = e
                     logger.warning(f'Ollama endpoint {url} returned {status}; trying next')
                     continue
