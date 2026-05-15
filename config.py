@@ -19,6 +19,7 @@ class Config:
 
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
     OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
+    OLLAMA_URLS = os.getenv('OLLAMA_URLS', '')
 
     DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///storage.db')
 
