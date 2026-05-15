@@ -12,7 +12,8 @@ from __future__ import annotations
 import itertools
 import logging
 import threading
-from typing import List
+import time
+from typing import List, Optional, Set
 
 import requests
 
@@ -46,6 +47,19 @@ def _resolve_endpoints(config: dict | None) -> List[str]:
 class OllamaClient(BaseClient):
     timeout = 180  # lokale Models können sehr lange brauchen (Cold-Start, große Modelle)
 
+    # Class-level per-gunicorn-worker model map for predictive routing.
+    # Filled lazily on first request and refreshed every _MODEL_MAP_TTL_SEC.
+    # When two pool endpoints host different subsets of models (e.g. the Mac
+    # mini has dev-coder + mistral-nemo, the Macbook additionally has the
+    # big qwen3.6:latest), routing a qwen3.6 request to Mini would 404. With
+    # the map populated we can pre-filter the candidate endpoints to those
+    # that actually have the model — saving the 404 round-trip and keeping
+    # output deterministic (qwen3.6 always served by Macbook).
+    _endpoint_models: dict = {}        # {endpoint_url: set(model_name)}
+    _model_map_lock = threading.Lock()
+    _model_map_last_refresh: float = 0.0
+    _MODEL_MAP_TTL_SEC = 300            # refresh /api/tags every 5 min
+
     def __init__(self, config: dict):
         self.endpoints = _resolve_endpoints(config)
         self.base_url = self.endpoints[0]  # backwards-compat for any caller reading .base_url
@@ -58,17 +72,68 @@ class OllamaClient(BaseClient):
         if len(self.endpoints) > 1:
             logger.info(f'Ollama pool mode: {len(self.endpoints)} endpoints: {self.endpoints}')
 
-    def _pick_order(self) -> List[str]:
+    def _refresh_model_map(self) -> None:
+        """Re-fetch /api/tags from every endpoint. Best-effort: on failure
+        keep the previous entry (so a temporarily-down endpoint doesn't
+        disappear from the map mid-flight)."""
+        new_map: dict = {}
+        for ep in self.endpoints:
+            try:
+                r = requests.get(f'{ep}/api/tags', timeout=3)
+                r.raise_for_status()
+                new_map[ep] = {m['name'] for m in r.json().get('models', [])}
+            except Exception as e:
+                prev = OllamaClient._endpoint_models.get(ep, set())
+                new_map[ep] = prev
+                logger.debug(f'model-map refresh {ep} failed: {type(e).__name__} (keeping prev set of {len(prev)})')
+        OllamaClient._endpoint_models = new_map
+        OllamaClient._model_map_last_refresh = time.monotonic()
+        # Summary log so operators can see the routing table
+        summary = ', '.join(f'{ep.split("//")[-1]}={len(s)}' for ep, s in new_map.items())
+        logger.info(f'Ollama model-map refreshed: {summary}')
+
+    def _maybe_refresh_model_map(self) -> None:
+        # Cheap unlocked check, then locked check (double-checked locking).
+        if time.monotonic() - OllamaClient._model_map_last_refresh <= OllamaClient._MODEL_MAP_TTL_SEC:
+            return
+        with OllamaClient._model_map_lock:
+            if time.monotonic() - OllamaClient._model_map_last_refresh > OllamaClient._MODEL_MAP_TTL_SEC:
+                self._refresh_model_map()
+
+    def _endpoints_hosting(self, model: str) -> List[str]:
+        """Endpoints that the model-map says have the given model.
+        Empty list = unknown (map not populated for that model, or model
+        does not exist anywhere)."""
+        if not model:
+            return []
+        return [ep for ep in self.endpoints if model in OllamaClient._endpoint_models.get(ep, set())]
+
+    def _pick_order(self, model: Optional[str] = None) -> List[str]:
         """Return endpoints in the order we should try them this request.
-        Round-robin start, then sequential fallback through the rest."""
+
+        - Single endpoint: just that one.
+        - With model + populated map: round-robin only across endpoints
+          that host the model, append the rest as last-resort fallback
+          (so a stale map can still self-heal).
+        - Otherwise: blind round-robin across all endpoints (legacy)."""
         if len(self.endpoints) == 1:
             return [self.endpoints[0]]
+        self._maybe_refresh_model_map()
+        eligible = self._endpoints_hosting(model) if model else []
+        if eligible and len(eligible) < len(self.endpoints):
+            with OllamaClient._rr_lock:
+                i = next(OllamaClient._rr_counter) % len(eligible)
+            rest = [ep for ep in self.endpoints if ep not in eligible]
+            return eligible[i:] + eligible[:i] + rest
+        # All endpoints have it (or we don't know) → blind RR across all
         with OllamaClient._rr_lock:
             i = next(OllamaClient._rr_counter) % len(self.endpoints)
         return self.endpoints[i:] + self.endpoints[:i]
 
     def get_models(self) -> list[str]:
-        # Try endpoints in RR order, return first successful response
+        # Try endpoints in RR order, return first successful response.
+        # Bonus: this also warms/refreshes the model map for the current
+        # endpoint, which `_refresh_model_map` will catch on its TTL tick.
         for url in self._pick_order():
             try:
                 r = requests.get(f'{url}/api/tags', timeout=5)
@@ -107,12 +172,14 @@ class OllamaClient(BaseClient):
             },
         }
 
-        # Try each endpoint in RR order. If one fails with a connection-level
-        # error (down, refused, timeout), fall through to the next. Application
-        # errors (4xx/5xx with valid JSON) still bubble up — we don't retry on
-        # those because they're deterministic for this request.
+        # Try each endpoint in RR order. Endpoints that the model-map says
+        # host this model are preferred; the rest go in as last-resort
+        # fallback (lets a stale map self-heal). Failover triggers on
+        # ConnectionError/Timeout/5xx (transient) and on 404 (model truly
+        # missing on that endpoint — perfect signal to refresh the map
+        # next time around).
         last_exc: Exception | None = None
-        order = self._pick_order()
+        order = self._pick_order(model)
         for idx, url in enumerate(order):
             try:
                 r = requests.post(f'{url}/api/chat', json=payload, timeout=self.timeout)
@@ -150,6 +217,11 @@ class OllamaClient(BaseClient):
                 # not qwen3.6:latest, Macbook has both). Retry on 404 too.
                 # Other 4xx (400, 401, 403) are deterministic bugs — give up.
                 status = getattr(e.response, 'status_code', 0)
+                if status == 404:
+                    # Update our model-map: this endpoint definitely does NOT
+                    # have this model. Saves us re-trying it on subsequent calls
+                    # for the same model until the next TTL refresh.
+                    OllamaClient._endpoint_models.setdefault(url, set()).discard(model)
                 if (500 <= status < 600 or status == 404) and len(order) > 1:
                     last_exc = e
                     logger.warning(f'Ollama endpoint {url} returned {status}; trying next')
