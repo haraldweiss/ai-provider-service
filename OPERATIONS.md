@@ -67,6 +67,8 @@ The service reads from `/var/www/ai-provider-service/.env`:
 | `MASTER_KEY` | Yes | - | Fernet key for encrypting user API keys in database |
 | `ALLOWED_ORIGINS` | No | `*` | CORS whitelist (comma-separated or `*`) |
 | `DATABASE_URL` | No | `sqlite:///ai_provider.db` | Database connection string |
+| `OLLAMA_URL` | No | `http://127.0.0.1:11434` | Single-endpoint Ollama URL (legacy mode) |
+| `OLLAMA_URLS` | No | (empty) | Comma-separated list of Ollama endpoints — activates **Pool Mode** (load-balanced multi-Mac). When set, overrides `OLLAMA_URL`. See README → "Ollama Pool Mode" for details. |
 
 ### Auto-Restart Behavior
 
@@ -166,6 +168,27 @@ journalctl -u ai-provider-service.service -f --output=short-precise
 # Or with colors
 journalctl -u ai-provider-service.service -f -o cat | less +F
 ```
+
+**Ollama pool-specific logs (when `OLLAMA_URLS` is set):**
+```bash
+# Current routing table (per-endpoint model counts)
+journalctl -u ai-provider-service.service --since "10 minutes ago" \
+  | grep "model-map refreshed"
+# → e.g. "model-map refreshed: 127.0.0.1:11434=9, 127.0.0.1:11435=8"
+
+# Failover events (endpoint unreachable, 5xx, or 404 → retry next)
+journalctl -u ai-provider-service.service --since "1 hour ago" \
+  | grep -E "trying next|unreachable|returned 404"
+
+# Pool init line (on service start)
+journalctl -u ai-provider-service.service -b \
+  | grep "Ollama pool mode"
+# → "Ollama pool mode: 2 endpoints: ['http://127.0.0.1:11434', 'http://127.0.0.1:11435']"
+```
+
+If you suddenly see lots of `trying next`-events: one of the endpoints is
+sick (or the SSH tunnel to it broke). Check the corresponding Mac's
+`ollama.log` for swap / OOM / cold-start symptoms.
 
 ### Performance Metrics
 Monitor these metrics regularly:

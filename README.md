@@ -157,6 +157,100 @@ oder schläft, ist Ollama nicht erreichbar — der Service queued Requests dann
 automatisch und arbeitet sie ab, sobald der Mac (und damit der Tunnel) wieder da
 ist.
 
+## Ollama Pool Mode (Load-Balanced Multi-Mac)
+
+Ab Mai 2026 kann der Service **mehrere** Ollama-Endpoints parallel ansprechen
+und Requests round-robin über sie verteilen. Genutzt z.B. um Macbook (über
+VPS-Port 11434) und Mac mini (über VPS-Port 11435) als gemeinsamen Worker-Pool
+laufen zu lassen.
+
+### Aktivierung
+
+In der `.env`:
+
+```bash
+# Single endpoint (Standard, legacy):
+OLLAMA_URL=http://127.0.0.1:11434
+
+# Pool mode — komma-separierte Liste, eine URL pro Backend-Mac:
+OLLAMA_URLS=http://127.0.0.1:11434,http://127.0.0.1:11435
+```
+
+Ist `OLLAMA_URLS` leer/nicht gesetzt, fällt der Client auf `OLLAMA_URL`
+zurück (1:1 wie vorher). Mit zwei oder mehr Endpoints wird Pool-Mode aktiv —
+beim Service-Start erscheint im Log:
+
+```
+[INFO] providers.ollama: Ollama pool mode: 2 endpoints: ['http://127.0.0.1:11434', 'http://127.0.0.1:11435']
+```
+
+### Predictive Per-Model Routing
+
+Verschiedene Macs haben oft nicht dieselben Modelle gepullt — kleinere Maschinen
+können die großen 23-GB-Modelle gar nicht laden. Damit qwen3.6-Calls nicht
+50% der Zeit auf der falschen Maschine landen, hält der Pool eine **Map** der
+verfügbaren Modelle pro Endpoint:
+
+- Beim ersten Request (und periodisch alle **5 Minuten**) wird `/api/tags`
+  auf jedem Endpoint abgefragt und das Resultat gecacht.
+- Bei einem Chat-Request werden bevorzugt Endpoints kontaktiert, die das
+  angefragte Modell laut Map auch haben. Endpoints ohne das Modell werden
+  als Last-Resort-Fallback angehängt (lässt eine stale Map selbst-heilen).
+- Erhält ein Endpoint trotzdem mal 404 für ein Modell (z.B. weil das Modell
+  zwischendurch entfernt wurde), wird der Map-Eintrag invalidiert und der
+  nächste Endpoint versucht — fully self-healing.
+
+Refresh-Status sieht man jederzeit im Service-Log:
+
+```
+[INFO] providers.ollama: Ollama model-map refreshed: 127.0.0.1:11434=9, 127.0.0.1:11435=8
+```
+
+### Failover-Verhalten
+
+| Fall | Was passiert |
+|---|---|
+| Ein Endpoint nicht erreichbar (`ConnectionError`/`Timeout`) | Pool nimmt den nächsten in der RR-Reihenfolge |
+| Endpoint antwortet mit 5xx | Pool retry'd nächsten (transient/load-related) |
+| Endpoint antwortet mit 404 für das Modell | Pool retry'd nächsten + invalidiert Map-Eintrag |
+| Endpoint antwortet mit 4xx (außer 404) | Bubbelt durch — deterministischer Client-Fehler |
+| Alle Endpoints down | Wie vorher: Dispatcher fällt auf `fallback_provider` (z.B. Claude) zurück, oder queued in `request_queue` |
+
+### Mac-Tunnels für Pool-Setup
+
+Zweiter (und dritter, vierter…) Mac wird genauso angeschlossen wie der erste,
+nur mit **anderem VPS-seitigen Port** im Reverse-Tunnel. Beispiel für den
+Mac mini auf VPS-Port 11435:
+
+```xml
+<!-- ~/Library/LaunchAgents/com.ai-provider.ollama-tunnel.plist auf dem Mini -->
+<string>-R</string>
+<string>11435:127.0.0.1:11434</string>
+```
+
+VPS-side dann in `.env`:
+
+```bash
+OLLAMA_URLS=http://127.0.0.1:11434,http://127.0.0.1:11435
+```
+
+Anschließend `systemctl restart ai-provider-service`. Der Pool fragt beide
+Endpoints beim nächsten Request automatisch nach ihren Modellen und routet
+ab dann passend.
+
+### Hardware-Anpassungen pro Mac
+
+Kleinere Macs (z.B. M4 mini mit 24 GB unified memory) sollten reduzierte
+`OLLAMA_*`-Werte bekommen, damit sie unter Drain-Last nicht swappen:
+
+- `OLLAMA_NUM_PARALLEL`: **1** auf 24-GB-Maschinen (statt 4 auf 32-GB+),
+  spart eine Slot-Wert KV-Cache.
+- `OLLAMA_MAX_LOADED_MODELS`: **1** auf 24 GB (statt 2).
+- Modell-Quant: auf 24 GB lieber **Q4_K_M** statt Q5_K_M — z.B. dev-coder
+  basiert auf 24 GB vom `qwen2.5-coder:14b-instruct-q4_K_M` (9 GB),
+  auf 32 GB+ vom q5 (10 GB). Schon ein GB Headroom entscheidet zwischen
+  3-7s/Call und 60-90s/Call (swap-death).
+
 ## API-Übersicht
 
 Alle Endpoints (außer `/health`) brauchen `Authorization: Bearer <SERVICE_TOKEN>`.
