@@ -90,3 +90,26 @@ def test_execute_with_origin_app(app):
 
     ev = UsageEvent.query.one()
     assert ev.origin_app == 'bewerbungstracker'
+
+
+def test_dispatch_passes_origin_app_through(app):
+    """dispatch() reicht origin_app an _execute durch und das landet im Event."""
+    from dispatcher import dispatch
+    from storage.models import UsageEvent
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+         patch('dispatcher.get_client') as mock_get_client:
+        mock_client = mock_get_client.return_value
+        mock_client.create_message.return_value = {
+            'content': [{'text': 'ok'}],
+            'usage': {'input_tokens': 5, 'output_tokens': 3},
+        }
+
+        dispatch(
+            user_id='u1', provider_id='ollama', model='m',
+            messages=[{'role': 'user', 'content': 'x'}],
+            origin_app='loganonymizer',
+        )
+
+    ev = UsageEvent.query.one()
+    assert ev.origin_app == 'loganonymizer'

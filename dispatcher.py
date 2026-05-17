@@ -126,6 +126,7 @@ def dispatch(
     fallback_provider_override: Optional[str] = None,
     fallback_model_override: Optional[str] = None,
     fallback_config_override: Optional[dict] = None,
+    origin_app: Optional[str] = None,
 ) -> dict:
     """Hauptmethode. Verhalten:
 
@@ -158,7 +159,8 @@ def dispatch(
     # 1) Primary versuchen, wenn als healthy bekannt (oder unbekannt → optimistisch)
     if primary_healthy:
         try:
-            result = _execute(user_id, provider_id, model, messages, max_tokens)
+            result = _execute(user_id, provider_id, model, messages, max_tokens,
+                              origin_app=origin_app)
             return {'result': result, 'via': provider_id, 'fallback_used': False}
         except Exception as e:
             logger.info(f'Primary {provider_id} failed for user={user_id}: {e}')
@@ -168,7 +170,8 @@ def dispatch(
     if fallback:
         try:
             logger.info(f'Trying fallback {fallback} (model={fallback_model}) for user={user_id}')
-            result = _execute(user_id, fallback, fallback_model, messages, max_tokens, fallback_cfg)
+            result = _execute(user_id, fallback, fallback_model, messages, max_tokens,
+                              fallback_cfg, origin_app=origin_app)
             return {
                 'result': result, 'via': fallback,
                 'fallback_used': True, 'primary_provider': provider_id,
@@ -226,6 +229,7 @@ def drain_queue_for_provider(provider_id: str, max_items: int = 50) -> dict:
                 q.user_id, q.primary_provider,
                 payload.get('model'), payload.get('messages', []),
                 payload.get('max_tokens', 600),
+                origin_app=None,  # Queued requests lose origin until payload schema extends.
             )
             q.result = json.dumps({'result': result, 'via': q.primary_provider, 'fallback_used': False})
             q.status = 'done'

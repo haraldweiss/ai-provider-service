@@ -55,6 +55,7 @@ def chat():
             fallback_provider_override=fallback_provider,
             fallback_model_override=body.get('fallback_model'),
             fallback_config_override=body.get('fallback_config'),
+            origin_app=request.headers.get('X-Origin-App'),
         )
         return jsonify(result)
     except ValueError as e:
