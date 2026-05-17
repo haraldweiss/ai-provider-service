@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Tests: _execute schreibt UsageEvent bei success und error."""
+from __future__ import annotations
+import os
+import sys
+from unittest.mock import patch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pytest
+from app import create_app
+from database import db
+
+
+@pytest.fixture
+def app():
+    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
+    os.environ['ENCRYPTION_KEY'] = 'X' * 44
+    os.environ['SERVICE_TOKEN'] = 'test-token'
+    app = create_app()
+    app.config['TESTING'] = True
+    with app.app_context():
+        db.create_all()
+        yield app
+        db.session.remove()
+        db.drop_all()
+
+
+def test_execute_logs_success_event(app):
+    from dispatcher import _execute
+    from storage.models import UsageEvent
+
+    with patch('dispatcher.get_client') as mock_get_client:
+        mock_client = mock_get_client.return_value
+        mock_client.create_message.return_value = {
+            'content': [{'text': 'hi'}],
+            'usage': {'input_tokens': 42, 'output_tokens': 17},
+        }
+        _execute('user-1', 'ollama', 'llama3.1:8b',
+                 [{'role': 'user', 'content': 'hi'}], 100)
+
+    events = UsageEvent.query.all()
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.user_id == 'user-1'
+    assert ev.provider_id == 'ollama'
+    assert ev.model == 'llama3.1:8b'
+    assert ev.input_tokens == 42
+    assert ev.output_tokens == 17
+    assert ev.cost_usd == 0.0
+    assert ev.status == 'success'
+    assert ev.error_message is None
+
+
+def test_execute_logs_error_event(app):
+    from dispatcher import _execute
+    from storage.models import UsageEvent
+
+    with patch('dispatcher.get_client') as mock_get_client:
+        mock_client = mock_get_client.return_value
+        mock_client.create_message.side_effect = RuntimeError('boom')
+
+        with pytest.raises(RuntimeError):
+            _execute('user-1', 'claude', 'claude-haiku-4-5',
+                     [{'role': 'user', 'content': 'hi'}], 100)
+
+    events = UsageEvent.query.all()
+    assert len(events) == 1
+    ev = events[0]
+    assert ev.status == 'error'
+    assert 'RuntimeError' in ev.error_message
+    assert 'boom' in ev.error_message
+    assert ev.input_tokens is None
+    assert ev.cost_usd is None
+
+
+def test_execute_with_origin_app(app):
+    from dispatcher import _execute
+    from storage.models import UsageEvent
+
+    with patch('dispatcher.get_client') as mock_get_client:
+        mock_client = mock_get_client.return_value
+        mock_client.create_message.return_value = {
+            'content': [{'text': 'x'}],
+            'usage': {'input_tokens': 1, 'output_tokens': 1},
+        }
+        _execute('user-1', 'ollama', 'qwen',
+                 [{'role': 'user', 'content': 'hi'}], 100,
+                 origin_app='bewerbungstracker')
+
+    ev = UsageEvent.query.one()
+    assert ev.origin_app == 'bewerbungstracker'

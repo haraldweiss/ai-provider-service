@@ -54,14 +54,42 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     return None
 
 
+def _log_usage_event(
+    user_id: str, provider_id: str, model: str,
+    input_tokens, output_tokens, status: str,
+    error_message: Optional[str] = None,
+    origin_app: Optional[str] = None,
+) -> None:
+    """Schreibt einen UsageEvent. Logging-Fehler werden geschluckt — der
+    Hot-Path darf dadurch nicht abbrechen."""
+    try:
+        from pricing import calc_cost_usd
+        from storage.models import UsageEvent
+        cost = calc_cost_usd(provider_id, model, input_tokens, output_tokens)
+        ev = UsageEvent(
+            user_id=user_id, provider_id=provider_id, model=model,
+            input_tokens=input_tokens, output_tokens=output_tokens,
+            cost_usd=cost, origin_app=origin_app, status=status,
+            error_message=error_message,
+        )
+        db.session.add(ev)
+        db.session.commit()
+    except Exception as log_err:
+        logger.warning(f'usage_event logging failed: {log_err}')
+        db.session.rollback()
+
+
 def _execute(
     user_id: str, provider_id: str, model: str, messages: list, max_tokens: int,
     config_override: Optional[dict] = None,
+    origin_app: Optional[str] = None,
 ) -> dict:
-    """Führt einen Request synchron aus. Updated Health-Status.
+    """Führt einen Request synchron aus. Updated Health-Status und schreibt
+    UsageEvent (success + error).
 
     `config_override` (optional) ersetzt die DB-Config — nützlich für Per-Request
     Fallback-Configs, die nicht persistiert werden sollen (z.B. Server-Key des Admins).
+    `origin_app` ist der optionale `X-Origin-App` Header-Wert für Usage-Tracking.
     """
     cfg = config_override if config_override is not None else _load_config(user_id, provider_id)
     if cfg is None:
@@ -71,9 +99,20 @@ def _execute(
     try:
         result = client.create_message(model, messages, max_tokens)
         health_tracker.set_status(provider_id, True)
+        usage = (result or {}).get('usage') or {}
+        _log_usage_event(
+            user_id, provider_id, model,
+            usage.get('input_tokens'), usage.get('output_tokens'),
+            'success', origin_app=origin_app,
+        )
         return result
     except Exception as e:
         health_tracker.set_status(provider_id, False, reason=f"{type(e).__name__}: {e}")
+        _log_usage_event(
+            user_id, provider_id, model, None, None,
+            'error', error_message=f"{type(e).__name__}: {e}",
+            origin_app=origin_app,
+        )
         raise
 
 
