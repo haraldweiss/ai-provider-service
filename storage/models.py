@@ -116,3 +116,37 @@ class RequestQueue(db.Model):
 
     def get_payload(self) -> dict:
         return _json.loads(self.payload)
+
+
+class UsageEvent(db.Model):
+    """Per-Call-Logging für alle Provider-Aufrufe. Wird vom Tracker
+    inkrementell abgefragt (siehe api/usage_api.py)."""
+    __tablename__ = 'usage_events'
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False, index=True)
+    user_id = db.Column(db.String(255), nullable=False, index=True)
+    provider_id = db.Column(db.String(32), nullable=False, index=True)
+    model = db.Column(db.String(128), nullable=False)
+    input_tokens = db.Column(db.Integer, nullable=True)
+    output_tokens = db.Column(db.Integer, nullable=True)
+    cost_usd = db.Column(db.Numeric(10, 6), nullable=True)
+    origin_app = db.Column(db.String(64), nullable=True)
+    status = db.Column(db.String(16), nullable=False)
+    error_message = db.Column(db.Text, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'user_id': self.user_id,
+            'provider_id': self.provider_id,
+            'model': self.model,
+            'input_tokens': self.input_tokens,
+            'output_tokens': self.output_tokens,
+            'cost_usd': float(self.cost_usd) if self.cost_usd is not None else None,
+            'origin_app': self.origin_app,
+            'status': self.status,
+            'error_message': self.error_message,
+        }
