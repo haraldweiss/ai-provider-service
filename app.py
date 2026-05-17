@@ -28,7 +28,7 @@ def create_app() -> Flask:
     db.init_app(app)
     with app.app_context():
         # Models importieren, damit Tables registriert werden.
-        from storage.models import ProviderConfig, RequestQueue  # noqa: F401
+        from storage.models import ProviderConfig, RequestQueue, UsageEvent  # noqa: F401
         db.create_all()
 
     # Blueprints
@@ -38,6 +38,7 @@ def create_app() -> Flask:
     from api.queue_api import queue_bp
     from api.health_api import health_bp
     from api.models_api import models_bp
+    from api.usage_api import bp as usage_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -45,6 +46,7 @@ def create_app() -> Flask:
     app.register_blueprint(queue_bp)
     app.register_blueprint(health_bp)
     app.register_blueprint(models_bp)
+    app.register_blueprint(usage_bp)
 
     @app.route('/')
     def index():
