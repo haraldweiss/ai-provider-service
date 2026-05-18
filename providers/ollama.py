@@ -131,18 +131,27 @@ class OllamaClient(BaseClient):
         return self.endpoints[i:] + self.endpoints[:i]
 
     def get_models(self) -> list[str]:
-        # Try endpoints in RR order, return first successful response.
-        # Bonus: this also warms/refreshes the model map for the current
-        # endpoint, which `_refresh_model_map` will catch on its TTL tick.
-        for url in self._pick_order():
+        # Query EVERY pool endpoint and return the union of their loaded models.
+        # Pool members can host different model sets (e.g. Macbook has qwen3.6
+        # but the Mac mini doesn't) — round-robin-picking just one endpoint
+        # would hide whatever the other one has. Sorted+deduped for stability.
+        seen: Set[str] = set()
+        any_success = False
+        for url in self.endpoints:
             try:
                 r = requests.get(f'{url}/api/tags', timeout=5)
                 r.raise_for_status()
                 data = r.json()
-                return [m['name'] for m in data.get('models', [])]
+                for m in data.get('models', []):
+                    name = m.get('name')
+                    if name:
+                        seen.add(name)
+                any_success = True
             except Exception as e:
                 logger.warning(f'Ollama get_models on {url} failed: {e}')
-        return []
+        if not any_success:
+            return []
+        return sorted(seen)
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
         # num_ctx: Ollama default ist 2048 — viel zu klein für CV+Job-Prompts.
