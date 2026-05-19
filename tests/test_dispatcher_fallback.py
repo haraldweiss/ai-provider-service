@@ -54,6 +54,26 @@ def test_dispatch_uses_request_fallback_when_primary_down(app):
         assert call_args.args[2] == 'claude-haiku-4-5-20251001'  # model = override
         assert result['fallback_used'] is True
         assert result['via'] == 'claude'
+        # Echtes Fallback-Modell wird im Response zurueckgegeben (Cost-Tracking)
+        assert result['model'] == 'claude-haiku-4-5-20251001'
+        assert result.get('primary_model') == 'qwen:latest'
+
+
+def test_dispatch_primary_returns_model_field(app):
+    """Primary-Path: model-Feld im Response = das genutzte Primary-Modell."""
+    from dispatcher import dispatch
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+         patch('dispatcher._execute') as mock_exec:
+        mock_exec.return_value = {'content': [{'text': 'ok'}], 'usage': {}}
+
+        result = dispatch(
+            user_id='user-1', provider_id='ollama', model='qwen:latest',
+            messages=[{'role': 'user', 'content': 'hi'}],
+        )
+        assert result['fallback_used'] is False
+        assert result['via'] == 'ollama'
+        assert result['model'] == 'qwen:latest'
 
 
 def test_dispatch_request_fallback_overrides_db_fallback(app):

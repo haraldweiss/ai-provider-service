@@ -161,7 +161,10 @@ def dispatch(
         try:
             result = _execute(user_id, provider_id, model, messages, max_tokens,
                               origin_app=origin_app)
-            return {'result': result, 'via': provider_id, 'fallback_used': False}
+            return {
+                'result': result, 'via': provider_id, 'model': model,
+                'fallback_used': False,
+            }
         except Exception as e:
             logger.info(f'Primary {provider_id} failed for user={user_id}: {e}')
             # weiter mit Fallback / Queue
@@ -173,8 +176,9 @@ def dispatch(
             result = _execute(user_id, fallback, fallback_model, messages, max_tokens,
                               fallback_cfg, origin_app=origin_app)
             return {
-                'result': result, 'via': fallback,
+                'result': result, 'via': fallback, 'model': fallback_model,
                 'fallback_used': True, 'primary_provider': provider_id,
+                'primary_model': model,
             }
         except Exception as e:
             logger.warning(f'Fallback {fallback} also failed for user={user_id}: {e}')
