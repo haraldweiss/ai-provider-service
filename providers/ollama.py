@@ -10,6 +10,7 @@ endpoint mode is preserved for backward compatibility.
 
 from __future__ import annotations
 import itertools
+import json
 import logging
 import threading
 import time
@@ -232,13 +233,12 @@ class OllamaClient(BaseClient):
                     args = fn.get('arguments', {})
                     # Some Ollama builds return arguments as JSON-string; normalize.
                     if isinstance(args, str):
-                        import json as _json
                         try:
-                            args = _json.loads(args)
+                            args = json.loads(args)
                         except Exception:
                             args = {'_raw': args}
                     tool_calls_out.append({
-                        'id': tc.get('id') or f'ollama-tool-{i}-{int(__import__("time").time()*1000)}',
+                        'id': tc.get('id') or f'ollama-tool-{i}-{int(time.time()*1000)}',
                         'name': fn.get('name', ''),
                         'input': args,
                     })
