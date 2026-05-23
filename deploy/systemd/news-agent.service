@@ -5,11 +5,10 @@ Requires=ai-provider-service.service
 
 [Service]
 Type=oneshot
-User=ai-provider
-Group=ai-provider
-WorkingDirectory=/opt/ai-provider-service
-EnvironmentFile=/opt/ai-provider-service/.env
-ExecStart=/opt/ai-provider-service/venv/bin/python -m agents.news.runner
+User=root
+WorkingDirectory=/var/www/ai-provider-service
+EnvironmentFile=/var/www/ai-provider-service/.env
+ExecStart=/var/www/ai-provider-service/venv/bin/python -m agents.news.runner
 StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=1800
