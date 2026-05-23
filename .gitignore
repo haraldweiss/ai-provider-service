@@ -8,3 +8,4 @@ venv/
 .venv/
 .DS_Store
 *.log
+deploy/searxng/settings.yml

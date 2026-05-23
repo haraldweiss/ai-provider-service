@@ -1,0 +1,45 @@
+# Copy to settings.yml and replace REPLACE_ME_SECRET_HEX_64 with a fresh
+# 64-hex-char string before starting the container.
+# Generate one with:  openssl rand -hex 32
+
+use_default_settings: true
+
+general:
+  instance_name: "ai-provider-news"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: ""
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "REPLACE_ME_SECRET_HEX_64"
+  limiter: false
+  image_proxy: false
+  http_protocol_version: "1.1"
+
+ui:
+  static_use_hash: true
+
+engines:
+  - name: google
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: github
+    disabled: false
+  - name: reddit
+    disabled: false
+  - name: hackernews
+    disabled: false
+  - name: youtube
+    disabled: true
+  - name: bing images
+    disabled: true
+  - name: google images
+    disabled: true
