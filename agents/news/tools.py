@@ -11,6 +11,8 @@ Lauf abbrechen.
 from __future__ import annotations
 import logging
 import os
+from datetime import datetime, timezone
+from typing import Any
 
 import requests
 import trafilatura
@@ -95,3 +97,149 @@ def web_fetch(url: str) -> dict:
     if truncated:
         text = text[:_MAX_TEXT_CHARS].rstrip() + '… [truncated]'
     return {'text': text, 'title': title, 'url': url}
+
+
+from agents.news.tool_schemas import TAG_ALLOWLIST, DEFAULT_CATEGORY
+
+
+_wp_cache: dict[str, Any] = {'self_id': None, 'category_id': None, 'tag_ids': {}}
+
+
+def _wp_cache_reset() -> None:
+    """For tests only — clears the in-process WP lookup cache."""
+    _wp_cache['self_id'] = None
+    _wp_cache['category_id'] = None
+    _wp_cache['tag_ids'] = {}
+
+
+def _wp_url() -> str:
+    return os.getenv('WORDPRESS_URL', '').rstrip('/')
+
+
+def _wp_auth() -> tuple[str, str]:
+    return (os.getenv('WORDPRESS_USER', ''), os.getenv('WORDPRESS_APP_PASSWORD', ''))
+
+
+def _wp_status() -> str:
+    return os.getenv('WORDPRESS_STATUS', 'publish')
+
+
+def _wp_category_name() -> str:
+    return os.getenv('WORDPRESS_CATEGORY', DEFAULT_CATEGORY)
+
+
+def _wp_get_self_id() -> int:
+    if _wp_cache['self_id'] is not None:
+        return _wp_cache['self_id']
+    r = requests.get(f'{_wp_url()}/wp-json/wp/v2/users/me',
+                     auth=_wp_auth(), timeout=_FETCH_TIMEOUT)
+    r.raise_for_status()
+    uid = int(r.json()['id'])
+    _wp_cache['self_id'] = uid
+    return uid
+
+
+def _wp_get_or_create_category(name: str) -> int:
+    if _wp_cache['category_id'] is not None:
+        return _wp_cache['category_id']
+    r = requests.get(f'{_wp_url()}/wp-json/wp/v2/categories',
+                     params={'search': name, 'per_page': 100},
+                     auth=_wp_auth(), timeout=_FETCH_TIMEOUT)
+    r.raise_for_status()
+    for cat in r.json():
+        if cat.get('name', '').lower() == name.lower():
+            _wp_cache['category_id'] = cat['id']
+            return cat['id']
+    r2 = requests.post(f'{_wp_url()}/wp-json/wp/v2/categories',
+                       json={'name': name},
+                       auth=_wp_auth(), timeout=_FETCH_TIMEOUT)
+    r2.raise_for_status()
+    cid = int(r2.json()['id'])
+    _wp_cache['category_id'] = cid
+    return cid
+
+
+def _wp_get_or_create_tag(name: str) -> int:
+    if name in _wp_cache['tag_ids']:
+        return _wp_cache['tag_ids'][name]
+    r = requests.get(f'{_wp_url()}/wp-json/wp/v2/tags',
+                     params={'search': name, 'per_page': 100},
+                     auth=_wp_auth(), timeout=_FETCH_TIMEOUT)
+    r.raise_for_status()
+    for tag in r.json():
+        if tag.get('name', '').lower() == name.lower():
+            _wp_cache['tag_ids'][name] = tag['id']
+            return tag['id']
+    r2 = requests.post(f'{_wp_url()}/wp-json/wp/v2/tags',
+                       json={'name': name},
+                       auth=_wp_auth(), timeout=_FETCH_TIMEOUT)
+    r2.raise_for_status()
+    tid = int(r2.json()['id'])
+    _wp_cache['tag_ids'][name] = tid
+    return tid
+
+
+def _wp_find_today_post(title: str, self_id: int) -> dict | None:
+    today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    r = requests.get(
+        f'{_wp_url()}/wp-json/wp/v2/posts',
+        params={
+            'author': self_id,
+            'after': today_utc.isoformat(),
+            'search': title,
+            'status': 'publish,draft,pending,future',
+            'per_page': 10,
+        },
+        auth=_wp_auth(), timeout=_FETCH_TIMEOUT,
+    )
+    r.raise_for_status()
+    posts = r.json()
+    for p in posts:
+        existing_title = p.get('title', {}).get('rendered', '') if isinstance(p.get('title'), dict) else str(p.get('title', ''))
+        if existing_title.strip().lower() == title.strip().lower():
+            return p
+    return None
+
+
+def publish_to_wordpress(title: str, body_html: str, tags: list[str] | None = None,
+                        dry_run: bool = False) -> dict:
+    """Publish/upsert a WordPress post. Idempotent per (author, title, day).
+
+    Tags must be in TAG_ALLOWLIST — unknown tags are silently dropped.
+    Returns {post_id, url} or {error}.
+    """
+    if dry_run:
+        return {
+            'dry_run': True,
+            'title': title,
+            'tags': [t for t in (tags or []) if t in TAG_ALLOWLIST],
+            'body_html_len': len(body_html or ''),
+        }
+    if not title or not body_html:
+        return {'error': 'title and body_html are required'}
+
+    try:
+        self_id = _wp_get_self_id()
+        existing = _wp_find_today_post(title, self_id)
+        if existing:
+            return {'post_id': existing['id'], 'url': existing.get('link', '')}
+
+        category_id = _wp_get_or_create_category(_wp_category_name())
+        filtered_tags = [t for t in (tags or []) if t in TAG_ALLOWLIST]
+        tag_ids = [_wp_get_or_create_tag(t) for t in filtered_tags]
+
+        payload = {
+            'title': title,
+            'content': body_html,
+            'status': _wp_status(),
+            'categories': [category_id],
+            'tags': tag_ids,
+        }
+        r = requests.post(f'{_wp_url()}/wp-json/wp/v2/posts',
+                          json=payload, auth=_wp_auth(), timeout=_FETCH_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+        return {'post_id': int(data['id']), 'url': data.get('link', '')}
+    except Exception as e:
+        logger.warning(f'publish_to_wordpress failed: {type(e).__name__}: {e}')
+        return {'error': f'{type(e).__name__}: {e}'}
