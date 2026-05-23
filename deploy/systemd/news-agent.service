@@ -1,0 +1,15 @@
+[Unit]
+Description=AI News Agent (one-shot daily run)
+After=network-online.target
+Requires=ai-provider-service.service
+
+[Service]
+Type=oneshot
+User=ai-provider
+Group=ai-provider
+WorkingDirectory=/opt/ai-provider-service
+EnvironmentFile=/opt/ai-provider-service/.env
+ExecStart=/opt/ai-provider-service/venv/bin/python -m agents.news.runner
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=1800

@@ -1,0 +1,10 @@
+[Unit]
+Description=AI News Agent daily run
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 Europe/Berlin
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
