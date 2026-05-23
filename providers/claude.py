@@ -28,7 +28,13 @@ class ClaudeClient(BaseClient):
     def get_models(self) -> list[str]:
         return list(KNOWN_MODELS)
 
-    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
+    def create_message(
+        self,
+        model: str,
+        messages: list[dict],
+        max_tokens: int = 600,
+        tools: list[dict] | None = None,
+    ) -> dict:
         # Anthropic-spezifisch: kein 'system'-Role in der Liste, sondern als top-level.
         system_msg = None
         chat_msgs = []
@@ -53,17 +59,35 @@ class ClaudeClient(BaseClient):
                 'text': system_msg,
                 'cache_control': {'type': 'ephemeral'},
             }]
+        if tools:
+            kwargs['tools'] = tools
 
         response = self.client.messages.create(**kwargs)
         usage = response.usage
+
+        content_out: list[dict] = []
+        tool_calls: list[dict] = []
+        for block in response.content or []:
+            btype = getattr(block, 'type', None)
+            if btype == 'text':
+                content_out.append({'text': block.text})
+            elif btype == 'tool_use':
+                tool_calls.append({
+                    'id': block.id,
+                    'name': block.name,
+                    'input': block.input,
+                })
+
         return {
-            'content': [{'text': response.content[0].text if response.content else ''}],
+            'content': content_out or [{'text': ''}],
+            'stop_reason': getattr(response, 'stop_reason', 'end_turn'),
+            'tool_calls': tool_calls,
             'usage': {
                 'input_tokens': usage.input_tokens,
                 'output_tokens': usage.output_tokens,
                 'cache_creation_input_tokens': getattr(usage, 'cache_creation_input_tokens', 0) or 0,
                 'cache_read_input_tokens': getattr(usage, 'cache_read_input_tokens', 0) or 0,
-            }
+            },
         }
 
     def health(self) -> bool:
