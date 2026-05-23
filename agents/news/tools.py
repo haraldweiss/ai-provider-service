@@ -13,6 +13,7 @@ import logging
 import os
 
 import requests
+import trafilatura
 
 logger = logging.getLogger(__name__)
 
@@ -50,3 +51,47 @@ def web_search(query: str, max_results: int = 10) -> list[dict] | dict:
         }
         for hit in results[:max_results]
     ]
+
+
+_FETCH_TIMEOUT = 10
+_MAX_TEXT_CHARS = 20_000
+
+
+def web_fetch(url: str) -> dict:
+    """Fetch URL, extract main article text with trafilatura, cap length.
+
+    Returns {text, title, url} on success or {error, url} on failure.
+    """
+    if not url or not isinstance(url, str):
+        return {'error': 'invalid url', 'url': str(url)}
+    try:
+        r = requests.get(
+            url,
+            headers={'User-Agent': _USER_AGENT, 'Accept': 'text/html,application/xhtml+xml,*/*'},
+            timeout=_FETCH_TIMEOUT,
+            allow_redirects=True,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        logger.warning(f'web_fetch failed for {url}: {type(e).__name__}: {e}')
+        return {'error': f'fetch failed: {type(e).__name__}', 'url': url}
+
+    try:
+        text = trafilatura.extract(r.content, include_comments=False,
+                                   include_tables=False, no_fallback=False) or ''
+    except Exception as e:
+        logger.warning(f'web_fetch extract failed for {url}: {e}')
+        return {'error': f'extract failed: {type(e).__name__}', 'url': url}
+
+    title = ''
+    try:
+        meta = trafilatura.extract_metadata(r.content)
+        if meta and meta.title:
+            title = meta.title
+    except Exception:
+        pass
+
+    truncated = len(text) > _MAX_TEXT_CHARS
+    if truncated:
+        text = text[:_MAX_TEXT_CHARS].rstrip() + '… [truncated]'
+    return {'text': text, 'title': title, 'url': url}
