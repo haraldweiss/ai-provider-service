@@ -153,7 +153,23 @@ class OllamaClient(BaseClient):
             return []
         return sorted(seen)
 
-    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
+    @staticmethod
+    def _map_tools_to_openai_format(tools: list[dict]) -> list[dict]:
+        """Convert provider-agnostic (Claude-shaped) tool defs into OpenAI's
+        function-calling format expected by Ollama's /api/chat."""
+        return [
+            {
+                'type': 'function',
+                'function': {
+                    'name': t['name'],
+                    'description': t.get('description', ''),
+                    'parameters': t.get('input_schema', {'type': 'object'}),
+                },
+            }
+            for t in tools
+        ]
+
+    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, tools: list[dict] | None = None) -> dict:
         # num_ctx: Ollama default ist 2048 — viel zu klein für CV+Job-Prompts.
         # Wenn der Prompt das Window überschreitet, schneidet Ollama still ab,
         # die Anweisung "Antworte mit JSON" geht verloren und das Modell
@@ -171,7 +187,7 @@ class OllamaClient(BaseClient):
         while num_ctx < needed:
             num_ctx *= 2
 
-        payload = {
+        payload: dict = {
             'model': model,
             'messages': messages,
             'stream': False,
@@ -180,6 +196,8 @@ class OllamaClient(BaseClient):
                 'num_ctx': num_ctx,
             },
         }
+        if tools:
+            payload['tools'] = self._map_tools_to_openai_format(tools)
 
         # Try each endpoint in RR order. Endpoints that the model-map says
         # host this model are preferred; the rest go in as last-resort
@@ -194,12 +212,12 @@ class OllamaClient(BaseClient):
                 r = requests.post(f'{url}/api/chat', json=payload, timeout=self.timeout)
                 r.raise_for_status()
                 data = r.json()
-                # eval_count = output tokens, prompt_eval_count = input tokens (wenn verfügbar).
-                # Wenn das Modell nichts generiert hat (eval_count=0), loggen wir die done_reason
-                # damit man später debuggen kann (length, stop, load, etc.).
-                text = data.get('message', {}).get('content', '')
+                msg = data.get('message', {}) or {}
+                text = msg.get('content', '') or ''
                 out_tokens = data.get('eval_count', 0)
-                if out_tokens == 0 or not text:
+                raw_tool_calls = msg.get('tool_calls') or []
+
+                if not raw_tool_calls and (out_tokens == 0 or not text):
                     logger.warning(
                         f'Ollama returned empty output ({url}): done_reason={data.get("done_reason")}, '
                         f'eval_count={out_tokens}, prompt_eval_count={data.get("prompt_eval_count")}, '
@@ -207,8 +225,29 @@ class OllamaClient(BaseClient):
                     )
                 if len(self.endpoints) > 1 and idx > 0:
                     logger.info(f'Ollama call recovered on fallback endpoint #{idx}: {url}')
+
+                tool_calls_out = []
+                for i, tc in enumerate(raw_tool_calls):
+                    fn = tc.get('function', {}) or {}
+                    args = fn.get('arguments', {})
+                    # Some Ollama builds return arguments as JSON-string; normalize.
+                    if isinstance(args, str):
+                        import json as _json
+                        try:
+                            args = _json.loads(args)
+                        except Exception:
+                            args = {'_raw': args}
+                    tool_calls_out.append({
+                        'id': tc.get('id') or f'ollama-tool-{i}-{int(__import__("time").time()*1000)}',
+                        'name': fn.get('name', ''),
+                        'input': args,
+                    })
+
+                stop_reason = 'tool_use' if tool_calls_out else 'end_turn'
                 return {
                     'content': [{'text': text}],
+                    'stop_reason': stop_reason,
+                    'tool_calls': tool_calls_out,
                     'usage': {
                         'input_tokens': data.get('prompt_eval_count', 0),
                         'output_tokens': out_tokens,
