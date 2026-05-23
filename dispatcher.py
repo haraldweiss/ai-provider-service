@@ -83,6 +83,7 @@ def _execute(
     user_id: str, provider_id: str, model: str, messages: list, max_tokens: int,
     config_override: Optional[dict] = None,
     origin_app: Optional[str] = None,
+    tools: Optional[list] = None,
 ) -> dict:
     """Führt einen Request synchron aus. Updated Health-Status und schreibt
     UsageEvent (success + error).
@@ -90,6 +91,9 @@ def _execute(
     `config_override` (optional) ersetzt die DB-Config — nützlich für Per-Request
     Fallback-Configs, die nicht persistiert werden sollen (z.B. Server-Key des Admins).
     `origin_app` ist der optionale `X-Origin-App` Header-Wert für Usage-Tracking.
+
+    `tools` (optional) wird unverändert an den Provider durchgereicht. Provider, die
+    Tool-Calling nicht unterstützen, ignorieren das Argument (BaseClient-Default = None).
     """
     cfg = config_override if config_override is not None else _load_config(user_id, provider_id)
     if cfg is None:
@@ -97,7 +101,7 @@ def _execute(
 
     client = get_client(provider_id, cfg)
     try:
-        result = client.create_message(model, messages, max_tokens)
+        result = client.create_message(model, messages, max_tokens, tools=tools)
         health_tracker.set_status(provider_id, True)
         usage = (result or {}).get('usage') or {}
         _log_usage_event(
@@ -127,6 +131,7 @@ def dispatch(
     fallback_model_override: Optional[str] = None,
     fallback_config_override: Optional[dict] = None,
     origin_app: Optional[str] = None,
+    tools: Optional[list] = None,
 ) -> dict:
     """Hauptmethode. Verhalten:
 
@@ -139,6 +144,9 @@ def dispatch(
     Per-Request-Override erlaubt Clients (z.B. Bewerbungstracker) ihre eigene
     Fallback-Strategie pro Aufruf zu übergeben, ohne sie in der Service-DB zu
     persistieren.
+
+    `tools` (optional) wird an Primary UND Fallback weitergereicht. Tool-Loops
+    sind Runner-Verantwortung — der Dispatcher bleibt one-shot.
     """
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     should_queue = pc.queue_when_unavailable if pc else False
@@ -160,7 +168,7 @@ def dispatch(
     if primary_healthy:
         try:
             result = _execute(user_id, provider_id, model, messages, max_tokens,
-                              origin_app=origin_app)
+                              origin_app=origin_app, tools=tools)
             return {
                 'result': result, 'via': provider_id, 'model': model,
                 'fallback_used': False,
@@ -174,7 +182,7 @@ def dispatch(
         try:
             logger.info(f'Trying fallback {fallback} (model={fallback_model}) for user={user_id}')
             result = _execute(user_id, fallback, fallback_model, messages, max_tokens,
-                              fallback_cfg, origin_app=origin_app)
+                              fallback_cfg, origin_app=origin_app, tools=tools)
             return {
                 'result': result, 'via': fallback, 'model': fallback_model,
                 'fallback_used': True, 'primary_provider': provider_id,
