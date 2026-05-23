@@ -44,14 +44,25 @@ class ClaudeClient(BaseClient):
             'messages': chat_msgs,
         }
         if system_msg:
-            kwargs['system'] = system_msg
+            # Cache the (stable) system prompt as an ephemeral block. Anthropic ignores
+            # the cache hint silently when the block is below the model's minimum
+            # cacheable size (1024 tok Opus/Sonnet, 2048 tok Haiku), so this is safe
+            # for short prompts too. Cache hits cost ~10% of normal input tokens.
+            kwargs['system'] = [{
+                'type': 'text',
+                'text': system_msg,
+                'cache_control': {'type': 'ephemeral'},
+            }]
 
         response = self.client.messages.create(**kwargs)
+        usage = response.usage
         return {
             'content': [{'text': response.content[0].text if response.content else ''}],
             'usage': {
-                'input_tokens': response.usage.input_tokens,
-                'output_tokens': response.usage.output_tokens,
+                'input_tokens': usage.input_tokens,
+                'output_tokens': usage.output_tokens,
+                'cache_creation_input_tokens': getattr(usage, 'cache_creation_input_tokens', 0) or 0,
+                'cache_read_input_tokens': getattr(usage, 'cache_read_input_tokens', 0) or 0,
             }
         }
 
