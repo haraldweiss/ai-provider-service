@@ -30,6 +30,23 @@ class Config:
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # ---- News-Agent (Phase 1: Claude primary, Ollama fallback) ----
+    NEWS_AGENT_PROVIDER = os.getenv('NEWS_AGENT_PROVIDER', 'claude')
+    NEWS_AGENT_FALLBACK = os.getenv('NEWS_AGENT_FALLBACK', 'ollama')
+    NEWS_AGENT_MODEL_CLAUDE = os.getenv('NEWS_AGENT_MODEL_CLAUDE', 'claude-sonnet-4-6')
+    NEWS_AGENT_MODEL_OLLAMA = os.getenv('NEWS_AGENT_MODEL_OLLAMA', 'qwen3.6:latest')
+    NEWS_AGENT_MAX_ITERATIONS = int(os.getenv('NEWS_AGENT_MAX_ITERATIONS', '40'))
+
+    # ---- SearXNG (self-hosted, lokal über docker-compose) ----
+    SEARXNG_URL = os.getenv('SEARXNG_URL', 'http://127.0.0.1:8888')
+
+    # ---- WordPress (publish target für News-Agent) ----
+    WORDPRESS_URL = os.getenv('WORDPRESS_URL', '')
+    WORDPRESS_USER = os.getenv('WORDPRESS_USER', '')
+    WORDPRESS_APP_PASSWORD = os.getenv('WORDPRESS_APP_PASSWORD', '')
+    WORDPRESS_CATEGORY = os.getenv('WORDPRESS_CATEGORY', 'AI-News')
+    WORDPRESS_STATUS = os.getenv('WORDPRESS_STATUS', 'publish')
+
     @classmethod
     def validate(cls):
         missing = []
