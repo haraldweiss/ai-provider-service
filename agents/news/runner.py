@@ -94,10 +94,15 @@ def run_news_agent(dry_run: bool = False) -> dict:
         stop_reason = msg.get('stop_reason', 'end_turn')
 
         # Append the assistant turn to the conversation.
-        # We round-trip via JSON to keep the structure portable across providers.
+        # Skip empty text blocks — Anthropic rejects them on the next turn
+        # with "text content blocks must be non-empty". The provider client
+        # always emits at least one text block (possibly empty) as a defensive
+        # default, but we must not echo empties back into the message history.
         assistant_blocks: list[dict] = []
         for c in msg.get('content', []):
-            assistant_blocks.append({'type': 'text', 'text': c.get('text', '')})
+            text = c.get('text', '')
+            if text:
+                assistant_blocks.append({'type': 'text', 'text': text})
         for tc in msg.get('tool_calls', []) or []:
             assistant_blocks.append({'type': 'tool_use',
                                      'id': tc['id'],

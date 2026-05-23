@@ -27,6 +27,43 @@ def app():
         db.drop_all()
 
 
+def test_runner_strips_empty_text_blocks_from_assistant_history(app):
+    """Regression: Anthropic rejects empty text blocks on subsequent turns
+    with 'text content blocks must be non-empty'. When the model returns
+    only tool_use (no text), the runner must NOT echo an empty text block
+    back into the message history."""
+    from agents.news import runner
+
+    responses = [
+        # Iter 0: tool_use only, no text
+        {'result': {'content': [{'text': ''}], 'stop_reason': 'tool_use',
+                    'tool_calls': [{'id': 't1', 'name': 'web_search', 'input': {'query': 'x'}}],
+                    'usage': {'input_tokens': 1, 'output_tokens': 1}},
+         'via': 'claude', 'model': 'm', 'fallback_used': False},
+        # Iter 1: end_turn
+        {'result': {'content': [{'text': 'done'}], 'stop_reason': 'end_turn',
+                    'tool_calls': [],
+                    'usage': {'input_tokens': 1, 'output_tokens': 1}},
+         'via': 'claude', 'model': 'm', 'fallback_used': False},
+    ]
+    captured_messages: list = []
+
+    def _capture(**kwargs):
+        captured_messages.append([dict(m) for m in kwargs['messages']])
+        return responses[len(captured_messages) - 1]
+
+    with patch('agents.news.runner.dispatch', side_effect=_capture), \
+         patch('agents.news.runner.execute_tool', return_value=[]):
+        runner.run_news_agent()
+
+    # Second dispatch call must NOT contain an empty-text block in the
+    # assistant message from iter 0.
+    assistant_msg = [m for m in captured_messages[1] if m['role'] == 'assistant'][0]
+    text_blocks = [b for b in assistant_msg['content'] if b.get('type') == 'text']
+    for b in text_blocks:
+        assert b['text'], f"empty text block leaked into assistant history: {assistant_msg}"
+
+
 def test_runner_loop_converges_with_one_tool_call(app):
     """LLM does one web_search, then ends with publish_to_wordpress, then end_turn."""
     from agents.news import runner
