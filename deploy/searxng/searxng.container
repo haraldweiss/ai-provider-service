@@ -1,0 +1,38 @@
+# Quadlet: SearXNG meta-search engine.
+#
+# Wird von zwei Konsumenten benutzt:
+#   - news-agent (auf VPS-Host) → über 127.0.0.1:8888 (Host-Port-Mapping)
+#   - Open WebUI (Container)    → über http://searxng:8080 im open-webui-Netz
+#
+# Datei nach /etc/containers/systemd/ kopieren, dann:
+#   systemctl daemon-reload && systemctl start searxng.service
+
+[Unit]
+Description=SearXNG meta-search engine
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/searxng/searxng:latest
+ContainerName=searxng
+Network=open-webui.network
+# 127.0.0.1:8888 für news-agent (auf dem Host). Nicht ändern ohne news-agent
+# Config (agents/news/tools.py:web_search) anzupassen.
+PublishPort=127.0.0.1:8888:8080
+Volume=/opt/searxng/settings.yml:/etc/searxng/settings.yml:ro,Z
+# Minimal-Caps wie im ursprünglichen compose-File.
+DropCapability=ALL
+AddCapability=CHOWN
+AddCapability=SETGID
+AddCapability=SETUID
+Environment=SEARXNG_BASE_URL=http://127.0.0.1:8888/
+Environment=INSTANCE_NAME=ai-provider-news
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target
