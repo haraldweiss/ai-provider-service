@@ -18,6 +18,10 @@ PublishPort=127.0.0.1:3000:8080
 # einfacher zu backuppen als ein named volume.
 Volume=/opt/open-webui/data:/app/backend/data:Z
 EnvironmentFile=/opt/open-webui/.env
+# WICHTIG: DATABASE_URL aus dem geteilten .env überschreiben, sonst migriert
+# Open WebUI seine ganze Schema-Hierarchie zu Postgres (vorgesehen für LiteLLM)
+# und verliert den Anschluss an die SQLite-Daten in /opt/open-webui/data/.
+Environment=DATABASE_URL=sqlite:////app/backend/data/webui.db
 Environment=WEBUI_AUTH=true
 Environment=ENABLE_SIGNUP=false
 Environment=DEFAULT_USER_ROLE=pending
