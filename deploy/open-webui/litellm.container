@@ -1,0 +1,26 @@
+# Quadlet: LiteLLM-Proxy. Übersetzt OpenAI-Wire (von Open WebUI) → natives Anthropic.
+#
+# Datei nach /etc/containers/systemd/ kopieren, dann:
+#   systemctl daemon-reload && systemctl start litellm.service
+
+[Unit]
+Description=LiteLLM proxy for Open WebUI
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/berriai/litellm:main-stable
+ContainerName=litellm
+Network=open-webui.network
+EnvironmentFile=/opt/open-webui/.env
+Volume=/opt/open-webui/litellm-config.yaml:/app/config.yaml:ro
+Exec=--config /app/config.yaml --port 4000 --num_workers 2
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

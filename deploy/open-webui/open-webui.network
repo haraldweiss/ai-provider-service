@@ -1,0 +1,8 @@
+# Quadlet: gemeinsames Container-Netz für Open WebUI + LiteLLM.
+# Container-Namen sind im Netz per DNS auflösbar.
+
+[Network]
+NetworkName=open-webui
+
+[Install]
+WantedBy=default.target
