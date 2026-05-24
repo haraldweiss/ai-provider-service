@@ -1,0 +1,47 @@
+# LiteLLM-Proxy-Konfiguration für Open WebUI.
+#
+# LiteLLM übersetzt OpenAI-kompatible Requests aus Open WebUI in die
+# nativen Anthropic-/OpenAI-Formate. Open WebUI kennt nur OpenAI-Wire-Format,
+# deshalb dieser Proxy.
+#
+# Modell-IDs entsprechen den aktuellen Anthropic-Production-Tags (Stand 2026).
+# Bei neueren Modellen einfach unten ergänzen.
+
+model_list:
+  # --- Anthropic Claude ---
+  - model_name: claude-opus-4.7
+    litellm_params:
+      model: anthropic/claude-opus-4-7
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-sonnet-4.6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-haiku-4.5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # --- OpenAI (optional — Block entfernen wenn OPENAI_API_KEY leer) ---
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  # Unbekannte Parameter aus Open WebUI nicht durchreichen (sonst HTTP 400 bei
+  # Anthropic-Modellen, wenn die WebUI z.B. `frequency_penalty` mitsendet).
+  drop_params: true
+  telemetry: false
+  # Default-Timeouts in Sekunden — Streaming-Antworten brauchen Luft.
+  request_timeout: 600
