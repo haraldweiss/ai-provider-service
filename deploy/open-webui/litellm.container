@@ -5,8 +5,9 @@
 
 [Unit]
 Description=LiteLLM proxy for Open WebUI
-After=network-online.target
+After=network-online.target postgres.service
 Wants=network-online.target
+Requires=postgres.service
 
 [Container]
 Image=ghcr.io/berriai/litellm:main-stable

@@ -1,0 +1,39 @@
+# Quadlet: PostgreSQL für LiteLLM-Spend-Tracking.
+#
+# Wird ausschließlich von LiteLLM intern genutzt (Spend-Logs, virtuelle Keys,
+# Budget-Limits). Kein externer Zugriff, kein Host-Port-Mapping.
+#
+# Datei nach /etc/containers/systemd/ kopieren, dann:
+#   systemctl daemon-reload && systemctl start postgres.service
+
+[Unit]
+Description=PostgreSQL (LiteLLM spend tracking)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/postgres:16-alpine
+ContainerName=postgres
+Network=open-webui.network
+# Daten persistent. Mit :Z für SELinux-relabeling, da Postgres ins Volume schreibt.
+Volume=/opt/litellm-db/data:/var/lib/postgresql/data:Z
+EnvironmentFile=/opt/open-webui/.env
+Environment=POSTGRES_USER=litellm
+Environment=POSTGRES_DB=litellm
+# POSTGRES_PASSWORD kommt aus EnvironmentFile (.env)
+# Healthcheck — andere Services können via After= darauf warten.
+HealthCmd=pg_isready -U litellm -d litellm
+HealthInterval=10s
+HealthStartPeriod=20s
+HealthRetries=5
+# Speicher knapp halten, ist ein Single-Tenant-Logging-Workload.
+Memory=300m
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

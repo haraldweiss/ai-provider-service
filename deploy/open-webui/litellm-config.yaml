@@ -25,6 +25,12 @@ model_list:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
+  # Postgres-Backend → aktiviert /spend/logs, /global/spend, virtuelle Keys.
+  # DATABASE_URL kommt aus EnvironmentFile, Format:
+  #   postgresql://litellm:<password>@postgres:5432/litellm
+  database_url: os.environ/DATABASE_URL
+  # Token-Verbrauch + Cost in DB persistieren.
+  store_model_in_db: true
 
 litellm_settings:
   # Unbekannte Parameter aus Open WebUI nicht durchreichen (sonst HTTP 400 bei
