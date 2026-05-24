@@ -1,0 +1,34 @@
+# Quadlet: Open WebUI. An 127.0.0.1:3000 gebunden, Apache vorgeschaltet.
+#
+# Datei nach /etc/containers/systemd/ kopieren, dann:
+#   systemctl daemon-reload && systemctl start open-webui.service
+
+[Unit]
+Description=Open WebUI
+After=network-online.target litellm.service
+Wants=network-online.target
+Requires=litellm.service
+
+[Container]
+Image=ghcr.io/open-webui/open-webui:main
+ContainerName=open-webui
+Network=open-webui.network
+PublishPort=127.0.0.1:3000:8080
+# Persistente Daten (Chat-Verlauf, RAG-DB, Settings) als Host-Bind-Mount —
+# einfacher zu backuppen als ein named volume.
+Volume=/opt/open-webui/data:/app/backend/data:Z
+EnvironmentFile=/opt/open-webui/.env
+Environment=WEBUI_AUTH=true
+Environment=ENABLE_SIGNUP=false
+Environment=DEFAULT_USER_ROLE=pending
+Environment=OPENAI_API_BASE_URL=http://litellm:4000/v1
+Environment=ENABLE_OPENAI_API=true
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
