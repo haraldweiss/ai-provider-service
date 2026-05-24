@@ -18,11 +18,12 @@ Browser ──HTTPS──► Apache (chat.wolfinisoftware.de)
         │  intern     │ host.containers       │
         ▼             ▼                       │
    litellm        (host:11434)                │
-   (interne        │                          │
-    Bridge)        │ autossh-Tunnel           │
-        │          ▼                          │
-   Anthropic   Mac:11434 (Ollama)             │
-     API
+   (interne ──┐    │                          │
+    Bridge)   │    │ autossh-Tunnel           │
+        │     │    ▼                          │
+        │     ▼  Mac:11434 (Ollama)           │
+   Anthropic postgres                         │
+     API     (spend-tracking)
 ```
 
 - **Ollama** ist der Default-Provider — Modelle laufen auf dem Mac, via
@@ -51,26 +52,31 @@ Browser ──HTTPS──► Apache (chat.wolfinisoftware.de)
 ssh ionos-vps
 cd /var/www/ai-provider-service && sudo git pull
 
-# Daten- und Config-Verzeichnis
+# Daten- und Config-Verzeichnisse
 sudo mkdir -p /opt/open-webui/data
+sudo mkdir -p /opt/litellm-db/data
 sudo cp deploy/open-webui/litellm-config.yaml /opt/open-webui/
 sudo cp deploy/open-webui/.env.example        /opt/open-webui/.env
 sudo chmod 600 /opt/open-webui/.env
 
 # Secrets erzeugen — LITELLM_MASTER_KEY == OPENAI_API_KEY für Open WebUI!
 KEY="sk-$(openssl rand -hex 32)"
+PG="$(openssl rand -hex 24)"
 sudo sed -i "s/REPLACE_ME_SECRET_HEX_64/$(openssl rand -hex 32)/"  /opt/open-webui/.env
 sudo sed -i "s|REPLACE_ME_MASTER_KEY|$KEY|g"                       /opt/open-webui/.env
+sudo sed -i "s|REPLACE_ME_POSTGRES_PASSWORD|$PG|g"                 /opt/open-webui/.env
 
 # ANTHROPIC_API_KEY eintragen (z.B. aus /var/www/ai-provider-service/.env übernehmen)
 sudo vi /opt/open-webui/.env
 
 # Quadlets installieren
 sudo cp deploy/open-webui/open-webui.network    /etc/containers/systemd/
+sudo cp deploy/open-webui/postgres.container    /etc/containers/systemd/
 sudo cp deploy/open-webui/litellm.container     /etc/containers/systemd/
 sudo cp deploy/open-webui/open-webui.container  /etc/containers/systemd/
 
 sudo systemctl daemon-reload
+sudo systemctl start postgres.service     # zuerst — litellm requires=postgres
 sudo systemctl start litellm.service
 sudo systemctl start open-webui.service
 
@@ -107,6 +113,28 @@ sudo systemctl restart litellm.service
 ```
 
 Default-Modell pro Nutzer/Workspace: Open WebUI → *Settings → Models*.
+
+## Spend-Tracking
+
+LiteLLM persistiert mit dem Postgres-Backend alle Calls (Tokens + Cost):
+
+```bash
+MASTER=$(sudo grep ^LITELLM_MASTER_KEY /opt/open-webui/.env | cut -d= -f2-)
+
+# Globale Spend-Summe seit Start
+sudo podman exec open-webui curl -sf \
+  -H "Authorization: Bearer $MASTER" \
+  http://litellm:4000/global/spend | jq
+
+# Heutige Calls pro Modell
+sudo podman exec open-webui curl -sf \
+  -H "Authorization: Bearer $MASTER" \
+  "http://litellm:4000/spend/logs?start_date=$(date +%F)&end_date=$(date +%F)" \
+  | jq '.[] | {model, total_tokens, spend}'
+```
+
+Virtuelle Keys mit Per-User-Budget + Rate-Limit:
+https://docs.litellm.ai/docs/proxy/virtual_keys
 
 ## Updates
 
