@@ -27,6 +27,8 @@ AddCapability=SETGID
 AddCapability=SETUID
 Environment=SEARXNG_BASE_URL=http://127.0.0.1:8888/
 Environment=INSTANCE_NAME=ai-provider-news
+# Hard limit — SearXNG nutzt aktuell ~180 MB, 300 MB gibt Puffer.
+Memory=300m
 LogDriver=journald
 
 [Service]

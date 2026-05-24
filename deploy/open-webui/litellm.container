@@ -14,7 +14,11 @@ ContainerName=litellm
 Network=open-webui.network
 EnvironmentFile=/opt/open-webui/.env
 Volume=/opt/open-webui/litellm-config.yaml:/app/config.yaml:ro
-Exec=--config /app/config.yaml --port 4000 --num_workers 2
+# Single-User-Setup: 1 Worker reicht. Spart ~1.2 GB RAM gegenüber 2 Workern,
+# weil jeder Worker die volle LiteLLM-Lib im Speicher hält.
+Exec=--config /app/config.yaml --port 4000 --num_workers 1
+# Hard limit — OOM-Killer trifft nur den Container, nicht den Host.
+Memory=1500m
 LogDriver=journald
 
 [Service]
