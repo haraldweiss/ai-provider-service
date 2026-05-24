@@ -12,23 +12,38 @@ Browser ──HTTPS──► Apache (chat.wolfinisoftware.de)
                       │
                       ▼
               open-webui  (127.0.0.1:3000 → :8080 im Container)
-                      │   OpenAI-Wire-Format, intern via Bridge-Netz
-                      ▼
-              litellm     (nur internes Netz "open-webui", Port 4000)
-                      │   natives Anthropic
-                      ▼
-              Anthropic API
+                      │
+        ┌─────────────┼───────────────────────┐
+        │ OpenAI-Wire │ Ollama-API            │
+        │  intern     │ host.containers       │
+        ▼             ▼                       │
+   litellm        (host:11434)                │
+   (interne        │                          │
+    Bridge)        │ autossh-Tunnel           │
+        │          ▼                          │
+   Anthropic   Mac:11434 (Ollama)             │
+     API
 ```
 
-Beide Container hängen im gemeinsamen Quadlet-Netz `open-webui`; LiteLLM ist
-auf dem Host gar nicht publiziert. Damit ist der `ANTHROPIC_API_KEY` nirgends
-über die VPS-Netzschnittstelle exponiert.
+- **Ollama** ist der Default-Provider — Modelle laufen auf dem Mac, via
+  autossh-Reverse-Tunnel ([com.ai-provider.ollama-tunnel.plist](../com.ai-provider.ollama-tunnel.plist))
+  als `127.0.0.1:11434` auf dem VPS. Der open-webui-Container erreicht das
+  über `host.containers.internal` (Podman-Builtin).
+- **Anthropic Claude** als Zweitprovider, durch den LiteLLM-Proxy
+  OpenAI-kompatibel gemacht. LiteLLM ist nur im Quadlet-Netz erreichbar,
+  der Anthropic-Key bleibt im Container.
+- Default-Modell für neue Chats: `gemma4` (`hf.co/Jiunsong/supergemma4-...`),
+  konfiguriert via `DEFAULT_MODELS` im [open-webui.container](./open-webui.container).
+  Ändern: Wert anpassen → `daemon-reload` → `restart open-webui.service`.
 
 ## Voraussetzungen
 
 - Podman ≥ 4.4 (für Quadlet-Support).
 - Apache-Module: `proxy`, `proxy_http`, `proxy_wstunnel`, `rewrite`, `ssl`.
 - DNS-Eintrag `chat.wolfinisoftware.de` → VPS-IP.
+- Autossh-Tunnel vom Mac (`com.ai-provider.ollama-tunnel.plist`) aktiv,
+  damit Ollama auf VPS-`127.0.0.1:11434` erreichbar ist — sonst zeigt das
+  Modell-Dropdown nur die Claude-Optionen.
 
 ## Deployment
 
