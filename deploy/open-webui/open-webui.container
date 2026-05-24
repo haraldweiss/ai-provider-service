@@ -30,6 +30,8 @@ Environment=ENABLE_OLLAMA_API=true
 Environment=OLLAMA_BASE_URL=http://host.containers.internal:11434
 # Default-Modell für neue Chats — primär lokales Ollama, Claude als Option.
 Environment=DEFAULT_MODELS=hf.co/Jiunsong/supergemma4-26b-uncensored-gguf-v2:Q4_K_M
+# Hard limit — RAG-Embeddings können kurz spiken, deshalb großzügig.
+Memory=3g
 LogDriver=journald
 
 [Service]
