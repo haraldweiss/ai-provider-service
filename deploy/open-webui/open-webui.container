@@ -19,7 +19,10 @@ PublishPort=127.0.0.1:3000:8080
 Volume=/opt/open-webui/data:/app/backend/data:Z
 EnvironmentFile=/opt/open-webui/.env
 Environment=WEBUI_AUTH=true
-Environment=ENABLE_SIGNUP=false
+# Signup MUSS bleiben — sonst kann auch der erste (Admin-)Account nicht
+# angelegt werden. Neue Accounts landen wegen DEFAULT_USER_ROLE=pending in
+# der Admin-Approval-Queue, also kein offenes Tor.
+Environment=ENABLE_SIGNUP=true
 Environment=DEFAULT_USER_ROLE=pending
 # Anthropic Claude über LiteLLM-Proxy (OpenAI-kompatibel)
 Environment=OPENAI_API_BASE_URL=http://litellm:4000/v1

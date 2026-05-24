@@ -93,8 +93,9 @@ sudo certbot --apache -d chat.wolfinisoftware.de
 - `https://chat.wolfinisoftware.de` öffnen.
 - **Der erste registrierte Account wird automatisch Admin.** Sofort selbst
   einloggen und Account anlegen, bevor jemand anderes draufkommt.
-- `ENABLE_SIGNUP=false` in den Quadlets verhindert anschließende Selbst-
-  Registrierungen. Weitere Nutzer legst du im Admin-Panel an.
+- Spätere Signups landen wegen `DEFAULT_USER_ROLE=pending` in der
+  Admin-Approval-Queue (Settings → Admin → Users → Pending) — kein offener
+  Zugang.
 
 ## Modelle pflegen
 
