@@ -157,6 +157,31 @@ oder schläft, ist Ollama nicht erreichbar — der Service queued Requests dann
 automatisch und arbeitet sie ab, sobald der Mac (und damit der Tunnel) wieder da
 ist.
 
+## News-Agent (täglicher Local-LLM-News-Roundup)
+
+Modul `agents/news/` — täglicher WordPress-Post mit News aus dem Local-LLM-Ökosystem
+(Ollama, llama.cpp, drumherum). Läuft als systemd-Timer um 07:00 Europe/Berlin
+und ist der erste Tool-Calling-Konsument des Service.
+
+- **Provider-Switch (Hybrid → Voll-Migration):** `.env`-Variable `NEWS_AGENT_PROVIDER=claude|ollama`
+- **Search-Backend:** SearXNG (Container auf VPS, `127.0.0.1:8888`)
+- **Output:** WordPress REST API → `https://wolfinisoftware.de`
+- **Spec:** [docs/superpowers/specs/2026-05-23-news-agent-hybrid-design.md](docs/superpowers/specs/2026-05-23-news-agent-hybrid-design.md)
+- **Plan:** [docs/superpowers/plans/2026-05-23-news-agent-hybrid.md](docs/superpowers/plans/2026-05-23-news-agent-hybrid.md)
+
+Manueller Lauf / Dry-Run:
+
+    sudo systemctl start news-agent.service
+    # oder mit Dry-Run (kein WP-Publish, Output als JSON):
+    sudo /var/www/ai-provider-service/venv/bin/python -m agents.news.runner --dry-run
+
+Logs: `sudo journalctl -u news-agent.service -n 200`.
+
+**Wichtige Setup-Anforderungen (einmal pro Site):**
+- Bot-User `news-agent` in WordPress mit Rolle `author` + Application-Password
+- Kategorie `AI-News` und Tags (`Ollama`, `llama.cpp`, `Open-Weight`, `Security`) **vorab als Admin anlegen** — der `author`-User darf keine Kategorien/Tags erstellen, nur zuweisen. Per `wp-cli`: `wp term create category AI-News` / `wp term create post_tag <name>`.
+- `ANTHROPIC_API_KEY` in `.env` (nicht nur in der systemd `Environment=`-Direktive), damit auch manuelle `python -m agents.news.runner`-Aufrufe funktionieren.
+
 ## Ollama Pool Mode (Load-Balanced Multi-Mac)
 
 Ab Mai 2026 kann der Service **mehrere** Ollama-Endpoints parallel ansprechen
