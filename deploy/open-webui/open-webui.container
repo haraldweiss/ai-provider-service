@@ -21,8 +21,15 @@ EnvironmentFile=/opt/open-webui/.env
 Environment=WEBUI_AUTH=true
 Environment=ENABLE_SIGNUP=false
 Environment=DEFAULT_USER_ROLE=pending
+# Anthropic Claude über LiteLLM-Proxy (OpenAI-kompatibel)
 Environment=OPENAI_API_BASE_URL=http://litellm:4000/v1
 Environment=ENABLE_OPENAI_API=true
+# Ollama vom Mac via autossh-Reverse-Tunnel: VPS:11434 → Mac:11434.
+# host.containers.internal löst aus dem Container den VPS-Host auf.
+Environment=ENABLE_OLLAMA_API=true
+Environment=OLLAMA_BASE_URL=http://host.containers.internal:11434
+# Default-Modell für neue Chats — primär lokales Ollama, Claude als Option.
+Environment=DEFAULT_MODELS=hf.co/Jiunsong/supergemma4-26b-uncensored-gguf-v2:Q4_K_M
 LogDriver=journald
 
 [Service]
