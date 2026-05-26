@@ -1,0 +1,14 @@
+[Unit]
+Description=Trim empty trailing chat nodes from OpenWebUI DB
+# Only run while the container is up — DB is host-mounted at /opt/open-webui/data
+Requires=open-webui.service
+After=open-webui.service
+
+[Service]
+Type=oneshot
+# The DB lives on the host bind-mount, so we can edit it from outside the container.
+ExecStart=/usr/bin/python3 /opt/open-webui/ops/trim_empty_chats.py --db /opt/open-webui/data/webui.db --min-age 60
+# Don't fail the timer chain on a transient SQLite lock — next firing will retry.
+SuccessExitStatus=0 1
+Nice=10
+IOSchedulingClass=idle

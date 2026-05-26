@@ -1,0 +1,15 @@
+[Unit]
+Description=Run OpenWebUI chat-trim every 5 minutes
+# Skip while open-webui is down — the trim service depends on it anyway,
+# so the timer would just queue failed activations.
+
+[Timer]
+# First fire 2 minutes after boot, then every 5 minutes.
+OnBootSec=2min
+OnUnitActiveSec=5min
+# If the system was off when a firing was due, run once on wake.
+Persistent=true
+Unit=open-webui-trim.service
+
+[Install]
+WantedBy=timers.target

@@ -94,6 +94,26 @@ sudo systemctl reload httpd
 sudo certbot --apache -d chat.wolfinisoftware.de
 ```
 
+Ollama-Guard (Fail-fast-Proxy vor dem Reverse-Tunnel) installieren — siehe
+[Resilienz](#resilienz) für Details:
+
+```
+sudo cp deploy/open-webui/ollama-guard.conf /etc/httpd/conf.d/ollama-guard.conf
+sudo semanage port -a -t http_port_t -p tcp 11436    # SELinux: neuer Apache-Port
+sudo systemctl restart httpd                          # neue Listen-Direktive braucht restart, kein reload
+```
+
+Auto-Trim-Timer installieren (siehe [Resilienz](#resilienz)):
+
+```
+sudo install -d -m 755 /opt/open-webui/ops
+sudo install -m 755 deploy/open-webui/ops/trim_empty_chats.py     /opt/open-webui/ops/
+sudo install -m 644 deploy/open-webui/ops/open-webui-trim.service /etc/systemd/system/
+sudo install -m 644 deploy/open-webui/ops/open-webui-trim.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now open-webui-trim.timer
+```
+
 ## Erster Login
 
 - `https://chat.wolfinisoftware.de` öffnen.
@@ -161,6 +181,33 @@ Alles Relevante liegt in `/opt/open-webui/data`. Snapshot:
 
 ```
 sudo tar czf /var/backups/open-webui-$(date +%F).tar.gz -C /opt/open-webui data
+```
+
+## Resilienz
+
+Zwei Schichten gegen kaputten Chatverlauf bei Tunnel-Aussetzer (Mac-Reboot,
+Netzhickser, Ollama hängt):
+
+1. **`ollama-guard.conf`** — Apache-vhost auf `10.89.0.1:11436` (Bridge-IP des
+   Container-Netzwerks, extern nicht erreichbar) proxied zu `127.0.0.1:11434`
+   mit `connectiontimeout=3 retry=0`. OpenWebUI redet via
+   `OLLAMA_BASE_URL=http://host.containers.internal:11436` nur noch durch den
+   Guard. Backend down → 503 in ~1 ms statt minutenlangem Hang, dadurch
+   entstehen seltener leere Assistant-Knoten in der Chat-Historie.
+2. **`open-webui-trim.timer`** — feuert alle 5 Minuten
+   [`ops/trim_empty_chats.py`](./ops/trim_empty_chats.py): walked von
+   `history.currentId` rückwärts, entfernt trailing-empty Leaves älter als 60 s
+   (kein Race mit Live-Streams), korrigiert `currentId` und rebuildet die flat
+   `messages`-Liste. Idempotent — wenn nichts zu trimmen ist, kein Schreibzugriff.
+
+Manuell anstoßen / Status:
+
+```
+sudo systemctl start open-webui-trim.service           # einmal jetzt laufen
+sudo systemctl list-timers open-webui-trim.timer
+sudo journalctl -u open-webui-trim.service -n 20
+sudo python3 /opt/open-webui/ops/trim_empty_chats.py \
+    --db /opt/open-webui/data/webui.db --dry-run --verbose
 ```
 
 ## Notes

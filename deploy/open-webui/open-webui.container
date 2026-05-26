@@ -29,9 +29,12 @@ Environment=DEFAULT_USER_ROLE=pending
 Environment=OPENAI_API_BASE_URL=http://litellm:4000/v1
 Environment=ENABLE_OPENAI_API=true
 # Ollama vom Mac via autossh-Reverse-Tunnel: VPS:11434 → Mac:11434.
-# host.containers.internal löst aus dem Container den VPS-Host auf.
+# Statt direkt durch den Tunnel gehen wir via Apache-Guard auf :11436:
+# kurzes connect-Timeout sorgt dafür, dass OpenWebUI bei totem Tunnel
+# sofort 503 sieht — keine leeren Assistant-Knoten mehr im Chatverlauf.
+# Siehe ollama-guard.conf.
 Environment=ENABLE_OLLAMA_API=true
-Environment=OLLAMA_BASE_URL=http://host.containers.internal:11434
+Environment=OLLAMA_BASE_URL=http://host.containers.internal:11436
 # Default-Modell für neue Chats — primär lokales Ollama, Claude als Option.
 Environment=DEFAULT_MODELS=hf.co/Jiunsong/supergemma4-26b-uncensored-gguf-v2:Q4_K_M
 # Hard limit — RAG-Embeddings können kurz spiken, deshalb großzügig.
