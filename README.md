@@ -85,17 +85,30 @@ curl http://127.0.0.1:8767/health
 
 ### VPS
 
-1) Code rüberkopieren:
+> ⚠️ **Niemals den `venv/`-Ordner auf den VPS kopieren / rsyncen.** Python-venvs
+> sind nicht portabel: die Shebangs in `venv/bin/*` hardcoden den absoluten Pfad
+> zum Mac-Interpreter (z.B. `/Users/haraldweiss/.../venv/bin/python3.14`), der
+> auf dem Linux-VPS nicht existiert. Folge: gunicorn-Start scheitert mit
+> `status=126` ("bad interpreter") und systemd restartet endlos (am 2026-05-26
+> bis Restart-Counter 33000+ gelaufen, bevor's aufgefallen ist). Deshalb beim
+> Deploy `--exclude='venv'` setzen und das venv **auf dem VPS** mit dem
+> Linux-Python neu bauen — nicht mit dem mitgebrachten Mac-`python3.14`.
+
+1) Code rüberkopieren (venv + caches ausschliessen!):
 ```bash
-scp -r . root@bewerbungen.wolfinisoftware.de:/var/www/ai-provider-service/
+rsync -avz --delete \
+    --exclude='venv' --exclude='__pycache__' --exclude='.git' --exclude='.env' \
+    ./ root@bewerbungen.wolfinisoftware.de:/var/www/ai-provider-service/
 ```
 
-2) Setup-Script auf dem VPS:
+2) Venv auf dem VPS bauen + Setup-Script:
 ```bash
 ssh root@bewerbungen.wolfinisoftware.de
 cd /var/www/ai-provider-service
+/usr/bin/python3.12 -m venv venv
+venv/bin/pip install -r requirements.txt
 bash deploy/setup-vps.sh
-# → installiert requirements, systemd-Unit
+# → installiert systemd-Unit
 # → enabled Service für Auto-Start beim Server-Neustart
 ```
 
