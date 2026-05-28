@@ -1,40 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Tests für GET /usage/events."""
 from __future__ import annotations
-import os
-import sys
 from datetime import datetime, timedelta
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import pytest
-from app import create_app
 from database import db
-
-
-@pytest.fixture
-def app():
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    os.environ['ENCRYPTION_KEY'] = 'X' * 44
-    os.environ['SERVICE_TOKEN'] = 'test-token'
-    app = create_app()
-    app.config['TESTING'] = True
-    # Config liest SERVICE_TOKEN beim Import (load_dotenv im Modul-Top-Level)
-    # und ignoriert nachträgliches os.environ — daher explizit überschreiben.
-    from config import Config
-    original_token = Config.SERVICE_TOKEN
-    Config.SERVICE_TOKEN = 'test-token'
-    with app.app_context():
-        db.create_all()
-        yield app
-        db.session.remove()
-        db.drop_all()
-    Config.SERVICE_TOKEN = original_token
-
-
-@pytest.fixture
-def client(app):
-    return app.test_client()
 
 
 def _seed(n: int, user_id='u1'):

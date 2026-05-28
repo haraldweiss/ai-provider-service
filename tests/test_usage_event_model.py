@@ -1,29 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Tests für UsageEvent-Model: Insert + Filter-Query."""
 from __future__ import annotations
-import os
-import sys
-from datetime import datetime, timedelta
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import pytest
-from app import create_app
+from datetime import datetime, timedelta, timezone
 from database import db
-
-
-@pytest.fixture
-def app():
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    os.environ['ENCRYPTION_KEY'] = 'X' * 44
-    os.environ['SERVICE_TOKEN'] = 'test-token'
-    app = create_app()
-    app.config['TESTING'] = True
-    with app.app_context():
-        db.create_all()
-        yield app
-        db.session.remove()
-        db.drop_all()
 
 
 def test_usage_event_insert_and_query(app):
@@ -61,11 +40,11 @@ def test_usage_event_error_row(app):
 def test_usage_event_since_filter(app):
     from storage.models import UsageEvent
     old = UsageEvent(user_id='u', provider_id='ollama', model='m',
-                    status='success', created_at=datetime.utcnow() - timedelta(hours=2))
+                    status='success', created_at=datetime.now(timezone.utc) - timedelta(hours=2))
     new = UsageEvent(user_id='u', provider_id='ollama', model='m',
-                    status='success', created_at=datetime.utcnow())
+                    status='success', created_at=datetime.now(timezone.utc))
     db.session.add_all([old, new])
     db.session.commit()
-    cutoff = datetime.utcnow() - timedelta(hours=1)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
     rows = UsageEvent.query.filter(UsageEvent.created_at > cutoff).all()
     assert len(rows) == 1

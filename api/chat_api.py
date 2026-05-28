@@ -41,6 +41,9 @@ def chat():
     if provider not in PROVIDER_REGISTRY:
         return jsonify({'error': f'Unbekannter Provider: {provider}'}), 400
 
+    if not body.get('model', '').strip():
+        return jsonify({'error': 'model is required'}), 400
+
     fallback_provider = body.get('fallback_provider')
     if fallback_provider and fallback_provider not in PROVIDER_REGISTRY:
         return jsonify({'error': f'Unbekannter Fallback-Provider: {fallback_provider}'}), 400
@@ -49,7 +52,7 @@ def chat():
         result = dispatch(
             user_id=body['user_id'],
             provider_id=provider,
-            model=body.get('model', ''),
+            model=body.get('model', '') or '',
             messages=body['messages'],
             max_tokens=int(body.get('max_tokens', 600)),
             fallback_provider_override=fallback_provider,

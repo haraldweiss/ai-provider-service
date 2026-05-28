@@ -1,29 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Tests: _execute schreibt UsageEvent bei success und error."""
 from __future__ import annotations
-import os
-import sys
-from unittest.mock import patch
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import pytest
-from app import create_app
+from unittest.mock import patch
 from database import db
-
-
-@pytest.fixture
-def app():
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    os.environ['ENCRYPTION_KEY'] = 'X' * 44
-    os.environ['SERVICE_TOKEN'] = 'test-token'
-    app = create_app()
-    app.config['TESTING'] = True
-    with app.app_context():
-        db.create_all()
-        yield app
-        db.session.remove()
-        db.drop_all()
 
 
 def test_execute_logs_success_event(app):

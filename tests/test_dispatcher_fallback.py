@@ -6,30 +6,8 @@ Verifiziert, dass `dispatch()` Per-Request-Override-Felder
 korrekt verwendet und Vorrang vor der DB-ProviderConfig haben.
 """
 from __future__ import annotations
-import sys
-import os
-from unittest.mock import patch, MagicMock
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import pytest
-from app import create_app
+from unittest.mock import patch
 from database import db
-
-
-@pytest.fixture
-def app():
-    """Flask-App + In-Memory SQLite für isolierte Tests."""
-    os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
-    os.environ['ENCRYPTION_KEY'] = 'X' * 44  # fake 32-byte base64
-    os.environ['SERVICE_TOKEN'] = 'test-token'
-    app = create_app()
-    app.config['TESTING'] = True
-    with app.app_context():
-        db.create_all()
-        yield app
-        db.session.remove()
-        db.drop_all()
 
 
 def test_dispatch_uses_request_fallback_when_primary_down(app):

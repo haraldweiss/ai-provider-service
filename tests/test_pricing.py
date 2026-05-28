@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit-Tests für pricing.calc_cost_usd."""
 from __future__ import annotations
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_local_provider_returns_zero():

@@ -57,6 +57,11 @@ def _tick(app: Flask) -> None:
             except Exception as e:
                 logger.warning(f'health-check {pid} crashed: {e}')
 
+
+def _drain(app: Flask) -> None:
+    """Separater Durchlauf: Queue-Drain für alle recovered Provider."""
+    with app.app_context():
+        for pid in PROVIDER_REGISTRY:
             if health_tracker.just_recovered(pid):
                 logger.info(f'{pid} recovered → draining queue')
                 try:
@@ -67,15 +72,24 @@ def _tick(app: Flask) -> None:
 
 
 def _run(app: Flask) -> None:
-    interval = min(Config.HEALTH_CHECK_INTERVAL_SEC, Config.QUEUE_DRAIN_INTERVAL_SEC)
-    logger.info(f'Worker startet, interval={interval}s')
+    hc_interval = Config.HEALTH_CHECK_INTERVAL_SEC
+    qd_interval = Config.QUEUE_DRAIN_INTERVAL_SEC
+    sleep_sec = min(hc_interval, qd_interval)
+    logger.info(f'Worker startet, health-check={hc_interval}s, drain={qd_interval}s, sleep={sleep_sec}s')
+    tick = 0
     while not _stop_event.is_set():
         try:
-            _tick(app)
+            if tick % (hc_interval // sleep_sec) == 0:
+                _tick(app)
         except Exception as e:
             logger.exception(f'tick crashed: {e}')
-        # in kleinen Steps schlafen, damit Stop schnell greift
-        for _ in range(interval):
+        try:
+            if tick % (qd_interval // sleep_sec) == 0:
+                _drain(app)
+        except Exception as e:
+            logger.exception(f'drain crashed: {e}')
+        tick += 1
+        for _ in range(sleep_sec):
             if _stop_event.is_set():
                 break
             time.sleep(1)

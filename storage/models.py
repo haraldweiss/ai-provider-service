@@ -2,7 +2,7 @@
 
 import json as _json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from database import db
 
 
@@ -35,8 +35,8 @@ class ProviderConfig(db.Model):
     fallback_provider = db.Column(db.String(32), nullable=True)
     queue_when_unavailable = db.Column(db.Boolean, default=True, nullable=False)
     queue_ttl_hours = db.Column(db.Integer, default=24, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         db.UniqueConstraint('user_id', 'provider_id', name='uq_user_provider'),
@@ -91,7 +91,7 @@ class RequestQueue(db.Model):
     attempts = db.Column(db.Integer, default=0, nullable=False)
     last_error = db.Column(db.Text, nullable=True)
     result = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     completed_at = db.Column(db.DateTime, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=True)
 
@@ -124,7 +124,7 @@ class UsageEvent(db.Model):
     __tablename__ = 'usage_events'
 
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
                            nullable=False, index=True)
     user_id = db.Column(db.String(255), nullable=False, index=True)
     provider_id = db.Column(db.String(32), nullable=False, index=True)

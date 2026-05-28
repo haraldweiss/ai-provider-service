@@ -8,7 +8,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from database import db
 from storage.models import ProviderConfig, RequestQueue
@@ -194,7 +194,7 @@ def dispatch(
                 'messages': messages, 'max_tokens': max_tokens,
             }),
             status='pending',
-            expires_at=datetime.utcnow() + timedelta(hours=queue_ttl_h),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=queue_ttl_h),
         )
         db.session.add(q)
         db.session.commit()
@@ -213,7 +213,22 @@ def dispatch(
 def drain_queue_for_provider(provider_id: str, max_items: int = 50) -> dict:
     """Verarbeitet pending Queue-Einträge für einen wieder erreichbaren Provider.
     Wird vom Worker aufgerufen, sobald Provider von down → up wechselt."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
+
+    # Stale 'processing' items recover: if a previous drain crashed after
+    # marking an item 'processing' but before completing it, reset to
+    # 'pending' so it gets picked up now. 30 min = safe upper bound for
+    # any provider call. Uses created_at since we lack an updated_at column.
+    stale = (RequestQueue.query
+             .filter_by(primary_provider=provider_id, status='processing')
+             .filter(RequestQueue.expires_at > now)
+             .filter(RequestQueue.created_at < now - timedelta(minutes=30))
+             .all())
+    for q in stale:
+        q.status = 'pending'
+    if stale:
+        db.session.commit()
+
     pending = (RequestQueue.query
                .filter_by(primary_provider=provider_id, status='pending')
                .filter(RequestQueue.expires_at > now)

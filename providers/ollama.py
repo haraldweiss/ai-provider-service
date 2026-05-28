@@ -230,7 +230,9 @@ class OllamaClient(BaseClient):
                     # Update our model-map: this endpoint definitely does NOT
                     # have this model. Saves us re-trying it on subsequent calls
                     # for the same model until the next TTL refresh.
-                    OllamaClient._endpoint_models.setdefault(url, set()).discard(model)
+                    # Lock protects against concurrent _refresh_model_map replacement.
+                    with OllamaClient._model_map_lock:
+                        OllamaClient._endpoint_models.setdefault(url, set()).discard(model)
                 if (500 <= status < 600 or status == 404) and len(order) > 1:
                     last_exc = e
                     logger.warning(f'Ollama endpoint {url} returned {status}; trying next')
