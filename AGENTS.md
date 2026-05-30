@@ -152,6 +152,31 @@ ProviderServiceSettings component has a green "User importieren" button.
 Available at `https://claudetracker.wolfinisoftware.de/` → Settings →
 AI-Provider-Service.
 
+### Serena MCP — setup verification
+
+**Status:** Already installed & configured (2026-05-30, via opencode).
+
+Serena 1.5.3 (`uv tool install -p 3.13 serena-agent`) ist global installiert und
+initialisiert (LSP-Backend, `~/.serena/serena_config.yml`). Der MCP-Server ist
+in `~/.config/opencode/opencode.jsonc` aktiviert:
+
+```json
+{
+  "mcp": {
+    "serena": {
+      "type": "local",
+      "command": ["serena", "start-mcp-server", "--context=opencode", "--project-from-cwd"],
+      "enabled": true
+    }
+  }
+}
+```
+
+`--project-from-cwd` erkennt das Projekt automatisch — kein per-project Setup nötig.
+Nächstes opencode hier startet Serena automatisch mit.
+
+---
+
 **Root cause index (bugs encountered & fixed):**
 
 | Symptom | Root cause | Fix |
