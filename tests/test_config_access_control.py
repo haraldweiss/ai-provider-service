@@ -2,25 +2,6 @@
 """Tests for Config additions: admin/gate/opencode env vars."""
 
 import importlib
-import os
-
-import pytest
-
-# Pre-import api.auth so its `Config` reference binds to the original
-# Config class. Without this, when these tests run before any other
-# test that triggers app creation, api.auth would later import the
-# *reloaded* Config — leaving conftest's `Config.SERVICE_TOKEN` mutation
-# stranded on the old class object (breaks auth in subsequent suites).
-import api.auth  # noqa: F401
-
-
-@pytest.fixture(autouse=True)
-def _restore_config():
-    """Ensure config module is reloaded back to env-default state after each
-    test in this module, so module-level state changes do not leak."""
-    yield
-    import config
-    importlib.reload(config)
 
 
 def reload_config():

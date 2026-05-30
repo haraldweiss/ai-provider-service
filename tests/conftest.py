@@ -10,6 +10,12 @@ from app import create_app
 from database import db
 from config import Config
 
+# Eager-import api.auth so its `Config` reference binds to the original
+# Config class before any test reloads `config`. Otherwise tests that
+# `importlib.reload(config)` leave api.auth referencing a stale Config
+# object, and auth in unrelated tests breaks.
+import api.auth  # noqa: F401, E402
+
 
 @pytest.fixture
 def app():
