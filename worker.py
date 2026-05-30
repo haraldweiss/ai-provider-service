@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from datetime import datetime, timedelta
 from typing import Optional
 from flask import Flask
 from config import Config
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 _worker_thread: Optional[threading.Thread] = None
 _stop_event = threading.Event()
+_state = {}  # Tracks last_model_sync timestamp
 
 
 def _check_provider(provider_id: str) -> bool:
@@ -49,7 +51,7 @@ def _check_provider(provider_id: str) -> bool:
 
 
 def _tick(app: Flask) -> None:
-    """Ein Worker-Durchlauf: alle Provider pingen + bei Recovery Queue drainen."""
+    """Ein Worker-Durchlauf: alle Provider pingen + bei Recovery Queue drainen + daily model sync."""
     with app.app_context():
         for pid in PROVIDER_REGISTRY:
             try:
@@ -64,6 +66,19 @@ def _tick(app: Flask) -> None:
                     logger.info(f'drain {pid}: {res}')
                 except Exception as e:
                     logger.warning(f'drain {pid} crashed: {e}')
+        
+        # Daily model sync (once per 24 hours)
+        if 'last_model_sync' not in _state:
+            _state['last_model_sync'] = datetime.utcnow()
+        
+        if (datetime.utcnow() - _state['last_model_sync']).total_seconds() > 86400:
+            try:
+                from tasks.sync_ollama_models import sync_ollama_models
+                result = sync_ollama_models(app)
+                logger.info(f'Model sync complete: {result}')
+                _state['last_model_sync'] = datetime.utcnow()
+            except Exception as e:
+                logger.error(f'Model sync failed: {e}')
 
 
 def _run(app: Flask) -> None:

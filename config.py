@@ -26,6 +26,12 @@ class Config:
     HEALTH_CHECK_INTERVAL_SEC = int(os.getenv('HEALTH_CHECK_INTERVAL_SEC', '30'))
     QUEUE_DRAIN_INTERVAL_SEC = int(os.getenv('QUEUE_DRAIN_INTERVAL_SEC', '60'))
 
+    # Startup mode: 'lazy' (default), 'eager', or 'minimal'
+    # - 'lazy': Initialize providers on first request (fast startup)
+    # - 'eager': Initialize all providers at startup (old behavior)
+    # - 'minimal': Only init system providers (Claude); others lazy
+    STARTUP_MODE = os.getenv('STARTUP_MODE', 'lazy').lower()
+
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

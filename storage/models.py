@@ -116,3 +116,73 @@ class RequestQueue(db.Model):
 
     def get_payload(self) -> dict:
         return _json.loads(self.payload)
+
+
+class OllamaModelRegistry(db.Model):
+    """Catalog of Ollama models from ollama.com/search + local metadata.
+    
+    Synced daily. Tracks model name, size, capabilities, and whether 
+    it's currently loaded in the local Ollama instance.
+    """
+    __tablename__ = 'ollama_models_registry'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    model_name = db.Column(db.String(128), unique=True, nullable=False, index=True)
+    
+    # Metadata from ollama.com/search
+    size_gb = db.Column(db.Float, nullable=False)
+    use_case = db.Column(db.String(32), nullable=False)  # "chat", "reasoning", "embedding", "vision"
+    is_multimodal = db.Column(db.Boolean, default=False)
+    description = db.Column(db.Text, nullable=True)
+    pull_url = db.Column(db.String(255), nullable=False)
+    
+    # Local state
+    is_loaded = db.Column(db.Boolean, default=False, nullable=False)
+    loaded_at = db.Column(db.DateTime, nullable=True)
+    last_sync = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Hardware requirements (inferred from size_gb + use_case)
+    min_vram_mb = db.Column(db.Integer, nullable=False)
+    min_ram_mb = db.Column(db.Integer, nullable=False)
+    
+    __table_args__ = (
+        db.Index('idx_use_case_size', 'use_case', 'size_gb'),
+        db.Index('idx_loaded', 'is_loaded'),
+    )
+    
+    def to_dict(self) -> dict:
+        """Representation for API responses."""
+        return {
+            'model_name': self.model_name,
+            'size_gb': self.size_gb,
+            'use_case': self.use_case,
+            'is_multimodal': self.is_multimodal,
+            'description': self.description,
+            'is_loaded': self.is_loaded,
+            'min_vram_mb': self.min_vram_mb,
+            'min_ram_mb': self.min_ram_mb,
+        }
+
+
+class OllamaLoadedModels(db.Model):
+    """Track which models are currently loaded in Ollama memory.
+    
+    This is different from OllamaModelRegistry:
+    - Registry: All discovered models from ollama.com/search (loaded=False by default)
+    - LoadedModels: Models currently in Ollama memory, with last_used tracking
+    """
+    __tablename__ = 'ollama_loaded_models'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    model_name = db.Column(db.String(128), unique=True, nullable=False, index=True)
+    size_gb = db.Column(db.Float, nullable=False)
+    loaded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_used = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+    
+    def to_dict(self) -> dict:
+        return {
+            'model_name': self.model_name,
+            'size_gb': self.size_gb,
+            'loaded_at': self.loaded_at.isoformat() if self.loaded_at else None,
+            'last_used': self.last_used.isoformat() if self.last_used else None,
+        }
