@@ -70,15 +70,17 @@ document.getElementById('add-user-form').addEventListener('submit', async (e) =>
 });
 
 document.querySelectorAll('.edit-alias-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
     const td = btn.closest('td');
     const span = td.querySelector('.alias-display');
     const current = span.textContent === '—' ? '' : span.textContent;
     const input = document.createElement('input');
     input.value = current;
-    input.style.width = '120px';
+    input.style.width = '140px';
     input.style.padding = '2px 4px';
     span.replaceWith(input);
+    input.focus();
     btn.textContent = 'save';
     btn.classList.add('save-alias-btn');
     btn.classList.remove('edit-alias-btn');
