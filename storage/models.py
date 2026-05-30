@@ -150,3 +150,36 @@ class UsageEvent(db.Model):
             'status': self.status,
             'error_message': self.error_message,
         }
+
+
+class ProviderGrant(db.Model):
+    """Admin grant: user X may configure & use provider Y.
+
+    Required for all non-admin users to access providers not in
+    Config.UNGATED_PROVIDERS. Re-granting after revoke updates the existing
+    row (clears revoked_at, refreshes granted_at, replaces note).
+    """
+    __tablename__ = 'provider_grants'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(255), nullable=False, index=True)
+    provider_id = db.Column(db.String(32), nullable=False)
+    granted_by = db.Column(db.String(255), nullable=False)
+    granted_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    revoked_at = db.Column(db.DateTime, nullable=True)
+    note = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'provider_id', name='uq_user_provider_grant'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'provider_id': self.provider_id,
+            'granted_by': self.granted_by,
+            'granted_at': self.granted_at.isoformat() if self.granted_at else None,
+            'revoked_at': self.revoked_at.isoformat() if self.revoked_at else None,
+            'note': self.note,
+        }
