@@ -39,6 +39,7 @@ def create_app() -> Flask:
     from api.health_api import health_bp
     from api.models_api import models_bp
     from api.usage_api import bp as usage_bp
+    from api.admin_api import admin_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -47,6 +48,7 @@ def create_app() -> Flask:
     app.register_blueprint(health_bp)
     app.register_blueprint(models_bp)
     app.register_blueprint(usage_bp)
+    app.register_blueprint(admin_bp)
 
     @app.route('/')
     def index():
