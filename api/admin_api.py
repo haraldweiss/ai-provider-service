@@ -170,8 +170,10 @@ def update_user_profile(user_id):
 def delete_user_profile(user_id):
     profile = db.session.get(UserProfile, user_id)
     if not profile:
-        return jsonify({'error': 'user not found'}), 404
-    profile.disabled = True
+        profile = UserProfile(user_id=user_id, disabled=True)
+        db.session.add(profile)
+    else:
+        profile.disabled = True
     db.session.commit()
     return '', 204
 
