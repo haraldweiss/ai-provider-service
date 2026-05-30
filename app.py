@@ -51,6 +51,7 @@ def create_app() -> Flask:
     from api.usage_api import bp as usage_bp
     from api.admin_api import admin_bp
     from api.admin_ui import admin_ui_bp
+    from api.ollama_facade_api import ollama_facade_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -61,6 +62,7 @@ def create_app() -> Flask:
     app.register_blueprint(usage_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(admin_ui_bp)
+    app.register_blueprint(ollama_facade_bp)
 
     from cli import grants_bootstrap_command, update_opencode_pricing_command
     app.cli.add_command(grants_bootstrap_command)
