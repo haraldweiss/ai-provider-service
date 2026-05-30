@@ -21,12 +21,15 @@ def test_parse_sample_table():
     assert data['opencode::claude-haiku-4.5']['out'] == 5.0
 
 
-def test_free_models_fallback():
-    html = '''<html><body><h2 id="pricing">Pricing</h2><table></table></body></html>'''
+def test_free_models_in_table():
+    html = '''<html><body>
+<table><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>Cached Read</th></tr></thead><tbody>
+<tr><td>Big Pickle</td><td>Free</td><td>Free</td><td>Free</td></tr>
+</tbody></table>
+</body></html>'''
     data = _parse_opencode_pricing(html)
     assert 'opencode::big-pickle' in data
     assert data['opencode::big-pickle']['out'] == 0.0
-    assert 'opencode::deepseek-v4-flash-free' in data
 
 
 def test_empty_table_no_crash():

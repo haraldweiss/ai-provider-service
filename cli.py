@@ -61,15 +61,17 @@ def _parse_opencode_pricing(html: str) -> dict[str, dict[str, float]]:
     Returns dict keyed by 'opencode::{model_id}' with {'in': X, 'out': Y}.
     """
     models_list = {}
-    # Find the pricing table: look for <table> after the "Pricing" heading
+    # Find the pricing table: the table whose header contains Input/Output columns.
+    # There are multiple tables in the Pricing section; the first is the endpoints
+    # table (Model ID, Endpoint, SDK Package). We want the second one (pricing).
     table_match = re.search(
-        r'<h2[^>]*>.*?Pricing.*?</h2>.*?<table[^>]*>(.*?)</table>',
+        r'<table[^>]*>(?:(?!</table>).)*?<th[^>]*>Input</th>.*?<th[^>]*>Output</th>.*?</table>',
         html, re.DOTALL | re.IGNORECASE
     )
     if not table_match:
         raise ValueError('Pricing table not found in opencode.ai Zen docs')
 
-    table_html = table_match.group(1)
+    table_html = table_match.group(0)
     rows = re.findall(
         r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>'
         r'(?:Free|\$?([\d.]+))</td>\s*<td[^>]*>'
