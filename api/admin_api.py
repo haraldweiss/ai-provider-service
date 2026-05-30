@@ -140,8 +140,7 @@ def create_user_profile():
     existing = db.session.get(UserProfile, user_id)
     if existing:
         existing.alias = body.get('alias', existing.alias)
-        if 'disabled' in body:
-            existing.disabled = bool(body['disabled'])
+        existing.disabled = False
         db.session.commit()
         return jsonify({'user': existing.to_dict()}), 200
     profile = UserProfile(user_id=user_id, alias=body.get('alias'))
