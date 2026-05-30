@@ -12,6 +12,7 @@ informationally — currently only flowed into UsageEvent.origin_app when the
 caller hasn't set X-Origin-App. No policy impact.
 """
 
+import hmac
 from dataclasses import dataclass
 from functools import wraps
 from flask import request, jsonify, g
@@ -42,11 +43,17 @@ def _resolve_principal():
     if not auth.startswith('Bearer '):
         return None
     token = auth.split(' ', 1)[1].strip()
-    if Config.ADMIN_TOKEN and token == Config.ADMIN_TOKEN:
+    if Config.ADMIN_TOKEN and hmac.compare_digest(token, Config.ADMIN_TOKEN):
         return Principal(user_id=Config.ADMIN_USER_ID, role='admin')
-    if Config.SERVICE_TOKEN and token == Config.SERVICE_TOKEN:
+    if Config.SERVICE_TOKEN and hmac.compare_digest(token, Config.SERVICE_TOKEN):
         return Principal(user_id=_asserted_user_id(), role='user')
     return None
+
+
+def _attach(p):
+    g.principal = p
+    g.agent = request.headers.get('X-Agent')
+    return p
 
 
 def require_token(f):
@@ -55,8 +62,7 @@ def require_token(f):
         p = _resolve_principal()
         if p is None:
             return jsonify({'error': 'Missing or invalid Bearer token'}), 401
-        g.principal = p
-        g.agent = request.headers.get('X-Agent')
+        _attach(p)
         return f(*args, **kwargs)
     return wrapped
 
@@ -67,7 +73,6 @@ def require_admin(f):
         p = _resolve_principal()
         if p is None or p.role != 'admin':
             return jsonify({'error': 'Admin token required'}), 403
-        g.principal = p
-        g.agent = request.headers.get('X-Agent')
+        _attach(p)
         return f(*args, **kwargs)
     return wrapped

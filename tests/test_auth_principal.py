@@ -65,3 +65,19 @@ def test_require_admin_allows_admin_token(admin_app, client):
                    headers={'Authorization': 'Bearer admin-test-token'})
     assert r.status_code == 200
     assert r.get_json()['user_id'] == 'harald'
+
+
+def test_service_token_with_no_user_id_yields_empty_principal(admin_app, client):
+    """Document: bare SERVICE_TOKEN call resolves to Principal('', 'user').
+
+    Real routes guard user_id at the route level (e.g. /chat returns 400
+    if user_id missing). The gate (Task 4) will deny on empty-string
+    lookups. This test pins the boundary behavior so future changes are
+    intentional.
+    """
+    r = client.get('/_t/who',
+                   headers={'Authorization': 'Bearer test-token'})
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data['user_id'] == ''
+    assert data['role'] == 'user'
