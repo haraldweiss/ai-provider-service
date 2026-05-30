@@ -48,6 +48,18 @@
 const grantsUrl = "{{ url_for('admin.create_grant') }}";
 const usersUrl = "{{ url_for('admin.create_user_profile') }}";
 
+function postJson(url, data) {
+  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data) });
+}
+
+function del(url) {
+  return fetch(url, { method: 'DELETE', credentials: 'same-origin' });
+}
+
+function patchJson(url, data) {
+  return fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data) });
+}
+
 document.getElementById('add-user-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -55,12 +67,7 @@ document.getElementById('add-user-form').addEventListener('submit', async (e) =>
   btn.disabled = true;
   btn.textContent = '...';
   try {
-    const resp = await fetch(usersUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ user_id: fd.get('user_id'), alias: fd.get('alias') || null }),
-    });
+    const resp = await postJson(usersUrl, { user_id: fd.get('user_id'), alias: fd.get('alias') || null });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     location.reload();
   } catch (err) {
@@ -71,7 +78,6 @@ document.getElementById('add-user-form').addEventListener('submit', async (e) =>
 
 document.querySelectorAll('.edit-alias-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
-    e.stopPropagation();
     const td = btn.closest('td');
     const span = td.querySelector('.alias-display');
     const current = span.textContent === '—' ? '' : span.textContent;
@@ -82,49 +88,31 @@ document.querySelectorAll('.edit-alias-btn').forEach(btn => {
     span.replaceWith(input);
     input.focus();
     btn.textContent = 'save';
-    btn.classList.add('save-alias-btn');
-    btn.classList.remove('edit-alias-btn');
-  });
-});
-
-document.querySelectorAll('.save-alias-btn').forEach(btn => {
-  // handles already rendered save buttons (none initially)
-});
-
-document.addEventListener('click', async (e) => {
-  if (!e.target.classList.contains('save-alias-btn')) return;
-  const btn = e.target;
-  const td = btn.closest('td');
-  const input = td.querySelector('input');
-  const user = btn.dataset.user;
-  const alias = input.value;
-  btn.disabled = true;
-  btn.textContent = '...';
-  try {
-    const resp = await fetch(usersUrl + '/' + user, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ alias: alias || null }),
+    btn.removeEventListener('click', btn._editHandler);
+    btn.addEventListener('click', async function saveHandler() {
+      btn.removeEventListener('click', saveHandler);
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const resp = await patchJson(usersUrl + '/' + btn.dataset.user, { alias: input.value || null });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        location.reload();
+      } catch (err) {
+        btn.textContent = 'error';
+        btn.disabled = false;
+      }
     });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    location.reload();
-  } catch (err) {
-    btn.textContent = 'error';
-    btn.disabled = false;
-  }
+  });
 });
 
 document.querySelectorAll('.revoke-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
-    const grantId = btn.dataset.grantId;
     btn.disabled = true;
     btn.textContent = '...';
     try {
-      const resp = await fetch(grantsUrl + '/' + grantId, { method: 'DELETE', credentials: 'same-origin' });
+      const resp = await del(grantsUrl + '/' + btn.dataset.grantId);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      btn.textContent = 'done';
-      btn.classList.add('muted');
+      location.reload();
     } catch (e) {
       btn.textContent = 'error';
       btn.disabled = false;
@@ -138,7 +126,7 @@ document.querySelectorAll('.remove-user-btn').forEach(btn => {
     btn.disabled = true;
     btn.textContent = '...';
     try {
-      const resp = await fetch(usersUrl + '/' + btn.dataset.user, { method: 'DELETE', credentials: 'same-origin' });
+      const resp = await del(usersUrl + '/' + btn.dataset.user);
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       location.reload();
     } catch (e) {

@@ -63,15 +63,13 @@ document.querySelectorAll('#grants-table button').forEach(btn => {
           body: JSON.stringify({ user_id: userId, provider_id: provider }),
         });
       } else {
-        const grantId = btn.dataset.grantId;
-        resp = await fetch(grantsUrl + '/' + grantId, {
+        resp = await fetch(grantsUrl + '/' + btn.dataset.grantId, {
           method: 'DELETE',
           credentials: 'same-origin',
         });
       }
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      msg.textContent = 'ok - reload to see updated state';
-      msg.className = 'row-msg ok';
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      location.reload();
     } catch (e) {
       msg.textContent = 'error: ' + e.message;
       msg.className = 'row-msg bad';
