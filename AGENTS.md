@@ -138,8 +138,11 @@ only loads plugins from `wp-content/plugins/`. Moved and activated via
   `UserProfile` rows on first use, `build_overview` restoring after accidental
   deletion, `UserProfile` union query for discovered users
 
-**Pricing entries for opencode.ai:** populate `pricing.py` with the current
-Zen rate card before relying on cost tracking.
+**Pricing entries for opencode.ai:** populated via `flask update-opencode-pricing`
+CLI command which fetches the current Zen rate card from opencode.ai/docs/zen/
+and writes `pricing_overrides.json`. Merged with static `pricing.py` dict at
+runtime. A daily cron (06:00 UTC) keeps pricing up to date.
+See `pricing.py:_load_merged_pricing()` and `cli.py:fetch_opencode_pricing()`.
 
 **Claudetracker integration:** A `POST /api/local-usage/discover` endpoint
 was added to the claudetracker backend (repo `Claude-KI-Usage-Tracker`,
