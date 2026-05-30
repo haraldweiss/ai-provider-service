@@ -5,7 +5,10 @@ Statischer Snapshot — manuell pflegen. Bei Bedarf später durch Sync gegen
 LiteLLM ersetzen, analog zum Tracker.
 """
 from __future__ import annotations
+import json
+import os
 import re
+from pathlib import Path
 from typing import Optional
 
 # USD pro 1M Tokens. Quelle: manuell, Stand Mai 2026.
@@ -64,6 +67,23 @@ _PRICING_USD_PER_MTOK: dict[tuple[str, str], dict[str, float]] = {
 # Provider, die immer als kostenfrei (lokal) gelten.
 _LOCAL_PROVIDERS = {'ollama'}
 
+# Pfad zur JSON-Override-Datei (täglich via Cron aktualisierbar).
+_PRICING_OVERRIDE_PATH = Path(os.path.dirname(__file__)) / 'pricing_overrides.json'
+
+
+def _load_merged_pricing() -> dict[tuple[str, str], dict[str, float]]:
+    """Gibt die gemergte Pricing-Dict zurück: statisch + Overrides."""
+    pricing = dict(_PRICING_USD_PER_MTOK)
+    try:
+        if _PRICING_OVERRIDE_PATH.exists():
+            raw = json.loads(_PRICING_OVERRIDE_PATH.read_text())
+            for key, rates in raw.items():
+                provider, model = key.split('::', 1)
+                pricing[(provider, model)] = rates
+    except Exception:
+        pass
+    return pricing
+
 
 def _strip_version(model: str) -> str:
     """Entfernt das Anthropic-Date-Suffix.
@@ -84,8 +104,9 @@ def calc_cost_usd(
     # 'custom' Provider: pauschal als kostenpflichtig. Bei unbekanntem Modell
     # None — Sub-Projekt B kann das Endpoint-aware machen (lokale LM-Studio
     # Endpoints als kostenfrei erkennen).
-    rates = _PRICING_USD_PER_MTOK.get((provider_id, model)) \
-        or _PRICING_USD_PER_MTOK.get((provider_id, _strip_version(model)))
+    _pricing = _load_merged_pricing()
+    rates = _pricing.get((provider_id, model)) \
+        or _pricing.get((provider_id, _strip_version(model)))
     if not rates:
         return None
     return round(

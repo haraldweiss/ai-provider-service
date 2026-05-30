@@ -6,9 +6,14 @@ Commands:
   grants-bootstrap: insert one active grant per existing (user_id, provider_id)
     in provider_configs where provider_id is NOT in Config.UNGATED_PROVIDERS.
     Idempotent.
+  update-opencode-pricing: fetch opencode.ai Zen rate card and persist as JSON.
 """
 
 from __future__ import annotations
+import json
+import re
+import urllib.request
+from pathlib import Path
 import click
 from datetime import datetime, timezone
 from database import db
@@ -45,3 +50,81 @@ def grants_bootstrap_command():
     """Insert grants for existing provider_configs (one-shot, idempotent)."""
     n = bootstrap_grants()
     click.echo(f'Created {n} new grants.')
+
+
+OPencode_PRICING_URL = 'https://opencode.ai/docs/zen/'
+
+
+def _parse_opencode_pricing(html: str) -> dict[str, dict[str, float]]:
+    """Parse the Zen pricing table from opencode.ai docs HTML.
+
+    Returns dict keyed by 'opencode::{model_id}' with {'in': X, 'out': Y}.
+    """
+    models_list = {}
+    # Find the pricing table: look for <table> after the "Pricing" heading
+    table_match = re.search(
+        r'<h2.*?>\s*Pricing\s*</h2>.*?<table[^>]*>(.*?)</table>',
+        html, re.DOTALL | re.IGNORECASE
+    )
+    if not table_match:
+        raise ValueError('Pricing table not found in opencode.ai Zen docs')
+
+    table_html = table_match.group(1)
+    rows = re.findall(
+        r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>\$?([\d.]+)</td>\s*<td[^>]*>\$?([\d.]+)</td>',
+        table_html, re.DOTALL
+    )
+
+    for model_name, input_str, output_str in rows:
+        model_id = _model_name_to_id(model_name.strip())
+        inp = float(input_str)
+        out = float(output_str)
+        models_list[f'opencode::{model_id}'] = {'in': inp, 'out': out}
+
+    # Free models (listed separately in the docs, not in the table)
+    free_ids = [
+        'big-pickle', 'deepseek-v4-flash-free', 'mimo-v2.5-free',
+        'nemotron-3-super-free', 'qwen3.6-plus-free', 'minimax-m2.5-free',
+    ]
+    for fid in free_ids:
+        key = f'opencode::{fid}'
+        if key not in models_list:
+            models_list[key] = {'in': 0.0, 'out': 0.0}
+
+    return models_list
+
+
+def _model_name_to_id(name: str) -> str:
+    """Convert display name like 'GPT 5.4 Mini' to model id 'gpt-5.4-mini'."""
+    name = name.strip().lower()
+    name = re.sub(r'[^\w\s.-]', '', name)
+    name = re.sub(r'\s+', '-', name)
+    name = re.sub(r'-+', '-', name)
+    return name
+
+
+def fetch_opencode_pricing() -> dict[str, dict[str, float]]:
+    """Fetch and parse the opencode.ai Zen pricing page."""
+    resp = urllib.request.urlopen(OPencode_PRICING_URL, timeout=15)
+    html = resp.read().decode('utf-8')
+    return _parse_opencode_pricing(html)
+
+
+def save_opencode_pricing(data: dict[str, dict[str, float]]) -> Path:
+    """Persist pricing data to pricing_overrides.json next to pricing.py."""
+    path = Path(__file__).parent / 'pricing_overrides.json'
+    path.write_text(json.dumps(data, indent=2) + '\n')
+    return path
+
+
+@click.command('update-opencode-pricing')
+def update_opencode_pricing_command():
+    """Fetch opencode.ai Zen rate card and persist as JSON override."""
+    try:
+        click.echo('Fetching opencode.ai Zen pricing ...')
+        data = fetch_opencode_pricing()
+        path = save_opencode_pricing(data)
+        click.echo(f'{len(data)} models written to {path}')
+    except Exception as e:
+        click.echo(f'Error: {e}', err=True)
+        raise click.Abort()
