@@ -118,7 +118,12 @@ All 89 tests pass (`pytest -q`).
 **Admin UI URL:**
 `https://bewerbungen.wolfinisoftware.de/ai-provider/admin/ui/?token=<ADMIN_TOKEN>`
 (token in VPS `.env`). Also linked from WordPress Admin Dashboard at
-`/wp-admin/tools.php?page=wolfini-admin-tools`.
+`/wp-admin/tools.php?page=wolfini-admin-tools` (plugin `wolfini-admin-tools`
+in `wp-content/plugins/wolfini-admin-tools/`, activated via WP-CLI).
+
+**Note:** The file was originally in the theme dir but never loaded — WordPress
+only loads plugins from `wp-content/plugins/`. Moved and activated via
+`wp plugin activate wolfini-admin-tools --path=/var/www/wolfinisoftware`.
 
 **What was deployed (branch `feat/provider-access-control`):**
 - Provider-access gate (`GATE_ENABLED=true`) with `flask grants-bootstrap` run
