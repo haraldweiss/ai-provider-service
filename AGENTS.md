@@ -106,4 +106,13 @@ Verified: pytest ✓ (142/142), NOT manually tested against live providers
 
 ## 7. Handoff zone
 
-<!-- Append notes here with date and agent type -->
+### 2026-05-30 — Provider access control + opencode.ai integration (ready for implementation)
+
+**Spec:** [`docs/superpowers/specs/2026-05-30-provider-access-control-design.md`](docs/superpowers/specs/2026-05-30-provider-access-control-design.md)
+**Plan:** [`docs/superpowers/plans/2026-05-30-provider-access-control.md`](docs/superpowers/plans/2026-05-30-provider-access-control.md)
+**Status:** Plan complete, no code written yet. Ready for opencode to execute (good fit per §2: new provider integration + test coverage). Claude Code should handle Task 14/15 deploy work on VPS.
+**Pick up at:** Task 1 (`ProviderGrant` model). Each task is self-contained — file paths, complete code, TDD steps, exact commands, and a commit at the end. No additional context from the brainstorming session needed.
+**Verification baseline:** `pytest -q` is currently green (142/142 per recent commits). Each task adds tests and must keep the suite green.
+**Open carry-overs:**
+- `pricing.py` opencode entries: leave the dict empty if rate-card numbers aren't handy at implementation time — flagged in Task 7.
+- opencode.ai exact auth format: assumed Bearer + OpenAI-compatible. Verify against current opencode.ai docs in Task 6; patch `OpencodeClient.__init__` if needed.
