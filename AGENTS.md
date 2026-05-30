@@ -106,13 +106,44 @@ Verified: pytest ✓ (142/142), NOT manually tested against live providers
 
 ## 7. Handoff zone
 
-### 2026-05-30 — Provider access control + opencode.ai integration (ready for implementation)
+### 2026-05-30 — Provider access control + opencode.ai integration (in progress, handoff to opencode)
 
 **Spec:** [`docs/superpowers/specs/2026-05-30-provider-access-control-design.md`](docs/superpowers/specs/2026-05-30-provider-access-control-design.md)
 **Plan:** [`docs/superpowers/plans/2026-05-30-provider-access-control.md`](docs/superpowers/plans/2026-05-30-provider-access-control.md)
-**Status:** Plan complete, no code written yet. Ready for opencode to execute (good fit per §2: new provider integration + test coverage). Claude Code should handle Task 14/15 deploy work on VPS.
-**Pick up at:** Task 1 (`ProviderGrant` model). Each task is self-contained — file paths, complete code, TDD steps, exact commands, and a commit at the end. No additional context from the brainstorming session needed.
-**Verification baseline:** `pytest -q` is currently green (142/142 per recent commits). Each task adds tests and must keep the suite green.
-**Open carry-overs:**
-- `pricing.py` opencode entries: leave the dict empty if rate-card numbers aren't handy at implementation time — flagged in Task 7.
+**Branch:** `feat/provider-access-control` (already checked out; not yet pushed)
+**Worked by:** Claude Code (subagent-driven execution). Stopping after Task 4 implementation to hand off the remaining bulk implementation to opencode (good throughput-fit per §2).
+
+**Done (commits on branch):**
+- Task 1 — `ProviderGrant` model (`0579dd3`) + cleanup (`00b7ab5` — SPDX header, tighten `IntegrityError` catch)
+- Task 2 — Config additions for admin/gate/opencode/session (`04d4056`) + cleanup (`cc7c62f` — hoist test-isolation `import api.auth` shim into `tests/conftest.py`)
+- Task 3 — `Principal` + `auth.py` rewrite (`d962596`) + hardening (`b20aa09` — `hmac.compare_digest`, `_attach()` helper, pin empty-user_id test)
+- Task 4 — Gate module (`924c9e1`) — **implementer DONE, two reviews completed, cleanup NOT yet applied; see below**
+
+**Remaining (Tasks 4 cleanup, 5–15):**
+
+**Task 4 open cleanup** (code-review findings on `924c9e1`, fix BEFORE Task 5):
+1. **Critical — Python 3.9 compat.** `api/gate.py:35` uses `str | None` (PEP 604). Add `from __future__ import annotations` at top of `api/gate.py` (matches `api/usage_api.py`, `providers/ollama.py`). Without this, gate fails to import on the 3.9 baseline stated in CLAUDE.md (VPS runs 3.12 so prod works, but baseline is broken).
+2. **Important — Guard missing `g.principal`.** `require_provider_access` should return 401 `{'error': 'unauthenticated'}` if `getattr(g, 'principal', None)` is falsy, rather than letting AttributeError surface as 500.
+3. **Important — Use `arg_name` in the 400 message.** Currently hardcoded `'missing provider_id'`; change to `f'missing {arg_name}'`.
+4. **Important — Test the `body.get('provider')` fallback.** The decorator accepts `body['provider']` as a fallback for `/chat`'s JSON shape, but no test covers it. Add `test_decorator_extracts_provider_from_chat_body` to `tests/test_gate.py` (template in the plan / the canceled cleanup spec — POST `/chat`-shape with `{user_id, provider}` body, assert 200 for ollama and 403 for claude).
+
+After applying: `pytest -q` should be 51/51 (was 50 + 1 new). Commit as `Fix:` with a `Verified:` line.
+
+**Tasks 5–15** — follow `docs/superpowers/plans/2026-05-30-provider-access-control.md` verbatim. Each task in the plan is self-contained (file paths, complete code, TDD steps, exact commit message). No additional context from this session is needed.
+
+**Conventions discovered the hard way (so opencode doesn't re-trip on them):**
+- Test files need SPDX header: `# SPDX-License-Identifier: AGPL-3.0-or-later` on line 1.
+- `tests/conftest.py` already eager-imports `api.auth` to keep `Config` bindings stable across `importlib.reload(config)` in tests. Don't remove that line.
+- `Principal(user_id='', role='user')` is intentional for SERVICE_TOKEN calls without an asserted `user_id` — pinned by `test_service_token_with_no_user_id_yields_empty_principal`. Route-level validation (`/chat`) and gate denial cover real call sites; don't reject at auth boundary.
+- Commit prefixes used: `Add: / Fix: / Update: / Refactor: / Doc: / Test: / Perf: / Security:`. Body must include a `Verified:` line listing what was tested.
+- Recent commits suggest using SQLAlchemy 2.x style where possible (`db.session.get(...)`, not `Query.get`).
+- Token comparison must be `hmac.compare_digest` (see `b20aa09`); not `==`.
+- For union types in production code (Tasks 5–15): use `from __future__ import annotations` OR `Optional[X]` — never bare `X | None` without the future import.
+
+**Verification baseline at handoff:** `pytest -q` → 50 passed (was 26 at branch start; +24 from Tasks 1–4). Keep this green per task.
+
+**Then:** Tasks 14 and 15 of the plan (deploy steps, VPS smoke test) should be handed BACK to Claude Code for the VPS-touching parts — opencode shouldn't deploy. Code-only parts of Task 14 (README.md / OPERATIONS.md / .env.example edits) and Task 15 (E2E pytest) are fine for opencode.
+
+**Open carry-overs from spec §14:**
+- `pricing.py` opencode entries: leave the dict empty if rate-card numbers aren't handy at implementation time (Task 7).
 - opencode.ai exact auth format: assumed Bearer + OpenAI-compatible. Verify against current opencode.ai docs in Task 6; patch `OpencodeClient.__init__` if needed.
