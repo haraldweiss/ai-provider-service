@@ -155,7 +155,8 @@ def create_user_profile():
 def update_user_profile(user_id):
     profile = db.session.get(UserProfile, user_id)
     if not profile:
-        return jsonify({'error': 'user not found'}), 404
+        profile = UserProfile(user_id=user_id)
+        db.session.add(profile)
     body = request.get_json() or {}
     if 'alias' in body:
         profile.alias = body['alias']
