@@ -87,19 +87,21 @@ document.querySelectorAll('.edit-alias-btn').forEach(btn => {
     input.style.padding = '2px 4px';
     span.replaceWith(input);
     input.focus();
-    btn.textContent = 'save';
-    btn.removeEventListener('click', btn._editHandler);
-    btn.addEventListener('click', async function saveHandler() {
-      btn.removeEventListener('click', saveHandler);
-      btn.disabled = true;
-      btn.textContent = '...';
+
+    const newBtn = btn.cloneNode(true);
+    newBtn.textContent = 'save';
+    btn.parentNode.replaceChild(newBtn, btn);
+
+    newBtn.addEventListener('click', async function saveHandler() {
+      newBtn.disabled = true;
+      newBtn.textContent = '...';
       try {
-        const resp = await patchJson(usersUrl + '/' + btn.dataset.user, { alias: input.value || null });
+        const resp = await patchJson(usersUrl + '/' + newBtn.dataset.user, { alias: input.value || null });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         location.reload();
       } catch (err) {
-        btn.textContent = 'error';
-        btn.disabled = false;
+        newBtn.textContent = 'error';
+        newBtn.disabled = false;
       }
     });
   });
