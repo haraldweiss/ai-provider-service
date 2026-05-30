@@ -63,7 +63,7 @@ def _parse_opencode_pricing(html: str) -> dict[str, dict[str, float]]:
     models_list = {}
     # Find the pricing table: look for <table> after the "Pricing" heading
     table_match = re.search(
-        r'<h2.*?>\s*Pricing\s*</h2>.*?<table[^>]*>(.*?)</table>',
+        r'<h2[^>]*>.*?Pricing.*?</h2>.*?<table[^>]*>(.*?)</table>',
         html, re.DOTALL | re.IGNORECASE
     )
     if not table_match:
@@ -71,17 +71,22 @@ def _parse_opencode_pricing(html: str) -> dict[str, dict[str, float]]:
 
     table_html = table_match.group(1)
     rows = re.findall(
-        r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>\$?([\d.]+)</td>\s*<td[^>]*>\$?([\d.]+)</td>',
+        r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>'
+        r'(?:Free|\$?([\d.]+))</td>\s*<td[^>]*>'
+        r'(?:Free|\$?([\d.]+))</td>',
         table_html, re.DOTALL
     )
 
-    for model_name, input_str, output_str in rows:
-        model_id = _model_name_to_id(model_name.strip())
-        inp = float(input_str)
-        out = float(output_str)
+    for match in rows:
+        model_name = match[0].strip()
+        inp_str = match[1] if match[1] else '0.0'
+        out_str = match[2] if match[2] else '0.0'
+        model_id = _model_name_to_id(model_name)
+        inp = float(inp_str)
+        out = float(out_str)
         models_list[f'opencode::{model_id}'] = {'in': inp, 'out': out}
 
-    # Free models (listed separately in the docs, not in the table)
+    # Ensure free models (re.findall may not match "Free" with $)
     free_ids = [
         'big-pickle', 'deepseek-v4-flash-free', 'mimo-v2.5-free',
         'nemotron-3-super-free', 'qwen3.6-plus-free', 'minimax-m2.5-free',
@@ -96,11 +101,18 @@ def _parse_opencode_pricing(html: str) -> dict[str, dict[str, float]]:
 
 def _model_name_to_id(name: str) -> str:
     """Convert display name like 'GPT 5.4 Mini' to model id 'gpt-5.4-mini'."""
+    # Handle context-length variants: keep only the base name
+    name = re.sub(r'\s*\([^)]*\)\s*', '', name)
     name = name.strip().lower()
     name = re.sub(r'[^\w\s.-]', '', name)
     name = re.sub(r'\s+', '-', name)
     name = re.sub(r'-+', '-', name)
-    return name
+    # Specific overrides for names that don't match model IDs
+    overrides = {
+        'qwen3.7-max': 'qwen3.7-max',
+        'claude-haiku-3.5': 'claude-3-5-haiku',
+    }
+    return overrides.get(name, name)
 
 
 def fetch_opencode_pricing() -> dict[str, dict[str, float]]:

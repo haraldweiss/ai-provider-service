@@ -6,15 +6,12 @@ from cli import _parse_opencode_pricing
 
 def test_parse_sample_table():
     html = '''<html><body>
-<h2 id="pricing">Pricing</h2>
-<table>
-<thead><tr><th>Model</th><th>Input</th><th>Output</th></tr></thead>
-<tbody>
-<tr><td>GPT 5.4 Mini</td><td>$0.75</td><td>$4.50</td></tr>
-<tr><td>Claude Haiku 4.5</td><td>$1.00</td><td>$5.00</td></tr>
-<tr><td>DeepSeek V4 Flash Free</td><td>Free</td><td>Free</td></tr>
-</tbody>
-</table>
+<h2 id="pricing"><a href="#pricing">Pricing</a></h2>
+<table><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>Cached Read</th><th>Cached Write</th></tr></thead><tbody>
+<tr><td>GPT 5.4 Mini</td><td>$0.75</td><td>$4.50</td><td>$0.075</td><td>-</td></tr>
+<tr><td>Claude Haiku 4.5</td><td>$1.00</td><td>$5.00</td><td>$0.10</td><td>$1.25</td></tr>
+<tr><td>DeepSeek V4 Flash Free</td><td>Free</td><td>Free</td><td>Free</td><td>-</td></tr>
+</tbody></table>
 </body></html>'''
     data = _parse_opencode_pricing(html)
     assert 'opencode::gpt-5.4-mini' in data
