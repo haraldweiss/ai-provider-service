@@ -44,6 +44,7 @@
 
 <script>
 const userId = {{ user_id | tojson }};
+const grantsUrl = "{{ url_for('admin.create_grant') }}";
 document.querySelectorAll('#grants-table button').forEach(btn => {
   btn.addEventListener('click', async () => {
     const tr = btn.closest('tr');
@@ -55,7 +56,7 @@ document.querySelectorAll('#grants-table button').forEach(btn => {
     try {
       let resp;
       if (action === 'approve') {
-        resp = await fetch('/admin/grants', {
+        resp = await fetch(grantsUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -63,16 +64,16 @@ document.querySelectorAll('#grants-table button').forEach(btn => {
         });
       } else {
         const grantId = btn.dataset.grantId;
-        resp = await fetch(`/admin/grants/${grantId}`, {
+        resp = await fetch(grantsUrl + '/' + grantId, {
           method: 'DELETE',
           credentials: 'same-origin',
         });
       }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      msg.textContent = 'ok — reload to see updated state';
+      msg.textContent = 'ok - reload to see updated state';
       msg.className = 'row-msg ok';
     } catch (e) {
-      msg.textContent = `error: ${e.message}`;
+      msg.textContent = 'error: ' + e.message;
       msg.className = 'row-msg bad';
       btn.disabled = false;
     }
