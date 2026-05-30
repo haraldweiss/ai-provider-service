@@ -120,3 +120,60 @@ def test_delete_grant_soft_deletes(client, app):
 def test_delete_unknown_grant_404(client):
     r = client.delete('/admin/grants/99999', headers=H_admin())
     assert r.status_code == 404
+
+
+def test_overview_requires_admin(client):
+    r = client.get('/admin/overview', headers=H_user())
+    assert r.status_code == 403
+
+
+def test_overview_lists_users_from_configs_grants_usage(client, app):
+    from storage.models import ProviderConfig, UsageEvent
+    with app.app_context():
+        pc = ProviderConfig(user_id='lisa', provider_id='ollama')
+        pc.set_config({})
+        db.session.add(pc)
+
+        db.session.add(ProviderGrant(
+            user_id='bob', provider_id='claude', granted_by='harald'))
+
+        db.session.add(UsageEvent(
+            user_id='carol', provider_id='ollama', model='llama3',
+            status='ok'))
+        db.session.commit()
+
+    r = client.get('/admin/overview', headers=H_admin())
+    assert r.status_code == 200
+    users = {u['user_id']: u for u in r.get_json()['users']}
+    assert 'lisa' in users
+    assert 'bob' in users
+    assert 'carol' in users
+
+
+def test_overview_marks_admin_user(client, app):
+    from storage.models import ProviderConfig
+    with app.app_context():
+        pc = ProviderConfig(user_id='harald', provider_id='ollama')
+        pc.set_config({})
+        db.session.add(pc)
+        db.session.commit()
+
+    r = client.get('/admin/overview', headers=H_admin())
+    harald = next(u for u in r.get_json()['users'] if u['user_id'] == 'harald')
+    assert harald['is_admin'] is True
+
+
+def test_overview_includes_30d_call_counts(client, app):
+    from storage.models import UsageEvent
+    with app.app_context():
+        for _ in range(5):
+            db.session.add(UsageEvent(
+                user_id='lisa', provider_id='ollama', model='mistral',
+                status='ok', origin_app='loganonymizer'))
+        db.session.commit()
+
+    r = client.get('/admin/overview', headers=H_admin())
+    lisa = next(u for u in r.get_json()['users'] if u['user_id'] == 'lisa')
+    assert lisa['last_30d']['total_calls'] == 5
+    assert lisa['last_30d']['by_provider']['ollama'] == 5
+    assert lisa['last_30d']['by_origin_app']['loganonymizer'] == 5

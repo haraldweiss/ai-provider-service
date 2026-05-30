@@ -4,11 +4,12 @@ All routes require ADMIN_TOKEN (enforced via @require_admin).
 Mounted at /admin.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request, g
 from database import db
 from api.auth import require_admin
-from storage.models import ProviderGrant
+from storage.models import ProviderGrant, ProviderConfig, UsageEvent
+from config import Config
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -71,3 +72,55 @@ def revoke_grant(grant_id):
         grant.revoked_at = datetime.now(timezone.utc)
         db.session.commit()
     return '', 204
+
+
+@admin_bp.get('/overview')
+@require_admin
+def overview():
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+
+    cfg_users = db.session.query(ProviderConfig.user_id).distinct()
+    grant_users = db.session.query(ProviderGrant.user_id).distinct()
+    usage_users = db.session.query(UsageEvent.user_id).distinct()
+    user_ids = sorted({
+        r[0] for r in cfg_users.union(grant_users).union(usage_users).all()
+    })
+
+    out = []
+    for uid in user_ids:
+        configured = [r.provider_id for r in
+                      ProviderConfig.query.filter_by(user_id=uid).all()]
+
+        grants = [g.to_dict() for g in
+                  ProviderGrant.query.filter_by(user_id=uid)
+                  .filter(ProviderGrant.revoked_at.is_(None)).all()]
+
+        events = UsageEvent.query.filter(
+            UsageEvent.user_id == uid,
+            UsageEvent.created_at >= cutoff,
+        ).all()
+
+        by_provider = {}
+        by_origin = {}
+        last_used = None
+        for ev in events:
+            by_provider[ev.provider_id] = by_provider.get(ev.provider_id, 0) + 1
+            if ev.origin_app:
+                by_origin[ev.origin_app] = by_origin.get(ev.origin_app, 0) + 1
+            if last_used is None or (ev.created_at and ev.created_at > last_used):
+                last_used = ev.created_at
+
+        out.append({
+            'user_id': uid,
+            'is_admin': uid == Config.ADMIN_USER_ID,
+            'configured_providers': sorted(configured),
+            'grants': grants,
+            'last_30d': {
+                'total_calls': len(events),
+                'by_provider': by_provider,
+                'by_origin_app': by_origin,
+                'last_used_at': last_used.isoformat() if last_used else None,
+            },
+        })
+
+    return jsonify({'users': out})
