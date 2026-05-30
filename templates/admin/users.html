@@ -89,11 +89,11 @@ document.querySelectorAll('.edit-alias-btn').forEach(btn => {
     span.replaceWith(input);
     input.focus();
     btn.textContent = 'save';
-    btn.dataset.mode = 'save';
     input.addEventListener('keydown', (ke) => {
       if (ke.key === 'Enter') btn.click();
       if (ke.key === 'Escape') location.reload();
     });
+    setTimeout(() => { btn.dataset.mode = 'save'; }, 0);
   });
 });
 
