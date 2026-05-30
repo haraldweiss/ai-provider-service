@@ -44,7 +44,8 @@ def _entry():
     if token:
         if Config.ADMIN_TOKEN and token == Config.ADMIN_TOKEN:
             session['admin'] = True
-            return redirect(request.path)
+            kwargs = request.view_args or {}
+            return redirect(url_for(request.endpoint, **kwargs))
         return redirect(url_for('admin_ui.login'))
 
 

@@ -20,6 +20,10 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
 
+    # ProxyFix: trust X-Forwarded-Proto and X-Forwarded-Prefix from Apache.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_prefix=1)
+
     # Required for admin UI session cookie. Fail-fast if missing.
     if not app.config.get('SECRET_KEY'):
         logging.getLogger(__name__).warning(
