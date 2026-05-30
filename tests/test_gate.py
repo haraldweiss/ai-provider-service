@@ -91,3 +91,29 @@ def test_decorator_allows_when_granted(gate_on, client):
     r = client.get('/_t/use2/claude?user_id=lisa',
                    headers={'Authorization': 'Bearer test-token'})
     assert r.status_code == 200
+
+
+def test_decorator_extracts_provider_from_chat_body(gate_on, client):
+    """The /chat endpoint passes 'provider' in JSON body, not 'provider_id'.
+    The decorator must fall back to body.get('provider').
+    """
+    from api.gate import require_provider_access
+    from api.auth import require_token
+
+    @gate_on.route('/_t/chat-shape', methods=['POST'])
+    @require_token
+    @require_provider_access('provider_id')
+    def chat_shape():
+        return jsonify({'ok': True})
+
+    # ollama is ungated → 200 even without grant
+    r = client.post('/_t/chat-shape',
+                    json={'user_id': 'lisa', 'provider': 'ollama'},
+                    headers={'Authorization': 'Bearer test-token'})
+    assert r.status_code == 200
+
+    # claude is gated; no grant → 403
+    r = client.post('/_t/chat-shape',
+                    json={'user_id': 'lisa', 'provider': 'claude'},
+                    headers={'Authorization': 'Bearer test-token'})
+    assert r.status_code == 403

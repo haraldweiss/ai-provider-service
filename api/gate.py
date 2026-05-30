@@ -11,6 +11,8 @@ view_args, query, or JSON body and gates the route. Must be used AFTER
 @require_token so g.principal is set.
 """
 
+from __future__ import annotations
+
 from functools import wraps
 from flask import jsonify, g, request
 from config import Config
@@ -49,9 +51,11 @@ def require_provider_access(arg_name: str = 'provider_id'):
     def deco(f):
         @wraps(f)
         def wrapped(*args, **kwargs):
+            if not getattr(g, 'principal', None):
+                return jsonify({'error': 'unauthenticated'}), 401
             provider_id = _extract_provider_id(arg_name)
             if not provider_id:
-                return jsonify({'error': 'missing provider_id'}), 400
+                return jsonify({'error': f'missing {arg_name}'}), 400
             if not is_allowed(g.principal, provider_id):
                 return jsonify({
                     'error': 'needs_approval',
