@@ -10,7 +10,14 @@
       <td>{{ u.configured_providers | join(', ') or '—' }}</td>
       <td>
         {% if u.is_admin %}<span class="ok">bypass</span>
-        {% else %}{{ u.grants | map(attribute='provider_id') | join(', ') or '—' }}{% endif %}
+        {% else %}
+          {% for g in u.grants %}
+            <div style="margin-bottom:2px">
+              <span class="ok">{{ g.provider_id }}</span>
+              <button class="revoke-btn" data-grant-id="{{ g.id }}" style="font-size:11px;padding:1px 5px;margin-left:4px">revoke</button>
+            </div>
+          {% else %}{{ '—' }}{% endfor %}
+        {% endif %}
       </td>
       <td>{{ u.last_30d.total_calls }}</td>
       <td>{{ u.last_30d.last_used_at or '—' }}</td>
@@ -20,4 +27,24 @@
     {% endfor %}
   </tbody>
 </table>
+
+<script>
+const grantsUrl = "{{ url_for('admin.create_grant') }}";
+document.querySelectorAll('.revoke-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const grantId = btn.dataset.grantId;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const resp = await fetch(grantsUrl + '/' + grantId, { method: 'DELETE', credentials: 'same-origin' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      btn.textContent = 'done';
+      btn.classList.add('muted');
+    } catch (e) {
+      btn.textContent = 'error';
+      btn.disabled = false;
+    }
+  });
+});
+</script>
 {% endblock %}
