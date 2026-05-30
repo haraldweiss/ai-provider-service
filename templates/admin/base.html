@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{% block title %}ai-provider-service · admin{% endblock %}</title>
+<style>
+  body { font: 14px/1.4 -apple-system, system-ui, sans-serif; margin: 0; padding: 1rem 2rem; color: #222; }
+  header { display: flex; justify-content: space-between; border-bottom: 1px solid #ddd; padding-bottom: .5rem; margin-bottom: 1rem; }
+  header h1 { margin: 0; font-size: 1.1rem; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid #eee; padding: .5rem .75rem; text-align: left; vertical-align: top; }
+  th { background: #f7f7f7; font-weight: 600; }
+  .muted { color: #888; }
+  .ok { color: #1c7c2e; }
+  .bad { color: #b00020; }
+  button { font-size: 13px; padding: .25rem .6rem; cursor: pointer; }
+  a { color: #0367c4; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .row-msg { font-size: 12px; color: #888; margin-left: .5rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ai-provider-service · admin</h1>
+  <nav>
+    {% if session.get('admin') %}
+      <a href="{{ url_for('admin_ui.users') }}">users</a> ·
+      <a href="{{ url_for('admin_ui.logout') }}">logout</a>
+    {% endif %}
+  </nav>
+</header>
+{% block content %}{% endblock %}
+</body>
+</html>

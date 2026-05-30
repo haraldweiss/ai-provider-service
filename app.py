@@ -20,6 +20,16 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
 
+    # ProxyFix: trust X-Forwarded-Proto and X-Forwarded-Prefix from Apache.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_prefix=1)
+
+    # Required for admin UI session cookie. Fail-fast if missing.
+    if not app.config.get('SECRET_KEY'):
+        logging.getLogger(__name__).warning(
+            'SECRET_KEY is not set — admin UI sessions will not work.'
+        )
+
     # CORS für Browser-direkt-Aufrufe (loganonymizer u.a.).
     # Wenn ALLOWED_ORIGINS leer ist, default `*` (lokale Dev).
     origins = Config.ALLOWED_ORIGINS or '*'
@@ -28,7 +38,7 @@ def create_app() -> Flask:
     db.init_app(app)
     with app.app_context():
         # Models importieren, damit Tables registriert werden.
-        from storage.models import ProviderConfig, RequestQueue, UsageEvent  # noqa: F401
+        from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile  # noqa: F401
         db.create_all()
 
     # Blueprints
@@ -39,6 +49,8 @@ def create_app() -> Flask:
     from api.health_api import health_bp
     from api.models_api import models_bp
     from api.usage_api import bp as usage_bp
+    from api.admin_api import admin_bp
+    from api.admin_ui import admin_ui_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -47,6 +59,12 @@ def create_app() -> Flask:
     app.register_blueprint(health_bp)
     app.register_blueprint(models_bp)
     app.register_blueprint(usage_bp)
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_ui_bp)
+
+    from cli import grants_bootstrap_command, update_opencode_pricing_command
+    app.cli.add_command(grants_bootstrap_command)
+    app.cli.add_command(update_opencode_pricing_command)
 
     @app.route('/')
     def index():

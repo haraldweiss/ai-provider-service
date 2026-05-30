@@ -4,6 +4,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from database import db
 from api.auth import require_token
+from api.gate import require_provider_access
 from providers import PROVIDER_REGISTRY
 from storage.models import ProviderConfig
 
@@ -21,6 +22,7 @@ def list_configs(user_id):
 
 @configs_bp.get('/<user_id>/<provider_id>')
 @require_token
+@require_provider_access('provider_id')
 def get_config(user_id, provider_id):
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     if not pc:
@@ -30,6 +32,7 @@ def get_config(user_id, provider_id):
 
 @configs_bp.post('/<user_id>/<provider_id>')
 @require_token
+@require_provider_access('provider_id')
 def save_config(user_id, provider_id):
     """Speichert oder aktualisiert eine Provider-Config.
 
@@ -82,6 +85,7 @@ def save_config(user_id, provider_id):
 
 @configs_bp.delete('/<user_id>/<provider_id>')
 @require_token
+@require_provider_access('provider_id')
 def delete_config(user_id, provider_id):
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     if not pc:

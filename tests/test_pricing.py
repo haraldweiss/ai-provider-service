@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Unit-Tests für pricing.calc_cost_usd."""
 from __future__ import annotations
+import pytest
 
 
 def test_local_provider_returns_zero():
@@ -45,3 +46,27 @@ def test_custom_provider_returns_none_for_unknown_model():
     bei unbekanntem Modell -> None."""
     from pricing import calc_cost_usd
     assert calc_cost_usd('custom', 'some-local-model', 100, 100) is None
+
+
+def test_opencode_gpt5_pricing():
+    from pricing import calc_cost_usd
+    cost = calc_cost_usd('opencode', 'gpt-5', 1_000_000, 1_000_000)
+    assert cost == pytest.approx(9.57, rel=0.01)
+
+
+def test_opencode_claude_sonnet_pricing():
+    from pricing import calc_cost_usd
+    cost = calc_cost_usd('opencode', 'claude-sonnet-4.6', 1_000_000, 1_000_000)
+    assert cost == pytest.approx(18.0, rel=0.01)
+
+
+def test_opencode_free_model():
+    from pricing import calc_cost_usd
+    cost = calc_cost_usd('opencode', 'deepseek-v4-flash-free', 1000, 500)
+    assert cost == 0.0
+
+
+def test_opencode_pricing_none_for_unknown_model():
+    from pricing import calc_cost_usd
+    cost = calc_cost_usd('opencode', 'definitely-not-a-real-model', 100, 100)
+    assert cost is None

@@ -1,0 +1,149 @@
+{% extends "admin/base.html" %}
+{% block content %}
+<h2>users</h2>
+
+<div style="margin-bottom:1rem;padding:.75rem;background:#f7f7f7;border-radius:4px">
+  <strong>Add user</strong>
+  <form id="add-user-form" style="display:flex;gap:.5rem;margin-top:.5rem">
+    <input name="user_id" placeholder="user_id" required style="flex:2;padding:.3rem .5rem">
+    <input name="alias" placeholder="alias (optional)" style="flex:2;padding:.3rem .5rem">
+    <button type="submit" style="padding:.3rem 1rem">add</button>
+  </form>
+</div>
+
+<table>
+  <thead><tr><th>user</th><th>alias</th><th>providers</th><th>grants</th><th>30d calls</th><th></th></tr></thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td><a href="{{ url_for('admin_ui.user_detail', user_id=u.user_id) }}">{{ u.user_id }}</a>{% if u.is_admin %} <span class="muted">(admin)</span>{% endif %}</td>
+      <td>
+        <span class="alias-display" data-user="{{ u.user_id }}">{{ u.alias or '—' }}</span>
+        <button class="edit-alias-btn" data-user="{{ u.user_id }}" style="font-size:11px;padding:0 5px;margin-left:4px">edit</button>
+      </td>
+      <td>{{ u.configured_providers | join(', ') or '—' }}</td>
+      <td>
+        {% if u.is_admin %}<span class="ok">bypass</span>
+        {% else %}
+          {% for g in u.grants %}
+            <div style="margin-bottom:2px">
+              <span class="ok">{{ g.provider_id }}</span>
+              <button class="revoke-btn" data-grant-id="{{ g.id }}" style="font-size:11px;padding:1px 5px;margin-left:4px">revoke</button>
+            </div>
+          {% else %}{{ '—' }}{% endfor %}
+        {% endif %}
+      </td>
+      <td>{{ u.last_30d.total_calls }}</td>
+      <td>
+        <button class="remove-user-btn" data-user="{{ u.user_id }}" style="font-size:11px;color:#b00020">remove</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">no users yet</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+const grantsUrl = "{{ url_for('admin.create_grant') }}";
+const usersUrl = "{{ url_for('admin.create_user_profile') }}";
+
+function postJson(url, data) {
+  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data) });
+}
+
+function del(url) {
+  return fetch(url, { method: 'DELETE', credentials: 'same-origin' });
+}
+
+function patchJson(url, data) {
+  return fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data) });
+}
+
+document.getElementById('add-user-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const resp = await postJson(usersUrl, { user_id: fd.get('user_id'), alias: fd.get('alias') || null });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    location.reload();
+  } catch (err) {
+    btn.textContent = 'error';
+    btn.disabled = false;
+  }
+});
+
+document.querySelectorAll('.edit-alias-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    if (btn.dataset.mode === 'save') return;
+    const td = btn.closest('td');
+    const span = td.querySelector('.alias-display');
+    const current = span.textContent === '—' ? '' : span.textContent;
+    const input = document.createElement('input');
+    input.value = current;
+    input.style.width = '140px';
+    input.style.padding = '2px 4px';
+    span.replaceWith(input);
+    input.focus();
+    btn.textContent = 'save';
+    input.addEventListener('keydown', (ke) => {
+      if (ke.key === 'Enter') btn.click();
+      if (ke.key === 'Escape') location.reload();
+    });
+    setTimeout(() => { btn.dataset.mode = 'save'; }, 0);
+  });
+});
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-mode="save"]');
+  if (!btn) return;
+  const td = btn.closest('td');
+  const input = td.querySelector('input');
+  if (!input) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const resp = await patchJson(usersUrl + '/' + btn.dataset.user, { alias: input.value || null });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    location.reload();
+  } catch (err) {
+    btn.textContent = 'error';
+    btn.disabled = false;
+  }
+});
+
+document.querySelectorAll('.revoke-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const resp = await del(grantsUrl + '/' + btn.dataset.grantId);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      location.reload();
+    } catch (e) {
+      btn.textContent = 'error';
+      btn.disabled = false;
+    }
+  });
+});
+
+document.querySelectorAll('.remove-user-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('Remove user ' + btn.dataset.user + ' from overview?')) return;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const resp = await del(usersUrl + '/' + btn.dataset.user);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      location.reload();
+    } catch (e) {
+      btn.textContent = 'error';
+      btn.disabled = false;
+    }
+  });
+});
+</script>
+{% endblock %}

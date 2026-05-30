@@ -1,0 +1,81 @@
+{% extends "admin/base.html" %}
+{% block content %}
+<p><a href="{{ url_for('admin_ui.users') }}">← back</a></p>
+<h2>user: {{ user_id }}{% if is_admin %} <span class="muted">(admin)</span>{% endif %}</h2>
+
+{% if is_admin %}
+<p class="ok">Admin role — all providers allowed (gate bypassed).</p>
+{% endif %}
+
+<h3>Provider access</h3>
+<table id="grants-table">
+<thead><tr><th>provider</th><th>status</th><th>action</th><th></th></tr></thead>
+<tbody>
+{% for row in provider_rows %}
+<tr data-provider="{{ row.provider_id }}">
+  <td>{{ row.provider_id }} <span class="muted">— {{ row.name }}</span></td>
+  <td>
+    {% if row.ungated %}<span class="ok">ungated</span>
+    {% elif is_admin %}<span class="ok">bypass (admin)</span>
+    {% elif row.granted %}<span class="ok">✓ granted {{ row.grant.granted_at[:10] }} by {{ row.grant.granted_by }}</span>
+    {% else %}<span class="bad">✗ not granted</span>{% endif %}
+  </td>
+  <td>
+    {% if row.ungated or is_admin %}<span class="muted">—</span>
+    {% elif row.granted %}<button data-action="revoke" data-grant-id="{{ row.grant.id }}">revoke</button>
+    {% else %}<button data-action="approve">approve</button>{% endif %}
+  </td>
+  <td class="row-msg"></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+<h3>Configured providers (BYO keys)</h3>
+{% if configured %}
+<ul>
+  {% for c in configured %}
+  <li>{{ c.provider_id }}{% if c.fallback_provider %} <span class="muted">→ fallback: {{ c.fallback_provider }}</span>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">none</p>
+{% endif %}
+
+<script>
+const userId = {{ user_id | tojson }};
+const grantsUrl = "{{ url_for('admin.create_grant') }}";
+document.querySelectorAll('#grants-table button').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const tr = btn.closest('tr');
+    const provider = tr.dataset.provider;
+    const action = btn.dataset.action;
+    const msg = tr.querySelector('.row-msg');
+    btn.disabled = true;
+    msg.textContent = '...';
+    try {
+      let resp;
+      if (action === 'approve') {
+        resp = await fetch(grantsUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ user_id: userId, provider_id: provider }),
+        });
+      } else {
+        resp = await fetch(grantsUrl + '/' + btn.dataset.grantId, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        });
+      }
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      location.reload();
+    } catch (e) {
+      msg.textContent = 'error: ' + e.message;
+      msg.className = 'row-msg bad';
+      btn.disabled = false;
+    }
+  });
+});
+</script>
+{% endblock %}

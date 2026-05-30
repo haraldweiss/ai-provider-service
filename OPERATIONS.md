@@ -648,6 +648,70 @@ curl -X POST \
 
 ---
 
+## Deploying the provider-access gate
+
+Order matters — the bootstrap MUST run before flipping `GATE_ENABLED=true`,
+or existing consumer apps will hit 403 for already-configured providers.
+
+1. **Deploy code with `GATE_ENABLED=false`** (default). New table
+   `provider_grants` is created via `db.create_all()` on service restart.
+   No behavior change for existing callers.
+
+2. **Set `ADMIN_TOKEN`, `ADMIN_USER_ID`, `SECRET_KEY`** in `.env` on the VPS:
+   ```bash
+   ssh ionos-vps
+   cd /opt/ai-provider-service
+   echo "ADMIN_TOKEN=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')" >> .env
+   echo "SECRET_KEY=$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')" >> .env
+   echo "ADMIN_USER_ID=harald" >> .env
+   ```
+
+3. **Run the bootstrap** to grant every existing config:
+   ```bash
+   cd /opt/ai-provider-service
+   source venv/bin/activate
+   flask --app app grants-bootstrap
+   # → "Created N new grants."
+   ```
+
+4. **Flip the gate on** and restart:
+   ```bash
+   echo "GATE_ENABLED=true" >> .env
+   sudo systemctl restart ai-provider-service
+   ```
+
+5. **Smoke test:**
+   ```bash
+   # admin token — should work
+   curl -H "Authorization: Bearer $ADMIN_TOKEN" https://<host>/admin/overview
+
+   # existing consumer app on a grandfathered config — should still work
+   curl -H "Authorization: Bearer $SERVICE_TOKEN" \
+        -X POST https://<host>/configs/loganonymizer-default/ollama \
+        -H 'Content-Type: application/json' -d '{"config":{}}'
+
+   # new user_id on a gated provider — should 403
+   curl -H "Authorization: Bearer $SERVICE_TOKEN" \
+        -X POST https://<host>/configs/test-new-user/claude \
+        -H 'Content-Type: application/json' -d '{"config":{"api_key":"x"}}'
+   # → {"error":"needs_approval", ...}
+   ```
+
+6. **Verify admin UI** by visiting:
+   ```
+   https://<host>/admin/ui?token=<ADMIN_TOKEN>
+   ```
+   Should redirect to `/admin/ui/users` and show the roster.
+
+### Rollback
+
+If anything misbehaves:
+1. `echo "GATE_ENABLED=false" >> .env` (or remove the line)
+2. `sudo systemctl restart ai-provider-service`
+
+Gate becomes a no-op, all existing callers work unchanged. Bootstrap rows
+in `provider_grants` are harmless — they're ignored when gate is off.
+
 ## Contact & Escalation
 
 **Service Down:** Check logs with `journalctl` command above, then restart with `systemctl restart ai-provider-service.service`

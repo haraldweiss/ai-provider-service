@@ -10,6 +10,23 @@ from app import create_app
 from database import db
 from config import Config
 
+# Eager-import every module that does `from config import Config` so each
+# captures its reference to the original Config class before any test runs
+# `importlib.reload(config)` (see test_config_access_control). Reload
+# rebinds `sys.modules['config'].Config` to a new class object — modules
+# imported AFTER the reload would pick up the new class while modules
+# imported BEFORE keep the old one, and the `app` fixture mutates the old
+# one. Without these eager imports, the resulting split-brain Config can
+# silently flake auth, gate, and provider tests depending on collection
+# order. See conftest line for `api.auth` (original tripwire from Task 2).
+import api.auth          # noqa: F401, E402
+import api.gate          # noqa: F401, E402
+import api.admin_api     # noqa: F401, E402
+import api.admin_ui      # noqa: F401, E402
+import providers.opencode  # noqa: F401, E402
+import providers.claude    # noqa: F401, E402
+import providers.ollama    # noqa: F401, E402
+
 
 @pytest.fixture
 def app():

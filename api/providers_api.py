@@ -3,7 +3,9 @@
 import logging
 from flask import Blueprint, jsonify, request
 from api.auth import require_token
+from api.gate import require_provider_access, is_allowed
 from providers import get_client, PROVIDER_REGISTRY, list_provider_ids
+from flask import g
 from storage.models import ProviderConfig
 import health_tracker
 
@@ -38,6 +40,7 @@ def list_providers():
             else:
                 configured = True
 
+        allowed = is_allowed(g.principal, pid)
         health = health_tracker.get_status(pid)
         out.append({
             'id': pid,
@@ -46,6 +49,7 @@ def list_providers():
             'requires': meta['requires'],
             'optional': meta['optional'],
             'configured': configured,
+            'allowed': allowed,
             'healthy': health.get('healthy'),
             'last_check': health.get('updated_at'),
         })
@@ -54,6 +58,7 @@ def list_providers():
 
 @providers_bp.get('/<provider_id>/models')
 @require_token
+@require_provider_access('provider_id')
 def get_models(provider_id):
     if provider_id not in PROVIDER_REGISTRY:
         return jsonify({'error': f'Unbekannter Provider: {provider_id}'}), 404
@@ -78,6 +83,7 @@ def get_models(provider_id):
 
 @providers_bp.get('/<provider_id>/health')
 @require_token
+@require_provider_access('provider_id')
 def get_health(provider_id):
     if provider_id not in PROVIDER_REGISTRY:
         return jsonify({'error': f'Unbekannter Provider: {provider_id}'}), 404
@@ -86,6 +92,7 @@ def get_health(provider_id):
 
 @providers_bp.post('/<provider_id>/test')
 @require_token
+@require_provider_access('provider_id')
 def test_provider(provider_id):
     """Live-Test: holt Models. user_id aus Body."""
     if provider_id not in PROVIDER_REGISTRY:

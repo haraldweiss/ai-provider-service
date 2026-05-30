@@ -424,6 +424,42 @@ Bei Kompromittierung des MASTER_KEY:
 Skript für 1) + 3) ist nicht enthalten — bei Bedarf manuell oder neuer
 Migrations-Endpoint.
 
+## Access control (provider gating)
+
+The gateway gates non-`ollama` providers behind admin approval. Defaults:
+
+- **ollama** — available to all callers (configurable via `UNGATED_PROVIDERS`)
+- **claude, opencode, openai, mammouth, custom** — require an active
+  `ProviderGrant` row for the calling `user_id`, OR the caller must hold
+  the `ADMIN_TOKEN`.
+
+### Tokens
+
+| Token | Role | `user_id` resolution |
+|---|---|---|
+| `ADMIN_TOKEN` | admin | always `Config.ADMIN_USER_ID` (env, default `harald`) |
+| `SERVICE_TOKEN` | user | from request body/query (current behavior) |
+
+### Admin UI
+
+Visit `https://<service>/admin/ui?token=<ADMIN_TOKEN>` once to bootstrap
+a signed session cookie. After that, the URL is `/admin/ui/users`.
+
+Shows per-user roster with configured providers, active grants, and
+30-day usage rollup. Approve/revoke buttons hit `/admin/grants` via the
+session cookie.
+
+### Admin REST API
+
+`Authorization: Bearer <ADMIN_TOKEN>` on every endpoint.
+
+```
+POST   /admin/grants           {user_id, provider_id, note?}  → 201
+GET    /admin/grants[?user_id=&provider_id=&include_revoked=true]
+DELETE /admin/grants/<id>      → 204 (soft-delete)
+GET    /admin/overview         → {users: [...]}
+```
+
 ## Limitationen
 
 - **Single-Instance:** SQLite-DB ist nicht für mehrere Service-Instanzen
