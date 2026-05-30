@@ -40,6 +40,25 @@ def test_admin_ui_login_page_renders(client):
     assert b'admin' in r.data.lower()
 
 
+def test_users_page_lists_known_users(client, app):
+    from database import db
+    from storage.models import ProviderConfig, ProviderGrant
+
+    with app.app_context():
+        pc = ProviderConfig(user_id='lisa', provider_id='ollama')
+        pc.set_config({})
+        db.session.add(pc)
+        db.session.add(ProviderGrant(
+            user_id='lisa', provider_id='claude', granted_by='harald'))
+        db.session.commit()
+
+    client.get('/admin/ui/?token=admin-test-token', follow_redirects=False)
+    r = client.get('/admin/ui/users')
+    assert r.status_code == 200
+    assert b'lisa' in r.data
+    assert b'claude' in r.data
+
+
 def test_admin_ui_logout_clears_session(client):
     client.get('/admin/ui/?token=admin-test-token', follow_redirects=False)
     r = client.get('/admin/ui/logout', follow_redirects=False)

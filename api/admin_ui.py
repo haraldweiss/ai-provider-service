@@ -71,7 +71,8 @@ def users():
     redirect_resp = _require_admin_ui()
     if redirect_resp:
         return redirect_resp
-    return render_template('admin/users.html', users=[])
+    from api.admin_api import build_overview
+    return render_template('admin/users.html', users=build_overview())
 
 
 @admin_ui_bp.get('/users/<user_id>')

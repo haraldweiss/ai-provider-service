@@ -74,9 +74,7 @@ def revoke_grant(grant_id):
     return '', 204
 
 
-@admin_bp.get('/overview')
-@require_admin
-def overview():
+def build_overview() -> list[dict]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
     cfg_users = db.session.query(ProviderConfig.user_id).distinct()
@@ -122,5 +120,10 @@ def overview():
                 'last_used_at': last_used.isoformat() if last_used else None,
             },
         })
+    return out
 
-    return jsonify({'users': out})
+
+@admin_bp.get('/overview')
+@require_admin
+def overview():
+    return jsonify({'users': build_overview()})
