@@ -30,6 +30,20 @@ class Config:
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # Access control (provider gating)
+    ADMIN_TOKEN = os.getenv('ADMIN_TOKEN', '')
+    ADMIN_USER_ID = os.getenv('ADMIN_USER_ID', 'harald')
+    UNGATED_PROVIDERS = set(
+        p.strip() for p in (os.getenv('UNGATED_PROVIDERS') or 'ollama').split(',') if p.strip()
+    )
+    GATE_ENABLED = os.getenv('GATE_ENABLED', 'false').lower() == 'true'
+
+    # opencode.ai provider
+    OPENCODE_BASE_URL = os.getenv('OPENCODE_BASE_URL', 'https://opencode.ai/zen/v1')
+
+    # Flask sessions (admin UI cookie)
+    SECRET_KEY = os.getenv('SECRET_KEY', '')
+
     @classmethod
     def validate(cls):
         missing = []
