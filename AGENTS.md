@@ -108,12 +108,43 @@ Verified: pytest ✓ (142/142), NOT manually tested against live providers
 
 ### Provider access control + opencode.ai integration
 
-**Status:** Implementation complete (2026-05-30) per
+**Status:** Implementation complete, deployed to VPS (2026-05-30) per
 [`docs/superpowers/plans/2026-05-30-provider-access-control.md`](docs/superpowers/plans/2026-05-30-provider-access-control.md)
 ([spec](docs/superpowers/specs/2026-05-30-provider-access-control-design.md)).
 
-**Deployed:** No — pending. Follow OPERATIONS.md "Deploying the
-provider-access gate" section.
+**Deployed:** Yes — VPS at `bewerbungen.wolfinisoftware.de` (see OPERATIONS.md).
+All 89 tests pass (`pytest -q`).
+
+**Admin UI URL:**
+`https://bewerbungen.wolfinisoftware.de/ai-provider/admin/ui/?token=<ADMIN_TOKEN>`
+(token in VPS `.env`). Also linked from WordPress Admin Dashboard at
+`/wp-admin/tools.php?page=wolfini-admin-tools`.
+
+**What was deployed (branch `feat/provider-access-control`):**
+- Provider-access gate (`GATE_ENABLED=true`) with `flask grants-bootstrap` run
+- `ADMIN_TOKEN`, `SECRET_KEY` set in VPS `.env`
+- `openai` package installed on VPS (opencode provider dependency)
+- Apache config updated: `X-Forwarded-Proto` and `X-Forwarded-Prefix` headers
+- `ProxyFix` middleware added to Flask for reverse-proxy URL generation
+- Admin UI: session auth, users overview, detail page, approve/revoke buttons
+- User profiles: alias, add/remove users (soft-delete via `disabled` flag)
+- Bugs fixed during deployment: trailing-slash redirects, JS event handler
+  issues (`stopPropagation`/`data-mode` timing), PATCH/DELETE creating
+  `UserProfile` rows on first use, `build_overview` restoring after accidental
+  deletion, `UserProfile` union query for discovered users
 
 **Pricing entries for opencode.ai:** populate `pricing.py` with the current
 Zen rate card before relying on cost tracking.
+
+**Root cause index (bugs encountered & fixed):**
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| Admin UI redirects to wrong URL behind Apache | `redirect(request.path)` returns path w/o `/ai-provider/` prefix | ProxyFix + `url_for(request.endpoint)` in `_entry` handler |
+| Edit alias → "save" triggers immediately | `data-mode=save` set synchronously during edit click event | `setTimeout(0)` to defer attribute |
+| Edit alias → "error" on discovered users | PATCH returns 404 for users without `UserProfile` row | Auto-create `UserProfile` on PATCH |
+| Remove user → "error" on discovered users | DELETE returns 404 for users without `UserProfile` row | Auto-create `UserProfile` on DELETE |
+| Add user → not shown in overview | `build_overview()` only queried configs/grants/usage | Added `UserProfile` to union query |
+| JS edit/save button double-fires | `stopPropagation()` in edit handler blocked save handler | `cloneNode(true)` then direct `addEventListener` (eventual fix: `data-mode` flag) |
+| Approve/revoke → state not refreshed | No `location.reload()` after success | Added `location.reload()` in both overview and detail page |
+| `build_overview` missing (NameError) | Accidentally deleted during user profile endpoint edit | Restored function |
