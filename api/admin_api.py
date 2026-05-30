@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request, g
 from database import db
 from api.auth import require_admin_or_session
-from storage.models import ProviderGrant, ProviderConfig, UsageEvent
+from storage.models import ProviderGrant, ProviderConfig, UsageEvent, UserProfile
 from config import Config
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -80,12 +80,18 @@ def build_overview() -> list[dict]:
     cfg_users = db.session.query(ProviderConfig.user_id).distinct()
     grant_users = db.session.query(ProviderGrant.user_id).distinct()
     usage_users = db.session.query(UsageEvent.user_id).distinct()
-    user_ids = sorted({
+    all_user_ids = sorted({
         r[0] for r in cfg_users.union(grant_users).union(usage_users).all()
     })
 
+    profile_map = {p.user_id: p for p in UserProfile.query.all()}
+
     out = []
-    for uid in user_ids:
+    for uid in all_user_ids:
+        profile = profile_map.get(uid)
+        if profile and profile.disabled:
+            continue
+
         configured = [r.provider_id for r in
                       ProviderConfig.query.filter_by(user_id=uid).all()]
 
@@ -110,6 +116,7 @@ def build_overview() -> list[dict]:
 
         out.append({
             'user_id': uid,
+            'alias': profile.alias if profile else None,
             'is_admin': uid == Config.ADMIN_USER_ID,
             'configured_providers': sorted(configured),
             'grants': grants,
@@ -121,6 +128,52 @@ def build_overview() -> list[dict]:
             },
         })
     return out
+
+
+@admin_bp.post('/users')
+@require_admin_or_session
+def create_user_profile():
+    body = request.get_json() or {}
+    user_id = body.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required'}), 400
+    existing = db.session.get(UserProfile, user_id)
+    if existing:
+        existing.alias = body.get('alias', existing.alias)
+        if 'disabled' in body:
+            existing.disabled = bool(body['disabled'])
+        db.session.commit()
+        return jsonify({'user': existing.to_dict()}), 200
+    profile = UserProfile(user_id=user_id, alias=body.get('alias'))
+    db.session.add(profile)
+    db.session.commit()
+    return jsonify({'user': profile.to_dict()}), 201
+
+
+@admin_bp.patch('/users/<user_id>')
+@require_admin_or_session
+def update_user_profile(user_id):
+    profile = db.session.get(UserProfile, user_id)
+    if not profile:
+        return jsonify({'error': 'user not found'}), 404
+    body = request.get_json() or {}
+    if 'alias' in body:
+        profile.alias = body['alias']
+    if 'disabled' in body:
+        profile.disabled = bool(body['disabled'])
+    db.session.commit()
+    return jsonify({'user': profile.to_dict()})
+
+
+@admin_bp.delete('/users/<user_id>')
+@require_admin_or_session
+def delete_user_profile(user_id):
+    profile = db.session.get(UserProfile, user_id)
+    if not profile:
+        return jsonify({'error': 'user not found'}), 404
+    profile.disabled = True
+    db.session.commit()
+    return '', 204
 
 
 @admin_bp.get('/overview')

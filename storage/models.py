@@ -183,3 +183,27 @@ class ProviderGrant(db.Model):
             'revoked_at': self.revoked_at.isoformat() if self.revoked_at else None,
             'note': self.note,
         }
+
+
+class UserProfile(db.Model):
+    """Display metadata for a user — alias and visibility.
+
+    No separate users table exists; users are discovered dynamically from
+    configs, grants, and usage events. This table adds a friendly alias and
+    a disabled flag to hide users from the admin overview without deleting
+    their data.
+    """
+    __tablename__ = 'user_profiles'
+
+    user_id = db.Column(db.String(255), primary_key=True)
+    alias = db.Column(db.String(255), nullable=True)
+    disabled = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            'user_id': self.user_id,
+            'alias': self.alias,
+            'disabled': self.disabled,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }

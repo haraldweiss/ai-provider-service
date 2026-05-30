@@ -1,12 +1,26 @@
 {% extends "admin/base.html" %}
 {% block content %}
 <h2>users</h2>
+
+<div style="margin-bottom:1rem;padding:.75rem;background:#f7f7f7;border-radius:4px">
+  <strong>Add user</strong>
+  <form id="add-user-form" style="display:flex;gap:.5rem;margin-top:.5rem">
+    <input name="user_id" placeholder="user_id" required style="flex:2;padding:.3rem .5rem">
+    <input name="alias" placeholder="alias (optional)" style="flex:2;padding:.3rem .5rem">
+    <button type="submit" style="padding:.3rem 1rem">add</button>
+  </form>
+</div>
+
 <table>
-  <thead><tr><th>user</th><th>providers</th><th>grants</th><th>30d calls</th><th>last used</th></tr></thead>
+  <thead><tr><th>user</th><th>alias</th><th>providers</th><th>grants</th><th>30d calls</th><th></th></tr></thead>
   <tbody>
     {% for u in users %}
     <tr>
       <td><a href="{{ url_for('admin_ui.user_detail', user_id=u.user_id) }}">{{ u.user_id }}</a>{% if u.is_admin %} <span class="muted">(admin)</span>{% endif %}</td>
+      <td>
+        <span class="alias-display" data-user="{{ u.user_id }}">{{ u.alias or '—' }}</span>
+        <button class="edit-alias-btn" data-user="{{ u.user_id }}" style="font-size:11px;padding:0 5px;margin-left:4px">edit</button>
+      </td>
       <td>{{ u.configured_providers | join(', ') or '—' }}</td>
       <td>
         {% if u.is_admin %}<span class="ok">bypass</span>
@@ -20,16 +34,85 @@
         {% endif %}
       </td>
       <td>{{ u.last_30d.total_calls }}</td>
-      <td>{{ u.last_30d.last_used_at or '—' }}</td>
+      <td>
+        <button class="remove-user-btn" data-user="{{ u.user_id }}" style="font-size:11px;color:#b00020">remove</button>
+      </td>
     </tr>
     {% else %}
-    <tr><td colspan="5" class="muted">no users yet</td></tr>
+    <tr><td colspan="6" class="muted">no users yet</td></tr>
     {% endfor %}
   </tbody>
 </table>
 
 <script>
 const grantsUrl = "{{ url_for('admin.create_grant') }}";
+const usersUrl = "{{ url_for('admin.create_user_profile') }}";
+
+document.getElementById('add-user-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const resp = await fetch(usersUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ user_id: fd.get('user_id'), alias: fd.get('alias') || null }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    location.reload();
+  } catch (err) {
+    btn.textContent = 'error';
+    btn.disabled = false;
+  }
+});
+
+document.querySelectorAll('.edit-alias-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const td = btn.closest('td');
+    const span = td.querySelector('.alias-display');
+    const current = span.textContent === '—' ? '' : span.textContent;
+    const input = document.createElement('input');
+    input.value = current;
+    input.style.width = '120px';
+    input.style.padding = '2px 4px';
+    span.replaceWith(input);
+    btn.textContent = 'save';
+    btn.classList.add('save-alias-btn');
+    btn.classList.remove('edit-alias-btn');
+  });
+});
+
+document.querySelectorAll('.save-alias-btn').forEach(btn => {
+  // handles already rendered save buttons (none initially)
+});
+
+document.addEventListener('click', async (e) => {
+  if (!e.target.classList.contains('save-alias-btn')) return;
+  const btn = e.target;
+  const td = btn.closest('td');
+  const input = td.querySelector('input');
+  const user = btn.dataset.user;
+  const alias = input.value;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const resp = await fetch(usersUrl + '/' + user, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ alias: alias || null }),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    location.reload();
+  } catch (err) {
+    btn.textContent = 'error';
+    btn.disabled = false;
+  }
+});
+
 document.querySelectorAll('.revoke-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const grantId = btn.dataset.grantId;
@@ -40,6 +123,22 @@ document.querySelectorAll('.revoke-btn').forEach(btn => {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       btn.textContent = 'done';
       btn.classList.add('muted');
+    } catch (e) {
+      btn.textContent = 'error';
+      btn.disabled = false;
+    }
+  });
+});
+
+document.querySelectorAll('.remove-user-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('Remove user ' + btn.dataset.user + ' from overview?')) return;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      const resp = await fetch(usersUrl + '/' + btn.dataset.user, { method: 'DELETE', credentials: 'same-origin' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      location.reload();
     } catch (e) {
       btn.textContent = 'error';
       btn.disabled = false;
