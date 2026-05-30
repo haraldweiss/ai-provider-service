@@ -80,4 +80,32 @@ def user_detail(user_id):
     redirect_resp = _require_admin_ui()
     if redirect_resp:
         return redirect_resp
-    return render_template('admin/user_detail.html', user_id=user_id, user={})
+
+    from providers import PROVIDER_REGISTRY
+    configured = ProviderConfig.query.filter_by(user_id=user_id).all()
+    active_grants = {
+        g.provider_id: g for g in ProviderGrant.query.filter_by(user_id=user_id)
+        .filter(ProviderGrant.revoked_at.is_(None)).all()
+    }
+
+    provider_rows = []
+    for pid, meta in PROVIDER_REGISTRY.items():
+        ungated = pid in Config.UNGATED_PROVIDERS
+        granted = active_grants.get(pid)
+        provider_rows.append({
+            'provider_id': pid,
+            'name': meta['name'],
+            'ungated': ungated,
+            'granted': granted is not None,
+            'grant': granted.to_dict() if granted else None,
+        })
+
+    is_admin = (user_id == Config.ADMIN_USER_ID)
+
+    return render_template(
+        'admin/user_detail.html',
+        user_id=user_id,
+        is_admin=is_admin,
+        provider_rows=provider_rows,
+        configured=[r.to_safe_dict() for r in configured],
+    )

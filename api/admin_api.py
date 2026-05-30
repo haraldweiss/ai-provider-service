@@ -7,7 +7,7 @@ Mounted at /admin.
 from datetime import datetime, timedelta, timezone
 from flask import Blueprint, jsonify, request, g
 from database import db
-from api.auth import require_admin
+from api.auth import require_admin_or_session
 from storage.models import ProviderGrant, ProviderConfig, UsageEvent
 from config import Config
 
@@ -15,7 +15,7 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 
 @admin_bp.post('/grants')
-@require_admin
+@require_admin_or_session
 def create_grant():
     body = request.get_json() or {}
     user_id = body.get('user_id')
@@ -49,7 +49,7 @@ def create_grant():
 
 
 @admin_bp.get('/grants')
-@require_admin
+@require_admin_or_session
 def list_grants():
     q = ProviderGrant.query
     if request.args.get('user_id'):
@@ -63,7 +63,7 @@ def list_grants():
 
 
 @admin_bp.delete('/grants/<int:grant_id>')
-@require_admin
+@require_admin_or_session
 def revoke_grant(grant_id):
     grant = db.session.get(ProviderGrant, grant_id)
     if grant is None:
@@ -124,6 +124,6 @@ def build_overview() -> list[dict]:
 
 
 @admin_bp.get('/overview')
-@require_admin
+@require_admin_or_session
 def overview():
     return jsonify({'users': build_overview()})

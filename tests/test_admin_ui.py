@@ -59,6 +59,26 @@ def test_users_page_lists_known_users(client, app):
     assert b'claude' in r.data
 
 
+def test_user_detail_page_shows_grants_and_configs(client, app):
+    from database import db
+    from storage.models import ProviderConfig, ProviderGrant
+
+    with app.app_context():
+        pc = ProviderConfig(user_id='lisa', provider_id='ollama')
+        pc.set_config({})
+        db.session.add(pc)
+        db.session.add(ProviderGrant(
+            user_id='lisa', provider_id='claude', granted_by='harald'))
+        db.session.commit()
+
+    client.get('/admin/ui/?token=admin-test-token', follow_redirects=False)
+    r = client.get('/admin/ui/users/lisa')
+    assert r.status_code == 200
+    assert b'ollama' in r.data
+    assert b'claude' in r.data
+    assert b'approve' in r.data.lower() or b'revoke' in r.data.lower()
+
+
 def test_admin_ui_logout_clears_session(client):
     client.get('/admin/ui/?token=admin-test-token', follow_redirects=False)
     r = client.get('/admin/ui/logout', follow_redirects=False)

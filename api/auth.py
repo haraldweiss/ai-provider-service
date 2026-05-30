@@ -76,3 +76,20 @@ def require_admin(f):
         _attach(p)
         return f(*args, **kwargs)
     return wrapped
+
+
+def require_admin_or_session(f):
+    """Like require_admin but also accepts a valid admin UI session cookie."""
+    from flask import session
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        p = _resolve_principal()
+        if p and p.role == 'admin':
+            _attach(p)
+            return f(*args, **kwargs)
+        if session.get('admin'):
+            g.principal = Principal(user_id=Config.ADMIN_USER_ID, role='admin')
+            g.agent = request.headers.get('X-Agent')
+            return f(*args, **kwargs)
+        return jsonify({'error': 'Admin token or session required'}), 403
+    return wrapped

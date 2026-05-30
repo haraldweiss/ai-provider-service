@@ -122,6 +122,16 @@ def test_delete_unknown_grant_404(client):
     assert r.status_code == 404
 
 
+def test_create_grant_with_session_cookie(client, app):
+    import flask
+    app.config['SECRET_KEY'] = 'test-secret-key-for-sessions'
+    Config.SECRET_KEY = 'test-secret-key-for-sessions'
+    client.get('/admin/ui/?token=admin-test-token', follow_redirects=False)
+    r = client.post('/admin/grants',
+                    json={'user_id': 'lisa', 'provider_id': 'claude'})
+    assert r.status_code == 201
+
+
 def test_overview_requires_admin(client):
     r = client.get('/admin/overview', headers=H_user())
     assert r.status_code == 403
