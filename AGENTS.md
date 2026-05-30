@@ -143,11 +143,11 @@ Zen rate card before relying on cost tracking.
 
 **Claudetracker integration:** A `POST /api/local-usage/discover` endpoint
 was added to the claudetracker backend (repo `Claude-KI-Usage-Tracker`,
-commit `e1adc92` on VPS, not pushed — no SSH key on VPS). It calls the
-ai-provider-service `/admin/overview` API and imports all discovered users
-into the sync list. The frontend ProviderServiceSettings component has a
-green "User importieren" button. Available at `https://claudetracker.wolfinisoftware.de/`
-→ Settings → AI-Provider-Service.
+commit `69c6403`). It calls the ai-provider-service `/admin/overview` API
+and imports all discovered users into the sync list. The frontend
+ProviderServiceSettings component has a green "User importieren" button.
+Available at `https://claudetracker.wolfinisoftware.de/` → Settings →
+AI-Provider-Service.
 
 **Root cause index (bugs encountered & fixed):**
 
