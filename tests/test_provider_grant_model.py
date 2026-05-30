@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Tests for ProviderGrant model: insert, uniqueness, soft-delete semantics."""
 
 from datetime import datetime, timezone
 import pytest
+from sqlalchemy.exc import IntegrityError
 from database import db
 from storage.models import ProviderGrant
 
@@ -30,7 +32,7 @@ def test_unique_user_provider(app):
 
         db.session.add(ProviderGrant(
             user_id='lisa', provider_id='claude', granted_by='harald'))
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             db.session.commit()
         db.session.rollback()
 
