@@ -3,7 +3,9 @@
 import logging
 from flask import Blueprint, jsonify, request
 from api.auth import require_token
+from api.gate import require_provider_access, is_allowed
 from dispatcher import dispatch
+from flask import g
 from providers import PROVIDER_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -13,6 +15,7 @@ chat_bp = Blueprint('chat', __name__)
 
 @chat_bp.post('/chat')
 @require_token
+@require_provider_access('provider')
 def chat():
     """Body:
       {
@@ -47,6 +50,14 @@ def chat():
     fallback_provider = body.get('fallback_provider')
     if fallback_provider and fallback_provider not in PROVIDER_REGISTRY:
         return jsonify({'error': f'Unbekannter Fallback-Provider: {fallback_provider}'}), 400
+
+    if fallback_provider:
+        if not is_allowed(g.principal, fallback_provider):
+            return jsonify({
+                'error': 'needs_approval',
+                'provider_id': fallback_provider,
+                'message': f'Fallback provider {fallback_provider} requires approval',
+            }), 403
 
     try:
         result = dispatch(
