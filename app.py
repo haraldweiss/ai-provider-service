@@ -20,6 +20,12 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
 
+    # Required for admin UI session cookie. Fail-fast if missing.
+    if not app.config.get('SECRET_KEY'):
+        logging.getLogger(__name__).warning(
+            'SECRET_KEY is not set — admin UI sessions will not work.'
+        )
+
     # CORS für Browser-direkt-Aufrufe (loganonymizer u.a.).
     # Wenn ALLOWED_ORIGINS leer ist, default `*` (lokale Dev).
     origins = Config.ALLOWED_ORIGINS or '*'
@@ -40,6 +46,7 @@ def create_app() -> Flask:
     from api.models_api import models_bp
     from api.usage_api import bp as usage_bp
     from api.admin_api import admin_bp
+    from api.admin_ui import admin_ui_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -49,6 +56,7 @@ def create_app() -> Flask:
     app.register_blueprint(models_bp)
     app.register_blueprint(usage_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_ui_bp)
 
     @app.route('/')
     def index():

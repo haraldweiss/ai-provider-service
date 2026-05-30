@@ -1,0 +1,23 @@
+{% extends "admin/base.html" %}
+{% block content %}
+<h2>users</h2>
+<table>
+  <thead><tr><th>user</th><th>providers</th><th>grants</th><th>30d calls</th><th>last used</th></tr></thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td><a href="{{ url_for('admin_ui.user_detail', user_id=u.user_id) }}">{{ u.user_id }}</a>{% if u.is_admin %} <span class="muted">(admin)</span>{% endif %}</td>
+      <td>{{ u.configured_providers | join(', ') or '—' }}</td>
+      <td>
+        {% if u.is_admin %}<span class="ok">bypass</span>
+        {% else %}{{ u.grants | map(attribute='provider_id') | join(', ') or '—' }}{% endif %}
+      </td>
+      <td>{{ u.last_30d.total_calls }}</td>
+      <td>{{ u.last_30d.last_used_at or '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">no users yet</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
