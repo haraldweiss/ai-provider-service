@@ -45,3 +45,15 @@ def test_custom_provider_returns_none_for_unknown_model():
     bei unbekanntem Modell -> None."""
     from pricing import calc_cost_usd
     assert calc_cost_usd('custom', 'some-local-model', 100, 100) is None
+
+
+def test_opencode_pricing_tolerates_missing_rate_card():
+    from pricing import calc_cost_usd
+    cost = calc_cost_usd('opencode', 'gpt-5', input_tokens=1000, output_tokens=500)
+    assert cost is None or cost > 0  # permissive — rate-card population deferred
+
+
+def test_opencode_pricing_none_for_unknown_model():
+    from pricing import calc_cost_usd
+    cost = calc_cost_usd('opencode', 'definitely-not-a-real-model', 100, 100)
+    assert cost is None
