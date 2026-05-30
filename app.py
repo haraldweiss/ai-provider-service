@@ -58,6 +58,9 @@ def create_app() -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(admin_ui_bp)
 
+    from cli import grants_bootstrap_command
+    app.cli.add_command(grants_bootstrap_command)
+
     @app.route('/')
     def index():
         return jsonify({
