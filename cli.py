@@ -105,7 +105,11 @@ def _model_name_to_id(name: str) -> str:
 
 def fetch_opencode_pricing() -> dict[str, dict[str, float]]:
     """Fetch and parse the opencode.ai Zen pricing page."""
-    resp = urllib.request.urlopen(OPencode_PRICING_URL, timeout=15)
+    req = urllib.request.Request(
+        OPencode_PRICING_URL,
+        headers={'User-Agent': 'ai-provider-service/1.0 (pricing sync)'},
+    )
+    resp = urllib.request.urlopen(req, timeout=15)
     html = resp.read().decode('utf-8')
     return _parse_opencode_pricing(html)
 
