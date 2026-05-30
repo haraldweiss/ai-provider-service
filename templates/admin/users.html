@@ -78,6 +78,7 @@ document.getElementById('add-user-form').addEventListener('submit', async (e) =>
 
 document.querySelectorAll('.edit-alias-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
+    if (btn.dataset.mode === 'save') return;
     const td = btn.closest('td');
     const span = td.querySelector('.alias-display');
     const current = span.textContent === '—' ? '' : span.textContent;
@@ -87,24 +88,31 @@ document.querySelectorAll('.edit-alias-btn').forEach(btn => {
     input.style.padding = '2px 4px';
     span.replaceWith(input);
     input.focus();
-
-    const newBtn = btn.cloneNode(true);
-    newBtn.textContent = 'save';
-    btn.parentNode.replaceChild(newBtn, btn);
-
-    newBtn.addEventListener('click', async function saveHandler() {
-      newBtn.disabled = true;
-      newBtn.textContent = '...';
-      try {
-        const resp = await patchJson(usersUrl + '/' + newBtn.dataset.user, { alias: input.value || null });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        location.reload();
-      } catch (err) {
-        newBtn.textContent = 'error';
-        newBtn.disabled = false;
-      }
+    btn.textContent = 'save';
+    btn.dataset.mode = 'save';
+    input.addEventListener('keydown', (ke) => {
+      if (ke.key === 'Enter') btn.click();
+      if (ke.key === 'Escape') location.reload();
     });
   });
+});
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-mode="save"]');
+  if (!btn) return;
+  const td = btn.closest('td');
+  const input = td.querySelector('input');
+  if (!input) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const resp = await patchJson(usersUrl + '/' + btn.dataset.user, { alias: input.value || null });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    location.reload();
+  } catch (err) {
+    btn.textContent = 'error';
+    btn.disabled = false;
+  }
 });
 
 document.querySelectorAll('.revoke-btn').forEach(btn => {
