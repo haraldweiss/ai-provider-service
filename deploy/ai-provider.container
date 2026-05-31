@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
+#
+# Quadlet for the AI Provider Service (Multi-Provider Chat Gateway).
+# Install on the VPS by copying to /etc/containers/systemd/ and running
+# `systemctl daemon-reload && systemctl start ai-provider.service`.
+#
+# Host services (daily-roundup, bewerbungen) use 127.0.0.1:8767.
+# Container consumers (claudetracker) use host.containers.internal:8767
+# which resolves to the podman1 bridge IP (10.88.0.1).
+
+[Unit]
+Description=AI Provider Service (Multi-Provider Chat Gateway)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/ai-provider:latest
+ContainerName=ai-provider
+
+# Dual-bind: host loopback for host services, podman1 bridge for containers.
+PublishPort=127.0.0.1:8767:8767
+PublishPort=10.88.0.1:8767:8767
+
+# Persistent SQLite DB + pricing overrides outside the image.
+Volume=/opt/ai-provider-data:/app/data:Z
+
+# Secrets file lives on the host (root:root, mode 0600). Never in git.
+EnvironmentFile=/etc/ai-provider/ai-provider.env
+
+# Non-secret defaults.
+Environment=DATABASE_URL=sqlite:////app/data/storage.db
+Environment=TZ=Europe/Berlin
+Environment=HOST=0.0.0.0
+Environment=PORT=8767
+Environment=GATE_ENABLED=true
+Environment=UNGATED_PROVIDERS=ollama
+Environment=HEALTH_CHECK_INTERVAL_SEC=30
+Environment=QUEUE_DRAIN_INTERVAL_SEC=60
+Environment=QUEUE_TTL_HOURS=24
+
+Memory=512m
+LogDriver=journald
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target
