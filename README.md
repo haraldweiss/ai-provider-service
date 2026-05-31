@@ -137,6 +137,67 @@ systemctl is-enabled ai-provider-service.service
 - `RestartSec=10` — 10 Sekunden Pause zwischen Restart-Versuchen
 - `WantedBy=multi-user.target` — Auto-Start beim Boot
 
+### Container (production, current)
+
+The production deploy on the IONOS VPS runs the service as a podman-managed
+container, driven by a Quadlet at
+`/etc/containers/systemd/ai-provider.container` (versioned in
+`deploy/ai-provider.container`).
+
+**First-time setup on the VPS:**
+
+```bash
+# 1. Data dir — persistent SQLite DB + pricing overrides
+mkdir -p /opt/ai-provider-data
+chcon -Rt container_file_t /opt/ai-provider-data
+
+# 2. Secrets file (never in git) — copy from existing .env
+mkdir -p /etc/ai-provider && chmod 700 /etc/ai-provider
+# Only secrets, not the non-secret defaults (those are in the Quadlet):
+python3 -c "
+import os
+with open('/var/www/ai-provider-service/.env') as f:
+    content = f.read()
+lines = content.strip().split('\n')
+skip_prefixes = ['HOST=', 'PORT=', 'GATE_ENABLED=', 'UNGATED_PROVIDERS=',
+    'HEALTH_CHECK_INTERVAL_SEC=', 'QUEUE_DRAIN_INTERVAL_SEC=',
+    'QUEUE_TTL_HOURS=', 'DATABASE_URL=']
+filtered = [l for l in lines if not any(l.startswith(p) for p in skip_prefixes)]
+with open('/etc/ai-provider/ai-provider.env', 'w') as f:
+    f.write('\n'.join(filtered) + '\n')
+"
+chmod 600 /etc/ai-provider/ai-provider.env
+```
+
+**Important:** In the env file, set `OLLAMA_URL` / `OLLAMA_URLS` / `SEARXNG_URL`
+to `host.containers.internal` instead of `127.0.0.1` because inside the
+container, `127.0.0.1` refers to the container's own loopback, not the host.
+
+```bash
+# 3. Install the Quadlet
+cp /var/www/ai-provider-service/deploy/ai-provider.container \
+   /etc/containers/systemd/
+systemctl daemon-reload
+
+# 4. Build the image and start
+cd /var/www/ai-provider-service
+podman build -t localhost/ai-provider:latest .
+systemctl start ai-provider.service
+```
+
+**Re-deploy after a code change:**
+
+```bash
+cd /var/www/ai-provider-service
+git pull
+podman build -t localhost/ai-provider:latest .
+systemctl restart ai-provider.service
+```
+
+The container is dual-bound: `127.0.0.1:8767` (host services like
+daily-roundup, bewerbungen) and `10.88.0.1:8767` (container consumers like
+claudetracker). No consumer URL changes needed after migration.
+
 ### Mac (für Ollama-Tunnel)
 
 Ollama läuft lokal auf dem Mac. Damit der VPS-Service Ollama erreicht, brauchen
