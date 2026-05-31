@@ -28,7 +28,5 @@ OPERATIONS.md
 PHASE_1_EXECUTION_CHECKLIST.md
 ROLLOUT_PLAN.md
 verify_integration.py
-health_tracker.py
 docs
-templates
 tests
