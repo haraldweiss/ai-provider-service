@@ -24,6 +24,16 @@ PublishPort=10.88.0.1:8767:8767
 
 # Persistent SQLite DB + pricing overrides outside the image.
 Volume=/opt/ai-provider-data:/app/data:Z
+# Mount pricing_overrides.json individually so CLI writes persist across rebuilds.
+Volume=/opt/ai-provider-data/pricing_overrides.json:/app/pricing_overrides.json:Z
+
+# Health check runs inside the container (curl is installed in the image).
+# Note: the Dockerfile HEALTHCHECK is silently ignored under OCI format.
+HealthCmd=curl -fsS http://127.0.0.1:8767/health
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=15s
 
 # Secrets file lives on the host (root:root, mode 0600). Never in git.
 EnvironmentFile=/etc/ai-provider/ai-provider.env
