@@ -51,6 +51,8 @@ def _entry():
 
 @admin_ui_bp.get('/login')
 def login():
+    if Config.ADMIN_TOKEN:
+        return redirect(url_for('admin_ui.root', token=Config.ADMIN_TOKEN))
     return render_template('admin/login.html')
 
 

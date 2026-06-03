@@ -34,10 +34,11 @@ def test_admin_ui_invalid_token_redirects_to_login(client):
     assert 'login' in r.location.lower()
 
 
-def test_admin_ui_login_page_renders(client):
-    r = client.get('/admin/ui/login')
-    assert r.status_code == 200
-    assert b'admin' in r.data.lower()
+def test_admin_ui_login_redirects_to_root_with_token(client):
+    r = client.get('/admin/ui/login', follow_redirects=False)
+    assert _is_redirect(r.status_code)
+    assert '/admin/ui/' in r.location
+    assert 'token=admin-test-token' in r.location
 
 
 def test_users_page_lists_known_users(client, app):
