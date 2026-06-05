@@ -15,7 +15,10 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
 
 
 def _key(bucket: str) -> str:
-    uid = g.principal.user_id if hasattr(g, 'principal') else 'anonymous'
+    try:
+        uid = g.principal.user_id
+    except (RuntimeError, AttributeError):
+        uid = 'anonymous'
     return f'{bucket}:{uid}'
 
 
