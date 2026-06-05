@@ -198,40 +198,53 @@ Nächstes opencode hier startet Serena automatisch mit.
 
 ---
 
-### Markdown memory Phase 1
+ ### Markdown memory — Phase 1 + Phase 2
 
-**Status:** Merged to `main` (2026-06-05, PR [#14](https://github.com/haraldweiss/ai-provider-service/pull/14), merge commit `49bfac5`) per
-[`docs/superpowers/plans/2026-06-05-markdown-memory-phase1.md`](docs/superpowers/plans/2026-06-05-markdown-memory-phase1.md)
-([spec](docs/superpowers/specs/2026-06-05-markdown-memory-design.md)).
+**Status:** All implemented, merged to `main` (2026-06-05), deployed to VPS.
+183 tests passing (`pytest -q`).
 
-**Deployed:** **Not yet — VPS deploy pending.** See OPERATIONS.md ("Markdown memory vault" section, added in commit `14e6eeb`) for the canonical step-by-step. A spawn-task chip ("Deploy memory Phase 1 to VPS") is pending in the session — click it to run the deploy in a fresh worktree, or do the steps manually.
+**VPS deployment:** Container `localhost/ai-provider:latest` managed by
+`ai-provider.service` (systemd, rootful podman, `--security-opt label=disable`).
+DB at `/opt/ai-provider-data/storage.db`. Vault host-mounted at
+`/var/lib/ai-provider-service/vault/`.
 
-**What was implemented:**
-- MemoryNote + SummaryJob ORM models (polymorphic single-table via `kind`)
-- MemoryWriter (write_note/write_audit/write_event/write_summary)
-- VaultRenderer (DB → `.md` files under `VAULT_PATH`)
-- Dispatcher audit hook (gated by `MEMORY_ENABLED`, failures swallowed)
-- `/memory/notes` CRUD, `/memory/events`, `/memory/audit`, `/memory/summaries`, `/memory/notes/<id>/summarize`
+**Phase 1 — Core:**
+- MemoryNote + SummaryJob ORM models, MemoryWriter, VaultRenderer
+- Dispatcher audit hook (gated by `MEMORY_ENABLED`)
+- `/memory/notes` CRUD, `/memory/events`, `/memory/audit`, `/memory/summaries`,
+  `/memory/notes/<id>/summarize`
 - `/memory/vault.tar.gz` + `/memory/vault/<path>` with path-traversal guard
-- `flask summary-job` + `flask vault-render` CLI commands
-- systemd timer units for **podman-quadlet deployment** (`ExecStart=podman exec ai-provider flask ...`, not host-venv — adjusted in commit `a690386`)
-- `VAULT_PATH`, `MEMORY_ENABLED`, `SUMMARY_PROFILE`, `SUMMARY_MAX_NOTES_PER_DAY`, `MEMORY_FREE_MODELS` config keys
-- 155 tests passing (`pytest -q`)
+- `flask summary-job` + `flask vault-render` + `flask vault-backup` CLI commands
+- systemd timer units for summary (@02:30 UTC) + vault self-heal (10 min)
 
-**Pending-deploy decisions already locked in** (so the deploy session doesn't re-ask):
-- `MEMORY_FREE_MODELS=opencode::deepseek-v4-flash-free,opencode::qwen3.6-plus-free,ollama::deepseek-r1:8b` — cheap-first cloud, lokales Ollama als last-resort fallback ohne Token-Quota
-- `MEMORY_ENABLED=true` direkt beim ersten Deploy (kein "stage 1 = code only, stage 2 = enable"-Split)
-- Vault dir `/var/lib/ai-provider-service/vault` mit owner `ai-provider:ai-provider`, mode `0750`, SELinux context `var_lib_t`
-- Quadlet (`deploy/ai-provider.container`) muss ggf. einen `Volume=` für den Vault-Pfad ergänzt bekommen, falls noch nicht vorhanden — check beim Deploy
+**Phase 1.5 (deferred → delivered in same session):**
+- Rate limiting: in-memory sliding window (60 POST/min, 120 GET/min, 5 vault exports/min)
+- Prompt injection sanitizer: strips control chars, escapes `{{`/}}`/```` ``` ````
+- `vault.tar.gz` hardening: symlink filter, resolved-path containment, 256 MiB cap
+- Vault host-mount: systemd unit mounts `/var/lib/ai-provider-service/vault`
 
-**Intentionally deferred from Phase 1** (per plan):
-- Prompt injection (Phase 2)
-- Rate limiting (Phase 1.5, isolated follow-up PR)
-- `vault.tar.gz` symlink-filter + size-cap (low-risk noted during review)
+**Phase 2:**
+- FTS5 full-text search (porter+unicode61, auto-synced via triggers)
+- Tag filter (`?tags=a,b`) + `GET /memory/tags` endpoint
+- WebDAV bridge (pure Flask + ElementTree) — Obsidian opens vault directly at
+  `https://host/ai-provider/memory/dav/?user_id=<id>`
 
-**Caveat for testing:** `test_memory_config` uses `importlib.reload(config)` which creates a new Config class. Tests that monkeypatch Config must import the module (`import config as m; monkeypatch.setattr(m.Config, ...)`) rather than patching the locally-imported `Config` name. See `test_dispatcher_audit_hook.py:memory_enabled` fixture for the pattern.
+**Key VPS quirks encountered:**
+- Podman 5 changed bridge IP from `10.88.0.1` → `10.89.0.1` — Quadlet broke
+- SELinux MCS mismatch between volume `:Z` and container process label —
+  workaround: `--security-opt label=disable`
+- Rootless user service under `poduser` kept restarting the old `main` container —
+  disabled via `systemctl --user disable ai-provider.service`
+- `fuser` is at `/usr/sbin/fuser` on Rocky 9, not `/usr/bin/fuser`
 
-**Rollback after deploy** (zero-second): set `MEMORY_ENABLED=false` in `/etc/ai-provider-service/.env` and `systemctl restart ai-provider`. Dispatcher hook becomes a no-op, Memory API returns 503, timers can be left running (they no-op when there's nothing to summarize).
+**Caveat for testing:** `test_memory_config` uses `importlib.reload(config)` which
+creates a new Config class. Tests that monkeypatch Config must import the module
+(`import config as m; monkeypatch.setattr(m.Config, ...)`) rather than patching
+the locally-imported `Config` name. See `test_dispatcher_audit_hook.py:memory_enabled`
+fixture for the pattern.
+
+**Rollback:** set `MEMORY_ENABLED=false` in `/etc/ai-provider/ai-provider.env`
+and `systemctl restart ai-provider.service`.
 
 ---
 
