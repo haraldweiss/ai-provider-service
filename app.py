@@ -57,6 +57,7 @@ def create_app() -> Flask:
     from api.ollama_facade_api import ollama_facade_bp
     from api.memory_api import memory_bp
     from api.vault_api import vault_bp
+    from api.webdav_api import webdav_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -70,6 +71,7 @@ def create_app() -> Flask:
     app.register_blueprint(ollama_facade_bp)
     app.register_blueprint(memory_bp)
     app.register_blueprint(vault_bp)
+    app.register_blueprint(webdav_bp)
 
     from cli import (grants_bootstrap_command, update_opencode_pricing_command,
                      summary_job_command, vault_render_command, vault_backup_command)
