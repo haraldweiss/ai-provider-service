@@ -174,3 +174,60 @@ def delete_note(note_id: int):
     except Exception:
         pass
     return ('', 204)
+
+
+@memory_bp.post('/events')
+@require_token
+def create_event():
+    gate = _gate()
+    if gate:
+        return gate
+    body = request.get_json(silent=True) or {}
+    user_id = _scope_user_id()
+    if g.principal.role != 'admin' and body.get('user_id') and body['user_id'] != user_id:
+        return jsonify({'error': 'cross-user write forbidden'}), 403
+    if not body.get('event_type'):
+        return jsonify({'error': 'event_type required'}), 400
+    try:
+        note = MemoryWriter().write_event(
+            user_id=user_id,
+            app=body.get('app') or 'gateway',
+            event_type=body['event_type'],
+            payload=body.get('payload') or {},
+            tags=body.get('tags') or [],
+            slug=body.get('slug'),
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    try:
+        VaultRenderer().render_one(note)
+        render_pending = False
+    except Exception:
+        render_pending = True
+    return jsonify({'id': note.id,
+                    'path': f'{note.folder}/{note.slug}.md',
+                    'render_pending': render_pending}), 201
+
+
+@memory_bp.get('/events')
+@require_token
+def list_events():
+    gate = _gate()
+    if gate:
+        return gate
+    user_id = _scope_user_id()
+    q = MemoryNote.query.filter(
+        MemoryNote.user_id == user_id,
+        MemoryNote.kind == MemoryKind.EVENT,
+        MemoryNote.deleted_at.is_(None),
+    )
+    if et := request.args.get('event_type'):
+        q = q.filter(MemoryNote.folder.like(f'%/events/{et}'))
+    if app_filter := request.args.get('app'):
+        q = q.filter(MemoryNote.app == app_filter)
+    try:
+        limit = min(int(request.args.get('limit', '50')), 500)
+    except ValueError:
+        return jsonify({'error': 'limit must be integer'}), 400
+    rows = q.order_by(MemoryNote.created_at.desc()).limit(limit).all()
+    return jsonify({'events': [r.to_dict() for r in rows]})
