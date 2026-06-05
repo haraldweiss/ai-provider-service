@@ -79,6 +79,73 @@ def _log_usage_event(
         db.session.rollback()
 
 
+def _write_audit_note(
+    user_id: str, provider_id: str, origin_app: Optional[str],
+    chat_request_id: str, prompt_text: str, response_text: str,
+    usage: dict, cost_eur: float, latency_ms: int,
+) -> None:
+    """Write an audit note via MemoryWriter. Failures are swallowed — audit
+    must never break a chat (see spec Flow 1)."""
+    from config import Config as _Config
+    if not _Config.MEMORY_ENABLED:
+        return
+    try:
+        from storage.memory import MemoryWriter, NoteAlreadyExists
+        try:
+            MemoryWriter().write_audit(
+                user_id=user_id,
+                app=origin_app or 'gateway',
+                provider=provider_id,
+                chat_request_id=chat_request_id,
+                prompt=prompt_text,
+                response=response_text,
+                tokens=usage or {},
+                cost_eur=cost_eur,
+                latency_ms=latency_ms,
+                timestamp=None,
+            )
+        except NoteAlreadyExists:
+            return
+    except Exception as e:
+        logger.warning(f'memory audit write failed: {e}')
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+
+def _join_messages(messages: list) -> str:
+    """Concatenate user/assistant/system messages into a single prompt string
+    for audit storage."""
+    lines = []
+    for m in messages or []:
+        role = m.get('role', '?')
+        content = m.get('content', '')
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    parts.append(block.get('text', '') or '')
+                else:
+                    parts.append(str(block))
+            content = '\n'.join(parts)
+        lines.append(f'**{role}**\n{content}')
+    return '\n\n'.join(lines)
+
+
+def _extract_response_text(result: dict) -> str:
+    """Pull the assistant response text out of a provider result dict."""
+    if not isinstance(result, dict):
+        return str(result)
+    if isinstance(result.get('content'), str):
+        return result['content']
+    if isinstance(result.get('content'), list):
+        return '\n'.join(
+            b.get('text', '') for b in result['content'] if isinstance(b, dict)
+        )
+    return result.get('text') or result.get('message') or ''
+
+
 def _execute(
     user_id: str, provider_id: str, model: str, messages: list, max_tokens: int,
     config_override: Optional[dict] = None,
@@ -96,8 +163,11 @@ def _execute(
         raise ValueError(f"Provider {provider_id} ist nicht konfiguriert für user_id={user_id}")
 
     client = get_client(provider_id, cfg)
+    chat_request_id = uuid.uuid4().hex
+    started = datetime.now(timezone.utc)
     try:
         result = client.create_message(model, messages, max_tokens)
+        latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
         health_tracker.set_status(provider_id, True)
         usage = (result or {}).get('usage') or {}
         _log_usage_event(
@@ -105,6 +175,17 @@ def _execute(
             usage.get('input_tokens'), usage.get('output_tokens'),
             'success', origin_app=origin_app,
         )
+        prompt_text = _join_messages(messages)
+        response_text = _extract_response_text(result)
+        try:
+            _write_audit_note(
+                user_id=user_id, provider_id=provider_id, origin_app=origin_app,
+                chat_request_id=chat_request_id,
+                prompt_text=prompt_text, response_text=response_text,
+                usage=usage, cost_eur=0.0, latency_ms=latency_ms,
+            )
+        except Exception:
+            logger.warning('memory audit write failed in _execute', exc_info=True)
         return result
     except Exception as e:
         health_tracker.set_status(provider_id, False, reason=f"{type(e).__name__}: {e}")

@@ -1,0 +1,10 @@
+[Unit]
+Description=ai-provider-service nightly summary job
+After=ai-provider.service
+Requires=ai-provider.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/podman exec ai-provider flask summary-job --period=day --yesterday
+StandardOutput=append:/var/log/ai-provider-service/summary-job.log
+StandardError=inherit

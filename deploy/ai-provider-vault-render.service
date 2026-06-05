@@ -1,0 +1,10 @@
+[Unit]
+Description=ai-provider-service vault self-heal
+After=ai-provider.service
+Requires=ai-provider.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/podman exec ai-provider flask vault-render --check-stale
+StandardOutput=append:/var/log/ai-provider-service/vault-render.log
+StandardError=inherit

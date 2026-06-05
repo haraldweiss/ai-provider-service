@@ -39,6 +39,7 @@ def create_app() -> Flask:
     with app.app_context():
         # Models importieren, damit Tables registriert werden.
         from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile  # noqa: F401
+        from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
         db.create_all()
 
     # Blueprints
@@ -52,6 +53,8 @@ def create_app() -> Flask:
     from api.admin_api import admin_bp
     from api.admin_ui import admin_ui_bp
     from api.ollama_facade_api import ollama_facade_bp
+    from api.memory_api import memory_bp
+    from api.vault_api import vault_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -63,10 +66,15 @@ def create_app() -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(admin_ui_bp)
     app.register_blueprint(ollama_facade_bp)
+    app.register_blueprint(memory_bp)
+    app.register_blueprint(vault_bp)
 
-    from cli import grants_bootstrap_command, update_opencode_pricing_command
+    from cli import (grants_bootstrap_command, update_opencode_pricing_command,
+                     summary_job_command, vault_render_command)
     app.cli.add_command(grants_bootstrap_command)
     app.cli.add_command(update_opencode_pricing_command)
+    app.cli.add_command(summary_job_command)
+    app.cli.add_command(vault_render_command)
 
     @app.route('/')
     def index():

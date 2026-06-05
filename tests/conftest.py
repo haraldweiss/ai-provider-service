@@ -39,6 +39,7 @@ def app():
     os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
     Config.MASTER_KEY = '8hbXucPt-LumWh0Ul9f9wka6VHzAHE29LvU52R3pEDA='
     Config.SERVICE_TOKEN = 'test-token'
+    Config.MEMORY_ENABLED = True
     os.environ['MASTER_KEY'] = Config.MASTER_KEY
     os.environ['SERVICE_TOKEN'] = Config.SERVICE_TOKEN
 

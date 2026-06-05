@@ -61,6 +61,13 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Apache reverse-proxies with `ProxyPass`
 - Never bind directly to port 80/443
 
+### 3.6 Markdown memory vault is rendered, not authored
+- `VAULT_PATH` (default `/var/lib/ai-provider-service/vault`) contains `.md` files **generated from the DB** by `VaultRenderer`. Treat as cache.
+- DB tables `memory_notes` and `summary_jobs` are the source of truth.
+- ✅ Edit notes via `PATCH /memory/notes/<id>`.
+- ❌ Hand-edit `.md` files under `VAULT_PATH` — the next self-heal cron will overwrite them.
+- ❌ Reference a hardcoded vault path; read `Config.VAULT_PATH` (mirrors §3.2 SQLite rule).
+
 ---
 
 ## 4. Verification standards
@@ -113,6 +120,8 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 | Restart | `sudo systemctl restart ai-provider-service` |
 | DB | SQLite at `/etc/ai-provider-service/provider.db` |
 | Tunnels | `autossh` systemd units (check `systemctl list-units \| grep tunnel`) |
+| Vault path | `/var/lib/ai-provider-service/vault/<user>/...` (cache; regen via `flask vault-render --rebuild`) |
+| Timers | `systemctl list-timers \| grep ai-provider` — summary @ 02:30 UTC, vault-render every 10 min |
 
 ---
 
@@ -186,6 +195,30 @@ in `~/.config/opencode/opencode.jsonc` aktiviert:
 
 `--project-from-cwd` erkennt das Projekt automatisch — kein per-project Setup nötig.
 Nächstes opencode hier startet Serena automatisch mit.
+
+---
+
+### Markdown memory Phase 1
+
+**Status:** Implementation complete (2026-06-05) per
+[`docs/superpowers/plans/2026-06-05-markdown-memory-phase1.md`](docs/superpowers/plans/2026-06-05-markdown-memory-phase1.md)
+([spec](docs/superpowers/specs/2026-06-05-markdown-memory-design.md)).
+
+**Deployed:** Not yet — see OPERATIONS.md for deploy steps.
+
+**What was implemented (branch `feat/memory-phase1`):**
+- MemoryNote + SummaryJob ORM models (polymorphic single-table via `kind`)
+- MemoryWriter (write_note/write_audit/write_event/write_summary)
+- VaultRenderer (DB → `.md` files under `VAULT_PATH`)
+- Dispatcher audit hook (gated by `MEMORY_ENABLED`, failures swallowed)
+- `/memory/notes` CRUD, `/memory/events`, `/memory/audit`, `/memory/summaries`, `/memory/notes/<id>/summarize`
+- `/memory/vault.tar.gz` + `/memory/vault/<path>` with path-traversal guard
+- `flask summary-job` + `flask vault-render` CLI commands
+- systemd timer units (NOT deployed yet)
+- `VAULT_PATH`, `MEMORY_ENABLED`, `SUMMARY_PROFILE`, `SUMMARY_MAX_NOTES_PER_DAY`, `MEMORY_FREE_MODELS` config keys
+- 155 tests passing (`pytest -q`)
+
+**Caveat:** `test_memory_config` uses `importlib.reload(config)` which creates a new Config class. Tests that monkeypatch Config must import the module (`import config as m; monkeypatch.setattr(m.Config, ...)`) rather than patching the locally-imported `Config` name. See `test_dispatcher_audit_hook.py:memory_enabled` fixture for the pattern.
 
 ---
 

@@ -722,3 +722,51 @@ in `provider_grants` are harmless — they're ignored when gate is off.
 
 **Security Concerns:** Rotate tokens immediately and review logs for unauthorized access
 
+---
+
+## Markdown memory vault
+
+**Source of truth:** SQLite (`memory_notes` and `summary_jobs` tables).
+
+**Filesystem view:** `/var/lib/ai-provider-service/vault/` — regenerable
+cache. *Excluded* from backups by design; if you lose it, run
+`flask vault-render --rebuild` to recreate from DB.
+
+**Background timers:**
+- `ai-provider-summary.timer` — nightly @ 02:30 UTC. Logs:
+  `/var/log/ai-provider-service/summary-job.log`.
+- `ai-provider-vault-render.timer` — every 10 min. Logs:
+  `/var/log/ai-provider-service/vault-render.log`.
+
+**Feature flag:** `MEMORY_ENABLED` in `/etc/ai-provider-service/.env`.
+Set to `false` to disable audit hook and put Memory API into 503 mode
+without restarting.
+
+**Disaster recovery for the vault directory:**
+
+```bash
+sudo rm -rf /var/lib/ai-provider-service/vault/*
+sudo -u ai-provider /opt/ai-provider-service/venv/bin/flask --app app vault-render --rebuild
+```
+
+**Deploy of Phase 1 (one-time):**
+
+```bash
+# 1. Pull branch, install unit files
+sudo cp deploy/ai-provider-summary.{service,timer} /etc/systemd/system/
+sudo cp deploy/ai-provider-vault-render.{service,timer} /etc/systemd/system/
+
+# 2. Create vault dir + SELinux context
+sudo install -d -o ai-provider -g ai-provider -m 0750 /var/lib/ai-provider-service/vault
+sudo semanage fcontext -a -t var_lib_t '/var/lib/ai-provider-service/vault(/.*)?'
+sudo restorecon -Rv /var/lib/ai-provider-service/vault
+
+# 3. Update .env (add MEMORY_ENABLED=true and the other keys)
+
+# 4. Restart service + enable timers
+sudo systemctl restart ai-provider-service
+sudo systemctl daemon-reload
+sudo systemctl enable --now ai-provider-summary.timer ai-provider-vault-render.timer
+sudo systemctl list-timers | grep ai-provider
+```
+
