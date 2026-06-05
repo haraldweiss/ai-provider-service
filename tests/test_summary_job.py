@@ -10,7 +10,8 @@ from storage.memory_models import MemoryNote, MemoryKind, SummaryJob
 
 @pytest.fixture
 def free_models(monkeypatch):
-    monkeypatch.setattr(Config, 'MEMORY_FREE_MODELS', ['ollama::mistral'])
+    import config as _config_module
+    monkeypatch.setattr(_config_module.Config, 'MEMORY_FREE_MODELS', ['ollama::mistral'])
 
 
 def _seed_audit(user_id, app_name, when, n=3):
@@ -61,7 +62,8 @@ def test_run_for_day_handles_llm_failure(app, free_models):
 
 
 def test_run_for_day_respects_max_notes_cap(app, free_models, monkeypatch):
-    monkeypatch.setattr(Config, 'SUMMARY_MAX_NOTES_PER_DAY', 2)
+    import config as _config_module
+    monkeypatch.setattr(_config_module.Config, 'SUMMARY_MAX_NOTES_PER_DAY', 2)
     with app.app_context():
         yesterday = datetime.now(timezone.utc) - timedelta(days=1)
         _seed_audit('u', 'bt', yesterday, n=5)

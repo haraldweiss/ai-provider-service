@@ -11,3 +11,4 @@ venv/
 
 # AI tooling
 .claude/
+/vault/
