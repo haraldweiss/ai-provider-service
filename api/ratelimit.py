@@ -1,10 +1,13 @@
 """In-memory sliding-window rate limiter for API endpoints."""
 
 from __future__ import annotations
+import logging
 import time
 from collections import defaultdict
 from flask import request, jsonify, g
 from functools import wraps
+
+logger = logging.getLogger(__name__)
 
 _windows: dict[str, list[float]] = defaultdict(list)
 _RATE_LIMITS: dict[str, tuple[int, int]] = {
@@ -43,6 +46,12 @@ def rate_limit(bucket: str):
                 return f(*args, **kwargs)
             limit, window = _RATE_LIMITS[bucket]
             if not _check(bucket, limit, window):
+                try:
+                    uid = g.principal.user_id
+                except (RuntimeError, AttributeError):
+                    uid = '?'
+                logger.warning('rate limit hit bucket=%s user=%s path=%s',
+                               bucket, uid, request.path)
                 return jsonify({'error': 'rate limit exceeded'}), 429
             return f(*args, **kwargs)
         return wrapper
