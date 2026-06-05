@@ -1,6 +1,7 @@
 """Opencode.ai (Zen) Client — OpenAI-compatible hosted gateway.
 Auto-retry with free model variants when balance is insufficient.
 Discovers free models from the API periodically.
+Handles reasoning_content for models that output there.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import os
 import re
 import subprocess
 import time
+from typing import Optional
 from openai import OpenAI, AuthenticationError
 from providers.base import BaseClient
 from config import Config
@@ -21,7 +23,7 @@ _BALANCE_ERR_RE = re.compile(r'insufficient balance|CreditsError', re.IGNORECASE
 
 NOTIFY_EMAIL = 'harald.weiss@wolfinisoftware.de'
 _FREE_CACHE_FILE = '/tmp/opencode_free_models.json'
-_FREE_CACHE_TTL = 86400  # 24h
+_FREE_CACHE_TTL = 86400
 
 
 def _send_notification(subject: str, body: str) -> None:
@@ -37,7 +39,6 @@ def _send_notification(subject: str, body: str) -> None:
 
 
 def _get_cached_free_models(client: OpenAI) -> list[str]:
-    """Return list of -free model IDs from API, cached for _FREE_CACHE_TTL."""
     now = time.time()
     try:
         if os.path.exists(_FREE_CACHE_FILE):
@@ -54,10 +55,6 @@ def _get_cached_free_models(client: OpenAI) -> list[str]:
             m.id for m in raw
             if m.id.endswith('-free') and m.id != 'big-pickle'
         )
-        with open(_FREE_CACHE_FILE, 'w') as f:
-            json.dump({'ts': now, 'models': free_models}, f)
-        logger.info('Discovered %d free models: %s', len(free_models), free_models)
-
         old = set()
         if os.path.exists(_FREE_CACHE_FILE + '.prev'):
             try:
@@ -69,23 +66,37 @@ def _get_cached_free_models(client: OpenAI) -> list[str]:
         if new_free:
             _send_notification(
                 'opencode.ai: Neue Free-Modelle entdeckt',
-                f'Folgende neue Free-Modelle sind verfügbar:\n'
+                f'Folgende neue Free-Modelle sind verfuegbar:\n'
                 + '\n'.join(f'  - {m}' for m in sorted(new_free))
                 + '\n\nDer Auto-Failover nutzt sie ab sofort.',
             )
-
-        # Rotate cache
         try:
             os.replace(_FREE_CACHE_FILE, _FREE_CACHE_FILE + '.prev')
         except Exception:
             pass
         with open(_FREE_CACHE_FILE, 'w') as f:
             json.dump({'ts': now, 'models': free_models}, f)
-
+        logger.info('Discovered %d free models: %s', len(free_models), free_models)
         return free_models
     except Exception as e:
         logger.warning('Failed to fetch free models: %s', e)
         return []
+
+
+def _extract_content(choice) -> str:
+    """Extract text content from a chat choice, falling back to reasoning_content."""
+    msg = getattr(choice, 'message', None) or choice.get('message', {})
+    if hasattr(msg, 'content'):
+        text = msg.content or ''
+    else:
+        text = msg.get('content') or ''
+    if not text:
+        # Some reasoning models put output in reasoning_content
+        if hasattr(msg, 'reasoning_content'):
+            text = msg.reasoning_content or ''
+        elif isinstance(msg, dict):
+            text = msg.get('reasoning_content', '')
+    return text
 
 
 class OpencodeClient(BaseClient):
@@ -115,8 +126,9 @@ class OpencodeClient(BaseClient):
             r = self.client.chat.completions.create(
                 model=clean, messages=messages, max_tokens=max_tokens
             )
+            text = _extract_content(r.choices[0])
             return {
-                'content': [{'text': r.choices[0].message.content}],
+                'content': [{'text': text}],
                 'usage': {
                     'input_tokens': r.usage.prompt_tokens,
                     'output_tokens': r.usage.completion_tokens,
@@ -127,15 +139,11 @@ class OpencodeClient(BaseClient):
             if not _BALANCE_ERR_RE.search(err_body):
                 raise
 
-            # Balance error — try free model variants in order
             tried_models = []
-
-            # 1) If the original model has a -free variant, try it first
             if not clean.endswith('-free'):
                 free_candidate = clean + '-free'
                 tried_models.append(free_candidate)
 
-            # 2) Discover all -free models from API, sorted by name
             discovered = self.get_free_models()
             for fm in discovered:
                 if fm not in tried_models and fm != clean:
@@ -150,6 +158,7 @@ class OpencodeClient(BaseClient):
                     r2 = self.client.chat.completions.create(
                         model=fallback_model, messages=messages, max_tokens=max_tokens
                     )
+                    text2 = _extract_content(r2.choices[0])
                     _send_notification(
                         'opencode.ai: Auto-Failover zu Free-Modell',
                         f'Das bezahlte Modell "{clean}" hat kein Guthaben mehr.\n'
@@ -157,7 +166,7 @@ class OpencodeClient(BaseClient):
                         f'Guthaben aufladen: https://opencode.ai/workspace/wrk_01KSKQJKEA4AQ3KV75MPTVNR3R/billing',
                     )
                     return {
-                        'content': [{'text': r2.choices[0].message.content}],
+                        'content': [{'text': text2}],
                         'usage': {
                             'input_tokens': r2.usage.prompt_tokens,
                             'output_tokens': r2.usage.completion_tokens,
@@ -168,7 +177,6 @@ class OpencodeClient(BaseClient):
                 except AuthenticationError:
                     continue
 
-            # All free models also failed with balance error
             raise
 
     def health(self) -> bool:
