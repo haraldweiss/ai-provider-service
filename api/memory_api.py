@@ -15,6 +15,8 @@ from api.auth import require_token, _asserted_user_id
 from storage.memory_models import MemoryNote, MemoryKind
 from storage.memory import MemoryWriter, NoteAlreadyExists
 from storage.vault_renderer import VaultRenderer
+from storage.sanitize import sanitize_for_summary
+from api.ratelimit import rate_limit
 
 memory_bp = Blueprint('memory', __name__, url_prefix='/memory')
 
@@ -37,6 +39,7 @@ def _scope_user_id() -> str:
 
 @memory_bp.post('/notes')
 @require_token
+@rate_limit('memory:write')
 def create_note():
     gate = _gate()
     if gate:
@@ -76,6 +79,7 @@ def create_note():
 
 @memory_bp.get('/notes')
 @require_token
+@rate_limit('memory:read')
 def list_notes():
     gate = _gate()
     if gate:
@@ -179,6 +183,7 @@ def delete_note(note_id: int):
 
 @memory_bp.post('/events')
 @require_token
+@rate_limit('memory:write')
 def create_event():
     gate = _gate()
     if gate:
@@ -284,6 +289,7 @@ def list_summaries():
 
 @memory_bp.post('/notes/<int:note_id>/summarize')
 @require_token
+@rate_limit('memory:write')
 def summarize_note(note_id: int):
     gate = _gate()
     if gate:
@@ -319,9 +325,11 @@ def _call_summary_model(title: str, body: str, models: list) -> tuple:
     """
     from dispatcher import _execute
     last_err = None
+    safe_title = sanitize_for_summary(title, 500)
+    safe_body = sanitize_for_summary(body, 4000)
     prompt = (
         'Summarize the following note in 1-3 sentences. Respond with the summary only.\n\n'
-        f'Title: {title}\n\n{body}'
+        f'Title: {safe_title}\n\n{safe_body}'
     )
     messages = [{'role': 'user', 'content': prompt}]
     for spec in models:

@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # © 2026 Harald Weiss
 #
-# Quadlet for the AI Provider Service (Multi-Provider Chat Gateway).
-# Install on the VPS by copying to /etc/containers/systemd/ and running
-# `systemctl daemon-reload && systemctl start ai-provider.service`.
+# NOTE: This Quadlet is OBSOLETE for current VPS deployment.
+# The service now runs via /etc/systemd/system/ai-provider.service
+# (see ai-provider.service in this directory) because podman 4→5
+# broke the podman1 bridge IP (10.88.0.1 → 10.89.0.1) and :Z volume
+# labels cause MCS mismatch. The systemd unit uses --security-opt
+# label=disable instead.
 #
-# Host services (daily-roundup, bewerbungen) use 127.0.0.1:8767.
-# Container consumers (claudetracker) use host.containers.internal:8767
-# which resolves to the podman1 bridge IP (10.88.0.1).
+# Keep this file as reference for future Quadlet-based deploys once
+# podman/podman-compat is fixed.
 
 [Unit]
 Description=AI Provider Service (Multi-Provider Chat Gateway)
@@ -18,27 +20,23 @@ Wants=network-online.target
 Image=localhost/ai-provider:latest
 ContainerName=ai-provider
 
-# Dual-bind: host loopback for host services, podman1 bridge for containers.
 PublishPort=127.0.0.1:8767:8767
-PublishPort=10.88.0.1:8767:8767
+
+# SELinux label disabled — MCS mismatch between podman 5 bridge and :Z/:z
+SecurityLabelDisable=true
 
 # Persistent SQLite DB + pricing overrides outside the image.
-Volume=/opt/ai-provider-data:/app/data:Z
-# Mount pricing_overrides.json individually so CLI writes persist across rebuilds.
-Volume=/opt/ai-provider-data/pricing_overrides.json:/app/pricing_overrides.json:Z
+Volume=/opt/ai-provider-data:/app/data
+Volume=/opt/ai-provider-data/pricing_overrides.json:/app/pricing_overrides.json
 
-# Health check runs inside the container (curl is installed in the image).
-# Note: the Dockerfile HEALTHCHECK is silently ignored under OCI format.
 HealthCmd=curl -fsS http://127.0.0.1:8767/health
 HealthInterval=30s
 HealthTimeout=5s
 HealthRetries=3
 HealthStartPeriod=15s
 
-# Secrets file lives on the host (root:root, mode 0600). Never in git.
 EnvironmentFile=/etc/ai-provider/ai-provider.env
 
-# Non-secret defaults.
 Environment=DATABASE_URL=sqlite:////app/data/storage.db
 Environment=TZ=Europe/Berlin
 Environment=HOST=0.0.0.0

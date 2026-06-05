@@ -13,8 +13,10 @@ from pathlib import Path
 from flask import Blueprint, request, jsonify, send_file, g
 from config import Config
 from api.auth import require_token, _asserted_user_id
+from api.ratelimit import rate_limit
 
 vault_bp = Blueprint('vault', __name__, url_prefix='/memory')
+_TARBALL_MAX_BYTES = 256 * 1024 * 1024  # 256 MiB cap
 
 
 def _gate():
@@ -31,16 +33,34 @@ def _scope_user_id() -> str:
 
 @vault_bp.get('/vault.tar.gz')
 @require_token
+@rate_limit('vault:export')
 def vault_tarball():
     gate = _gate()
     if gate:
         return gate
     user_id = _scope_user_id()
     root = Path(Config.VAULT_PATH) / user_id
+    if not root.exists():
+        return jsonify({'error': 'no vault content'}), 404
+
     buf = io.BytesIO()
+    total = 0
+    root_resolved = root.resolve()
     with tarfile.open(fileobj=buf, mode='w:gz') as t:
-        if root.exists():
-            t.add(str(root), arcname=user_id)
+        for entry in root.rglob('*'):
+            if not entry.is_file() or entry.is_symlink():
+                continue
+            candidate = entry.resolve()
+            try:
+                candidate.relative_to(root_resolved)
+            except ValueError:
+                continue
+            if total > _TARBALL_MAX_BYTES:
+                continue
+            rel = str(candidate.relative_to(root_resolved))
+            arcname = f'{user_id}/{rel}'
+            t.add(str(candidate), arcname=arcname)
+            total += candidate.stat().st_size
     buf.seek(0)
     return send_file(buf, mimetype='application/gzip',
                      as_attachment=True,

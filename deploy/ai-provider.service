@@ -1,15 +1,21 @@
 [Unit]
 Description=AI Provider Service (Multi-Provider Chat Gateway)
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-Type=simple
-WorkingDirectory=/var/www/ai-provider-service
-# bash-Wrapper notwendig wegen SELinux-Behandlung von venv-Symlinks (gleiches
-# Pattern wie bewerbungen.service). .env wird von python-dotenv geladen.
-ExecStart=/bin/bash -c 'exec /var/www/ai-provider-service/venv/bin/gunicorn --workers 2 --worker-class sync --bind 127.0.0.1:8767 --timeout 120 --access-logfile /var/log/ai-provider/access.log --error-logfile /var/log/ai-provider/error.log "app:create_app()"'
-Restart=always
-RestartSec=10
+ExecStartPre=/usr/bin/podman rm -f ai-provider
+ExecStartPre=-/usr/sbin/fuser -k 8767/tcp
+ExecStart=/usr/bin/podman run --name ai-provider --security-opt label=disable \
+  -v /opt/ai-provider-data/storage.db:/app/data/storage.db \
+  -v /var/lib/ai-provider-service/vault:/var/lib/ai-provider-service/vault \
+  --publish 127.0.0.1:8767:8767 \
+  --env-file /etc/ai-provider/ai-provider.env \
+  localhost/ai-provider:latest
+ExecStop=/usr/bin/podman stop -t 3 ai-provider
+ExecStopPost=-/usr/sbin/fuser -k 8767/tcp
+Restart=on-failure
+RestartSec=5
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
