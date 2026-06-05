@@ -39,6 +39,7 @@ def create_app() -> Flask:
     with app.app_context():
         # Models importieren, damit Tables registriert werden.
         from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile  # noqa: F401
+        from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
         db.create_all()
 
     # Blueprints
