@@ -521,6 +521,32 @@ DELETE /admin/grants/<id>      → 204 (soft-delete)
 GET    /admin/overview         → {users: [...]}
 ```
 
+## Markdown memory (Phase 1)
+
+Per-user audit + app-written notes are persisted in the DB and rendered as
+`.md` files under `VAULT_PATH`. Open the vault in Obsidian or rsync it down
+via `GET /memory/vault.tar.gz`.
+
+**Required env vars** (`.env`):
+
+```
+MEMORY_ENABLED=true
+VAULT_PATH=/var/lib/ai-provider-service/vault
+SUMMARY_PROFILE=cheap-first
+SUMMARY_MAX_NOTES_PER_DAY=200
+MEMORY_FREE_MODELS=ollama::mistral,opencode::deepseek-v4-flash-free
+```
+
+Source of truth is SQLite. The vault directory is a regenerable cache —
+do not back it up, do not edit files directly. See
+`docs/superpowers/specs/2026-06-05-markdown-memory-design.md` for the
+design rationale.
+
+CLI:
+- `flask summary-job --period=day --yesterday` — nightly aggregate
+- `flask vault-render --rebuild` — full re-render from DB
+- `flask vault-render --check-stale` — self-heal cron entrypoint
+
 ## Limitationen
 
 - **Single-Instance:** SQLite-DB ist nicht für mehrere Service-Instanzen
