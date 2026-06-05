@@ -6,6 +6,7 @@ to write on their behalf.
 """
 
 from __future__ import annotations
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import or_
 from database import db
@@ -231,3 +232,119 @@ def list_events():
         return jsonify({'error': 'limit must be integer'}), 400
     rows = q.order_by(MemoryNote.created_at.desc()).limit(limit).all()
     return jsonify({'events': [r.to_dict() for r in rows]})
+
+
+@memory_bp.get('/audit')
+@require_token
+def list_audit():
+    gate = _gate()
+    if gate:
+        return gate
+    user_id = _scope_user_id()
+    q = MemoryNote.query.filter(
+        MemoryNote.user_id == user_id,
+        MemoryNote.kind == MemoryKind.AUDIT,
+        MemoryNote.deleted_at.is_(None),
+    )
+    if app_filter := request.args.get('app'):
+        q = q.filter(MemoryNote.app == app_filter)
+    try:
+        limit = min(int(request.args.get('limit', '50')), 500)
+    except ValueError:
+        return jsonify({'error': 'limit must be integer'}), 400
+    rows = q.order_by(MemoryNote.created_at.desc()).limit(limit).all()
+    return jsonify({'notes': [r.to_dict() for r in rows]})
+
+
+@memory_bp.get('/summaries')
+@require_token
+def list_summaries():
+    gate = _gate()
+    if gate:
+        return gate
+    user_id = _scope_user_id()
+    q = MemoryNote.query.filter(
+        MemoryNote.user_id == user_id,
+        MemoryNote.kind == MemoryKind.SUMMARY,
+        MemoryNote.deleted_at.is_(None),
+    )
+    if period := request.args.get('period'):
+        kind_label, _, value = period.partition(':')
+        if kind_label == 'day':
+            q = q.filter(MemoryNote.folder == '_index/by-day',
+                         MemoryNote.slug == value)
+        elif kind_label == 'app':
+            q = q.filter(MemoryNote.folder == '_index/by-app',
+                         MemoryNote.slug == value)
+        else:
+            return jsonify({'error': f'unknown period: {period}'}), 400
+    rows = q.order_by(MemoryNote.created_at.desc()).limit(200).all()
+    return jsonify({'summaries': [r.to_dict() for r in rows]})
+
+
+@memory_bp.post('/notes/<int:note_id>/summarize')
+@require_token
+def summarize_note(note_id: int):
+    gate = _gate()
+    if gate:
+        return gate
+    user_id = _scope_user_id()
+    n = MemoryNote.query.filter_by(id=note_id, user_id=user_id).first()
+    if not n or n.deleted_at is not None:
+        return jsonify({'error': 'not found'}), 404
+    if not Config.MEMORY_FREE_MODELS:
+        return jsonify({'error': 'no free models configured'}), 503
+    try:
+        summary_text, model_used = _call_summary_model(
+            n.title, n.body, Config.MEMORY_FREE_MODELS,
+        )
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 503
+
+    summary_note = MemoryWriter().write_summary(
+        user_id=user_id, period=f'app:per-note-{n.id}',
+        body=summary_text, source_ids=[n.id], model_used=model_used,
+    )
+    try:
+        VaultRenderer().render_one(summary_note)
+    except Exception:
+        pass
+    return jsonify({'summary': summary_note.to_dict()})
+
+
+def _call_summary_model(title: str, body: str, models: list) -> tuple:
+    """Call providers in order. Return (summary_text, model_used).
+
+    Each entry is '<provider_id>::<model>'. Raises RuntimeError if all fail.
+    """
+    from dispatcher import _execute
+    last_err = None
+    prompt = (
+        'Summarize the following note in 1-3 sentences. Respond with the summary only.\n\n'
+        f'Title: {title}\n\n{body}'
+    )
+    messages = [{'role': 'user', 'content': prompt}]
+    for spec in models:
+        provider_id, _, model = spec.partition('::')
+        if not provider_id or not model:
+            continue
+        try:
+            result = _execute(
+                user_id='__summary__', provider_id=provider_id, model=model,
+                messages=messages, max_tokens=300,
+                config_override={}, origin_app='memory-summarize',
+            )
+        except Exception as e:
+            last_err = e
+            continue
+        text = ''
+        if isinstance(result, dict):
+            if isinstance(result.get('content'), str):
+                text = result['content']
+            elif isinstance(result.get('content'), list):
+                text = '\n'.join(b.get('text', '') for b in result['content']
+                                 if isinstance(b, dict))
+        if text:
+            return text.strip(), spec
+        last_err = RuntimeError('empty response')
+    raise RuntimeError(f'all free models failed: {last_err}')
