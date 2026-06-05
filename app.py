@@ -41,6 +41,8 @@ def create_app() -> Flask:
         from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile  # noqa: F401
         from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
         db.create_all()
+        from storage.fts import ensure_fts
+        ensure_fts()
 
     # Blueprints
     from api.providers_api import providers_bp

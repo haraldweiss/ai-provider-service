@@ -101,19 +101,24 @@ def list_notes():
         q = q.filter(MemoryNote.app == app_filter)
     if folder := request.args.get('folder'):
         q = q.filter(MemoryNote.folder == folder)
-    if text := request.args.get('q'):
-        pat = f'%{text}%'
-        q = q.filter(or_(MemoryNote.title.like(pat), MemoryNote.body.like(pat)))
-
     try:
         limit = min(int(request.args.get('limit', '50')), 500)
         offset = max(int(request.args.get('offset', '0')), 0)
     except ValueError:
         return jsonify({'error': 'limit/offset must be integers'}), 400
 
-    total = q.count()
-    rows = (q.order_by(MemoryNote.created_at.desc())
-              .limit(limit).offset(offset).all())
+    if text := request.args.get('q'):
+        from storage.fts import search
+        ids = search(text, user_id=user_id, limit=limit, offset=offset)
+        if not ids:
+            return jsonify({'notes': [], 'total': 0})
+        q = q.filter(MemoryNote.id.in_(ids))
+        total = q.count()
+        rows = q.order_by(MemoryNote.created_at.desc()).all()
+    else:
+        total = q.count()
+        rows = (q.order_by(MemoryNote.created_at.desc())
+                  .limit(limit).offset(offset).all())
     return jsonify({'notes': [r.to_dict() for r in rows], 'total': total})
 
 
