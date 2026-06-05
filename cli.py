@@ -178,3 +178,24 @@ def summary_job_command(period, date_str, app_name, yesterday):
         click.echo(f'Ran {len(jobs)} summary jobs for app {app_name}.')
         for j in jobs:
             click.echo(f'  {j.user_id}: {j.status} (model={j.model_used or "-"})')
+
+
+@click.command('vault-render')
+@click.option('--rebuild', is_flag=True, help='Re-render every live note.')
+@click.option('--check-stale', 'check_stale', is_flag=True,
+              help='Only re-render notes whose DB row is newer than the file (or missing).')
+@click.option('--user', default=None, help='Restrict to one user (with --rebuild).')
+def vault_render_command(rebuild, check_stale, user):
+    """Render or repair the filesystem vault from the database."""
+    from storage.vault_renderer import VaultRenderer
+    r = VaultRenderer()
+    if rebuild:
+        n = r.rebuild_all(user_id=user)
+        click.echo(f'rendered {n} notes')
+    elif check_stale:
+        n = r.check_stale()
+        removed = r.cleanup_deleted()
+        click.echo(f'rendered {n} stale notes; cleaned up {removed} deleted')
+    else:
+        click.echo('pass --rebuild or --check-stale', err=True)
+        raise click.Abort()
