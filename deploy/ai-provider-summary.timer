@@ -1,0 +1,10 @@
+[Unit]
+Description=ai-provider-service nightly summary job timer
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+Unit=ai-provider-summary.service
+
+[Install]
+WantedBy=timers.target

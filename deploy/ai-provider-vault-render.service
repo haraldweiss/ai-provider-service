@@ -1,0 +1,14 @@
+[Unit]
+Description=ai-provider-service vault self-heal
+After=ai-provider-service.service
+Requires=ai-provider-service.service
+
+[Service]
+Type=oneshot
+User=ai-provider
+Group=ai-provider
+WorkingDirectory=/opt/ai-provider-service
+EnvironmentFile=/etc/ai-provider-service/.env
+ExecStart=/opt/ai-provider-service/venv/bin/flask --app app vault-render --check-stale
+StandardOutput=append:/var/log/ai-provider-service/vault-render.log
+StandardError=inherit
