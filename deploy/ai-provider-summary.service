@@ -1,14 +1,10 @@
 [Unit]
 Description=ai-provider-service nightly summary job
-After=ai-provider-service.service
-Requires=ai-provider-service.service
+After=ai-provider.service
+Requires=ai-provider.service
 
 [Service]
 Type=oneshot
-User=ai-provider
-Group=ai-provider
-WorkingDirectory=/opt/ai-provider-service
-EnvironmentFile=/etc/ai-provider-service/.env
-ExecStart=/opt/ai-provider-service/venv/bin/flask --app app summary-job --period=day --yesterday
+ExecStart=/usr/bin/podman exec ai-provider flask summary-job --period=day --yesterday
 StandardOutput=append:/var/log/ai-provider-service/summary-job.log
 StandardError=inherit
