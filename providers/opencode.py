@@ -1,11 +1,15 @@
 """Opencode.ai (Zen) Client — OpenAI-compatible hosted gateway.
-Auto-retry with -free model variant when balance is insufficient.
+Auto-retry with free model variants when balance is insufficient.
+Discovers free models from the API periodically.
 """
 
 from __future__ import annotations
+import json
 import logging
+import os
 import re
 import subprocess
+import time
 from openai import OpenAI, AuthenticationError
 from providers.base import BaseClient
 from config import Config
@@ -16,6 +20,8 @@ _MODEL_PREFIX_RE = re.compile(r'^(?:opencode-go/|opencode-)', re.IGNORECASE)
 _BALANCE_ERR_RE = re.compile(r'insufficient balance|CreditsError', re.IGNORECASE)
 
 NOTIFY_EMAIL = 'harald.weiss@wolfinisoftware.de'
+_FREE_CACHE_FILE = '/tmp/opencode_free_models.json'
+_FREE_CACHE_TTL = 86400  # 24h
 
 
 def _send_notification(subject: str, body: str) -> None:
@@ -28,6 +34,58 @@ def _send_notification(subject: str, body: str) -> None:
         logger.info('Notification sent: %s', subject)
     except Exception as e:
         logger.warning('Failed to send notification: %s', e)
+
+
+def _get_cached_free_models(client: OpenAI) -> list[str]:
+    """Return list of -free model IDs from API, cached for _FREE_CACHE_TTL."""
+    now = time.time()
+    try:
+        if os.path.exists(_FREE_CACHE_FILE):
+            with open(_FREE_CACHE_FILE) as f:
+                cached = json.load(f)
+            if now - cached.get('ts', 0) < _FREE_CACHE_TTL:
+                return cached['models']
+    except Exception:
+        pass
+
+    try:
+        raw = client.models.list()
+        free_models = sorted(
+            m.id for m in raw
+            if m.id.endswith('-free') and m.id != 'big-pickle'
+        )
+        with open(_FREE_CACHE_FILE, 'w') as f:
+            json.dump({'ts': now, 'models': free_models}, f)
+        logger.info('Discovered %d free models: %s', len(free_models), free_models)
+
+        old = set()
+        if os.path.exists(_FREE_CACHE_FILE + '.prev'):
+            try:
+                with open(_FREE_CACHE_FILE + '.prev') as pf:
+                    old = set(json.load(pf).get('models', []))
+            except Exception:
+                pass
+        new_free = set(free_models) - old
+        if new_free:
+            _send_notification(
+                'opencode.ai: Neue Free-Modelle entdeckt',
+                f'Folgende neue Free-Modelle sind verfügbar:\n'
+                + '\n'.join(f'  - {m}' for m in sorted(new_free))
+                + '\n\nDer Auto-Failover nutzt sie ab sofort.',
+            )
+
+        # Rotate cache
+        try:
+            os.replace(_FREE_CACHE_FILE, _FREE_CACHE_FILE + '.prev')
+        except Exception:
+            pass
+        with open(_FREE_CACHE_FILE, 'w') as f:
+            json.dump({'ts': now, 'models': free_models}, f)
+
+        return free_models
+    except Exception as e:
+        logger.warning('Failed to fetch free models: %s', e)
+        return []
 
 
 class OpencodeClient(BaseClient):
@@ -44,6 +102,9 @@ class OpencodeClient(BaseClient):
         except Exception as e:
             logger.warning(f'Opencode get_models failed: {e}')
             return []
+
+    def get_free_models(self) -> list[str]:
+        return _get_cached_free_models(self.client)
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
         clean = _MODEL_PREFIX_RE.sub('', model)
@@ -63,30 +124,51 @@ class OpencodeClient(BaseClient):
             }
         except AuthenticationError as e:
             err_body = str(e)
-            if _BALANCE_ERR_RE.search(err_body) and not clean.endswith('-free'):
-                free_model = clean + '-free'
-                logger.warning(
-                    'Balance insufficient for model=%s, retrying with %s',
-                    clean, free_model,
-                )
-                _send_notification(
-                    'opencode.ai: Auto-Failover zu Free-Modell',
-                    f'Das bezahlte Modell "{clean}" hat kein Guthaben mehr.\n'
-                    f'Automatischer Failover auf Free-Variante "{free_model}".\n\n'
-                    f'Fehler: {err_body[:300]}\n\n'
-                    f'Guthaben aufladen: https://opencode.ai/workspace/wrk_01KSKQJKEA4AQ3KV75MPTVNR3R/billing',
-                )
-                r2 = self.client.chat.completions.create(
-                    model=free_model, messages=messages, max_tokens=max_tokens
-                )
-                return {
-                    'content': [{'text': r2.choices[0].message.content}],
-                    'usage': {
-                        'input_tokens': r2.usage.prompt_tokens,
-                        'output_tokens': r2.usage.completion_tokens,
-                    },
-                    'balance_failover': True,
-                }
+            if not _BALANCE_ERR_RE.search(err_body):
+                raise
+
+            # Balance error — try free model variants in order
+            tried_models = []
+
+            # 1) If the original model has a -free variant, try it first
+            if not clean.endswith('-free'):
+                free_candidate = clean + '-free'
+                tried_models.append(free_candidate)
+
+            # 2) Discover all -free models from API, sorted by name
+            discovered = self.get_free_models()
+            for fm in discovered:
+                if fm not in tried_models and fm != clean:
+                    tried_models.append(fm)
+
+            for fallback_model in tried_models:
+                try:
+                    logger.warning(
+                        'Balance insufficient for model=%s, trying free=%s',
+                        clean, fallback_model,
+                    )
+                    r2 = self.client.chat.completions.create(
+                        model=fallback_model, messages=messages, max_tokens=max_tokens
+                    )
+                    _send_notification(
+                        'opencode.ai: Auto-Failover zu Free-Modell',
+                        f'Das bezahlte Modell "{clean}" hat kein Guthaben mehr.\n'
+                        f'Automatischer Failover auf "{fallback_model}".\n\n'
+                        f'Guthaben aufladen: https://opencode.ai/workspace/wrk_01KSKQJKEA4AQ3KV75MPTVNR3R/billing',
+                    )
+                    return {
+                        'content': [{'text': r2.choices[0].message.content}],
+                        'usage': {
+                            'input_tokens': r2.usage.prompt_tokens,
+                            'output_tokens': r2.usage.completion_tokens,
+                        },
+                        'balance_failover': True,
+                        'balance_failover_model': fallback_model,
+                    }
+                except AuthenticationError:
+                    continue
+
+            # All free models also failed with balance error
             raise
 
     def health(self) -> bool:
