@@ -101,6 +101,11 @@ def list_notes():
         q = q.filter(MemoryNote.app == app_filter)
     if folder := request.args.get('folder'):
         q = q.filter(MemoryNote.folder == folder)
+    if tags_filter := request.args.get('tags'):
+        wanted = [t.strip() for t in tags_filter.split(',') if t.strip()]
+        if wanted:
+            for tag in wanted:
+                q = q.filter(MemoryNote.tags.contains(tag))
     try:
         limit = min(int(request.args.get('limit', '50')), 500)
         offset = max(int(request.args.get('offset', '0')), 0)
@@ -220,8 +225,32 @@ def create_event():
                     'render_pending': render_pending}), 201
 
 
+@memory_bp.get('/tags')
+@require_token
+def list_tags():
+    gate = _gate()
+    if gate:
+        return gate
+    user_id = _scope_user_id()
+    q = MemoryNote.query.filter(
+        MemoryNote.user_id == user_id,
+        MemoryNote.deleted_at.is_(None),
+    )
+    from sqlalchemy import func
+    raw_tags = q.with_entities(MemoryNote.tags).all()
+    seen = set()
+    out = []
+    for (tags_val,) in raw_tags:
+        for t in (tags_val or []):
+            if t not in seen:
+                seen.add(t)
+                out.append(t)
+    return jsonify({'tags': sorted(out)})
+
+
 @memory_bp.get('/events')
 @require_token
+@rate_limit('memory:read')
 def list_events():
     gate = _gate()
     if gate:
