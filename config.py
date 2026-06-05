@@ -44,6 +44,15 @@ class Config:
     # Flask sessions (admin UI cookie)
     SECRET_KEY = os.getenv('SECRET_KEY', '')
 
+    # Markdown memory (Phase 1)
+    VAULT_PATH = os.getenv('VAULT_PATH', os.path.join(os.path.dirname(__file__), 'vault'))
+    MEMORY_ENABLED = os.getenv('MEMORY_ENABLED', 'false').lower() == 'true'
+    SUMMARY_PROFILE = os.getenv('SUMMARY_PROFILE', 'cheap-first')
+    SUMMARY_MAX_NOTES_PER_DAY = int(os.getenv('SUMMARY_MAX_NOTES_PER_DAY', '200'))
+    MEMORY_FREE_MODELS = [
+        m.strip() for m in os.getenv('MEMORY_FREE_MODELS', '').split(',') if m.strip()
+    ]
+
     @classmethod
     def validate(cls):
         missing = []
