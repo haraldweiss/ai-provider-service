@@ -146,3 +146,35 @@ def update_opencode_pricing_command():
     except Exception as e:
         click.echo(f'Error: {e}', err=True)
         raise click.Abort()
+
+
+@click.command('summary-job')
+@click.option('--period', default='day', type=click.Choice(['day', 'app']),
+              help='Aggregate by day or by app.')
+@click.option('--date', 'date_str', default=None,
+              help='Target date (YYYY-MM-DD); for --period=day. Defaults to yesterday.')
+@click.option('--app', 'app_name', default=None,
+              help='App name; required for --period=app.')
+@click.option('--yesterday', is_flag=True, help='Shortcut for --date=<yesterday>.')
+def summary_job_command(period, date_str, app_name, yesterday):
+    """Run summarization for a calendar day or for an app's last 30 days."""
+    from datetime import date, datetime, timedelta, timezone
+    from agents.summary_job import run_for_day, run_for_app
+
+    if period == 'day':
+        if yesterday or not date_str:
+            target = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        else:
+            target = date.fromisoformat(date_str)
+        jobs = run_for_day(target)
+        click.echo(f'Ran {len(jobs)} summary jobs for {target}.')
+        for j in jobs:
+            click.echo(f'  {j.user_id}: {j.status} (model={j.model_used or "-"})')
+    else:
+        if not app_name:
+            click.echo('--app=<name> required for --period=app', err=True)
+            raise click.Abort()
+        jobs = run_for_app(app_name)
+        click.echo(f'Ran {len(jobs)} summary jobs for app {app_name}.')
+        for j in jobs:
+            click.echo(f'  {j.user_id}: {j.status} (model={j.model_used or "-"})')
