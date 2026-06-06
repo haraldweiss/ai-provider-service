@@ -70,7 +70,59 @@ class VaultRenderer:
             if db_updated > mtime:
                 self.render_one(n)
                 count += 1
+        # The self-heal pass also removes orphan .md files (files on disk
+        # without a matching live DB row). This catches hand-written or
+        # leftover-from-deleted-app files that would otherwise accumulate.
+        self.cleanup_orphans()
         return count
+
+    def cleanup_orphans(self, user_id: Optional[str] = None) -> int:
+        """Remove `.md` files in the vault that have no matching live DB row.
+
+        Walks `VAULT_PATH/<user>/...` (or only `<user_id>` if given). For each
+        `.md` file, derives `(user, folder, slug)` from the path and checks
+        against live (non-soft-deleted) `MemoryNote` rows. Files with no
+        matching row are deleted. Returns count removed.
+
+        Non-`.md` files are ignored on purpose so users can keep `.obsidian/`
+        configs and other side-files in the vault tree.
+        """
+        root = Path(Config.VAULT_PATH)
+        if not root.exists():
+            return 0
+
+        # Build the set of live (user, folder, slug) tuples once.
+        q = (db.session.query(MemoryNote.user_id,
+                              MemoryNote.folder,
+                              MemoryNote.slug)
+             .filter(MemoryNote.deleted_at.is_(None)))
+        if user_id:
+            q = q.filter(MemoryNote.user_id == user_id)
+        alive = {(u, f, s) for u, f, s in q.all()}
+
+        # Decide which user subtree(s) to scan.
+        if user_id:
+            target = root / user_id
+            user_roots = [target] if target.exists() and target.is_dir() else []
+        else:
+            user_roots = [d for d in root.iterdir() if d.is_dir()]
+
+        removed = 0
+        for user_root in user_roots:
+            u = user_root.name
+            for md in user_root.rglob('*.md'):
+                if not md.is_file():
+                    continue
+                rel = md.relative_to(user_root)
+                folder = str(rel.parent).replace(os.sep, '/')
+                slug = md.stem
+                if (u, folder, slug) not in alive:
+                    try:
+                        md.unlink()
+                        removed += 1
+                    except OSError as e:
+                        logger.warning(f'vault orphan unlink failed for {md}: {e}')
+        return removed
 
     def _path_for(self, note: MemoryNote) -> Path:
         root = Path(Config.VAULT_PATH)
