@@ -256,12 +256,14 @@ and `systemctl restart ai-provider.service`.
 - PR [#16](https://github.com/haraldweiss/ai-provider-service/pull/16) — `VaultRenderer.cleanup_orphans()` läuft am Ende von `check_stale()`. Walk `VAULT_PATH/<user>/...`, vergleicht `(user, folder, slug)` gegen live DB-rows, entfernt `.md`-Files ohne Match. Non-`.md`-Files (z.B. `.obsidian/*`) bleiben unangetastet. Self-Heal-Cron räumt jetzt also auch hand-geschriebene/leftover `.md` weg.
 - VPS-Image-Hash nach Deploy: `bdfff82d2938`. Smoke verified: PROPFIND mit Basic → 207, wrong-password → 401+WWW-Authenticate, 3 alte Deploy-Smoke-Test-`.md` automatisch aufgeräumt.
 
-**Obsidian-WebDAV serverseitig deployed** (2026-06-06):
+**Obsidian-WebDAV deployed + Phase 2.1 + Regression-Fix** (2026-06-06):
 - Plugin: [Remotely Save](https://github.com/remotely-save/remotely-save)
 - WebDAV-URL: `https://bewerbungen.wolfinisoftware.de/ai-provider/memory/dav`
 - Auth: Basic, Username = `<user_id>`, Password = `SERVICE_TOKEN` aus `/etc/ai-provider/ai-provider.env`
-- PR [#17](https://github.com/haraldweiss/ai-provider-service/pull/17) — eigener OPTIONS-Handler mit korrekten `Allow: OPTIONS, PROPFIND, GET, PUT, MKCOL` + `DAV: 1, 2` + `MS-Author-Via: DAV` Headers. Auto-Flask-OPTIONS gab nur `Allow: PROPFIND, OPTIONS` zurück was Capability-Discovery vieler Clients abbricht. VPS-Image nach Deploy: `ace533395225`.
-- **Client-side sync status: OFFEN.** Remotely Save zeigt "Failed to sync just now" mit leerem `error: [{}]` im Plugin-Log. Apache-Access-Log zeigt 0 requests vom Plugin — die Requests kommen gar nicht beim Server an. Server-seitig verifiziert sauber (curl PROPFIND/GET/PUT/OPTIONS alle 200/204/207 mit Basic Auth). Hypothese: Plugin-Config falsch (Service-Type, URL-Typo) oder Plugin macht request gar nicht weil internal validation fails. Pickup: User-Screenshot von Settings → Remotely Save + DevTools-Network-Tab nach Sync-Versuch.
+- PR [#17](https://github.com/haraldweiss/ai-provider-service/pull/17) — eigener OPTIONS-Handler mit `Allow: OPTIONS, PROPFIND, GET, PUT, MKCOL, DELETE` + `DAV: 1, 2` + `MS-Author-Via: DAV`. Capability-Discovery sauber.
+- Commit `057a19e` (Phase 2.1) — WebDAV `PUT` legt ab jetzt **DB-Row via `_upsert_note_from_path()`** an (vorher nur Filesystem → orphan-cleanup hat neue Obsidian-Notes innerhalb 10 Min gelöscht). `DELETE` soft-deletes die DB-Row + removed File. Add `DELETE` zum Allow-Header.
+- **Regression in Merge-Commit `d10258e`** verloren: `webdav_bp`-Registrierung in `app.py`, `ensure_fts()` call und `vault_backup_command` import — alle drei beim Konflikt-Resolve aus app.py gefallen. Folge: `/memory/dav/*` lieferte **404**, Obsidian-Sync war seit Phase 1.5 nie erreichbar (war nie ein Client-Problem). Sub-suite 18 tests failed silently. Fix: Commit `e51e340` — restore aller drei Bits aus History (1d4cfd8 + 8c6c20b). VPS-Image nach Deploy: `a7a5523519`. Tests 194/194 grün. Live: PROPFIND → 207, OPTIONS deklariert alle 6 Methoden inkl. DELETE.
+- **Phase 2.1 ist damit live.** Obsidian-Edits via Remotely Save → WebDAV PUT → upsert DB-Row + File. Self-Heal-Cron räumt Obsidian-erzeugte Notes nicht mehr weg.
 
 **Drei Seed-Notes für `harald` angelegt** (2026-06-06, über API):
 - `gateway/notes/welcome-to-your-memory-vault.md` (id=2, kind=note)
@@ -281,11 +283,11 @@ and `systemctl restart ai-provider.service`.
 - `systemctl disable --now news-agent.timer` (dispatch() kwarg-mismatch — Chip: "Fix news-agent: dispatch() tools-arg mismatch")
 - `/etc/systemd/system/news-agent.service` — `Requires=`/`After=` von `ai-provider-service.service` auf `ai-provider.service` korrigiert (Quadlet-Rename); .bak liegt daneben
 
-**Phase 2.1 brainstorming gestartet, NICHT abgeschlossen** (2026-06-06):
-- Scope-Frage gestellt (S1=PUT only / S2=PUT+DELETE / S3=PUT+DELETE+MOVE+COPY), Empfehlung war S2
-- User hat NICHT geantwortet weil Debug-Priorität (WebDAV-Sync-Fail, dann Mail-Spam-Fixes) reinkam
-- Pickup: erst WebDAV-Client-Debug klären, dann Brainstorming fortsetzen mit Scope-Antwort
-- Motivation Phase 2.1: WebDAV PUT schreibt aktuell nur Filesystem (kein DB-Row) → neue Obsidian-Notes werden vom Self-Heal-Cron innerhalb 10 Min als Orphans gelöscht; Edits an existierenden Notes bleiben im Filesystem aber DB läuft auseinander
+**Phase 2.1 implementiert + deployed durch opencode** (2026-06-06, Commit `057a19e`):
+- WebDAV `PUT/DELETE/MKCOL` schreiben jetzt zur DB via `_upsert_note_from_path()`
+- Scope realisiert: PUT + DELETE + (implicit MKCOL). MOVE/COPY noch nicht.
+- 15 Notes im DB für `harald` nach Live-Use: 3 seed-notes + 12 `agents-md-family/*` aus User-Workflow.
+- WebDAV-Endpoint war wegen Regression in `d10258e` ~3h offline, gefixt mit `e51e340` (siehe oben).
 
 ---
 
