@@ -289,6 +289,22 @@ and `systemctl restart ai-provider.service`.
 - 15 Notes im DB für `harald` nach Live-Use: 3 seed-notes + 12 `agents-md-family/*` aus User-Workflow.
 - WebDAV-Endpoint war wegen Regression in `d10258e` ~3h offline, gefixt mit `e51e340` (siehe oben).
 
+**News-Agent läuft, aber publiziert veraltete Daten** (2026-06-06, ⚠️ Pickup für nächste Session):
+- PR [#18](https://github.com/haraldweiss/ai-provider-service/pull/18) hat `dispatch(tools=...)` + erweitertes Claude-Response-Shape gefixt → Runner durchläuft die Tool-Loop sauber.
+- Manual smoke-test heute hat WordPress-Post `34017` veröffentlicht: https://wolfinisoftware.de/ai-news/local-llm-news-roundup-ollama-0-30-llama-cpp-b9542-open-webui-0-9-6/
+- **Problem:** Der Post nennt Versionen aus 2024/2025 (Ollama 0.30.6 "Januar 2025", llama.cpp "Juni 2025", "Alle Informationen Stand Juni 2025") obwohl publiziert am 6. Juni 2026. Claude fällt auf seinen Knowledge-Cutoff zurück.
+- **Root cause:** Weder `NEWS_SYSTEM_PROMPT` (in `agents/news/prompts.py`) noch `user_kickoff` (in `agents/news/runner.py:71`) enthalten das aktuelle Datum oder ein Freshness-Window. Claude hat keinen Anker für "today" und nutzt Training-Data-Versionen.
+- **WIP-Branch:** `fix/news-agent-current-date` (commit `415d597`) — 4 failing tests in `tests/test_news_agent_kickoff.py` pinnen den gewünschten Contract:
+  - Kickoff enthält `date.today().isoformat()`
+  - Kickoff erklärt `7 Tage` Freshness-Window mit exakter cutoff-Datum
+  - Kickoff warnt explizit gegen Knowledge-Cutoff-Trap
+- **Pickup-Plan:**
+  1. `agents/news/prompts.py` um `build_user_kickoff(today=None)` Helper erweitern, der heute-Datum + 7-Tage-cutoff + Anti-Cutoff-Warnung in den User-Turn baut
+  2. `agents/news/runner.py:71` von Static-String auf `build_user_kickoff()` Aufruf umstellen
+  3. `pytest tests/test_news_agent_kickoff.py` grün, full suite grün
+  4. PR → merge → deploy → manueller Test-Run, neuen Post verifizieren
+  5. **Optional:** WordPress-Post `34017` löschen (er ist sachlich falsch und steht jetzt online)
+
 ---
 
 **Root cause index (bugs encountered & fixed):**
