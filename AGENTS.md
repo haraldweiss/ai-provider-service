@@ -275,13 +275,13 @@ and `systemctl restart ai-provider.service`.
 - `launchctl` agent (`~/Library/LaunchAgents/com.haraldweiss.memory-vault-sync.plist`) ist aktuell **unloaded** (würde sonst mit Remotely Save kollidieren). Bei Bedarf wieder `launchctl load ...`.
 - Beide Files sind **nicht** im Repo (user-spezifisch). Nur hier dokumentiert.
 
-**VPS-Ops-State außerhalb von git** (2026-06-06, Mail-Spam-Stop — drei Spawn-Task-Chips für proper fixes):
-- `chmod 0755 /var/log/bewerbungen` (war 0777 → logrotate refused as "world writable")
-- `chmod 0755 /var/www/wolfinisoftware/wp-content/uploads/wolfini-logs` (war 0775)
-- `mv /etc/logrotate.d/wolfini-wordpress /etc/logrotate.d/wolfini-wordpress.disabled` (SELinux blockt `logrotate_t → httpd_sys_rw_content_t`; WP-Logs wachsen jetzt ungebremst bis SELinux-policy nachgereicht wird — Chip: "Fix WP logrotate SELinux denial (proper)")
-- `systemctl disable --now api-health-check.timer` (war stündlich am failen weil WP /api/ Route abfängt — Chip: "Fix api-health-check: WP-/api/ routing")
-- `systemctl disable --now news-agent.timer` (dispatch() kwarg-mismatch — Chip: "Fix news-agent: dispatch() tools-arg mismatch")
-- `/etc/systemd/system/news-agent.service` — `Requires=`/`After=` von `ai-provider-service.service` auf `ai-provider.service` korrigiert (Quadlet-Rename); .bak liegt daneben
+**VPS-Ops-State außerhalb von git** (2026-06-06, Mail-Spam-Stop — alle drei Probleme inzwischen behoben):
+- `chmod 0755 /var/log/bewerbungen` (war 0777) — bleibt
+- `chmod 0755 /var/www/wolfinisoftware/wp-content/uploads/wolfini-logs` (war 0775) — bleibt
+- WP-logrotate-SELinux: `httpd_log_t`-Relabel auf `wp-content/debug.log` + `wp-content/uploads/wolfini-logs/` per `semanage fcontext` durchgeführt (vermutlich von opencode), `wolfini-wordpress.disabled` wieder umbenannt, `logrotate.service` läuft sauber durch
+- `api-health-check.timer` reaktiviert nachdem WP-/api/-Routing gefixt wurde (Status 0/SUCCESS bei letztem Run)
+- `news-agent.service`: `Requires=`/`After=` von `ai-provider-service.service` auf `ai-provider.service` korrigiert (Quadlet-Rename)
+- `news-agent.timer` wieder enabled nach PR [#18](https://github.com/haraldweiss/ai-provider-service/pull/18) (`dispatch(tools=…)` + erweitertes Claude-Response-Shape). Manual smoke-test: 19 Tool-Calls in 67s, WordPress-Post live (post_id=34017)
 
 **Phase 2.1 implementiert + deployed durch opencode** (2026-06-06, Commit `057a19e`):
 - WebDAV `PUT/DELETE/MKCOL` schreiben jetzt zur DB via `_upsert_note_from_path()`
