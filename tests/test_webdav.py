@@ -68,3 +68,95 @@ def test_path_traversal_rejected(client, headers, vault_dir, app):
 def test_requires_auth(client):
     r = client.get('/memory/dav/bt/notes/x.md')
     assert r.status_code == 401
+
+
+# --- Basic-Auth support (so Obsidian Remotely Save / macOS Finder can mount) ---
+
+
+@pytest.fixture
+def basic_headers():
+    """Basic Auth: user=harald, password=SERVICE_TOKEN."""
+    import base64
+    raw = f'harald:{Config.SERVICE_TOKEN}'.encode('utf-8')
+    encoded = base64.b64encode(raw).decode('ascii')
+    return {'Authorization': f'Basic {encoded}'}
+
+
+def test_propfind_with_basic_auth(client, basic_headers, vault_dir, app):
+    with app.app_context():
+        from storage.memory import MemoryWriter
+        from storage.vault_renderer import VaultRenderer
+        n = MemoryWriter().write_note(user_id='harald', app='bt', title='dav',
+                                       body='test', tags=[], folder=None, slug=None)
+        VaultRenderer().render_one(n)
+    r = client.open('/memory/dav/', method='PROPFIND', headers=basic_headers)
+    assert r.status_code == 207
+    assert '/bt/' in r.get_data(as_text=True)
+
+
+def test_get_with_basic_auth(client, basic_headers, vault_dir, app):
+    with app.app_context():
+        from storage.memory import MemoryWriter
+        from storage.vault_renderer import VaultRenderer
+        n = MemoryWriter().write_note(user_id='harald', app='bt', title='hi',
+                                       body='hello world', tags=[], folder=None, slug=None)
+        VaultRenderer().render_one(n)
+    r = client.get('/memory/dav/bt/notes/hi.md', headers=basic_headers)
+    assert r.status_code == 200
+    assert b'hello world' in r.data
+
+
+def test_put_with_basic_auth_writes_under_basic_user(client, basic_headers, vault_dir, app):
+    """Basic Auth username determines user scope — NOT the query string."""
+    r = client.put('/memory/dav/bt/notes/from-basic.md',
+                    headers=basic_headers, data='# via basic\n')
+    assert r.status_code == 204
+    path = vault_dir / 'harald' / 'bt' / 'notes' / 'from-basic.md'
+    assert path.exists()
+
+
+def test_basic_auth_wrong_password_rejected(client, vault_dir):
+    import base64
+    raw = b'harald:wrong-token'
+    bad = {'Authorization': f'Basic {base64.b64encode(raw).decode("ascii")}'}
+    r = client.open('/memory/dav/', method='PROPFIND', headers=bad)
+    assert r.status_code == 401
+    # Must offer Basic challenge so clients show the auth dialog
+    assert 'Basic' in r.headers.get('WWW-Authenticate', '')
+
+
+def test_basic_auth_malformed_header_rejected(client, vault_dir):
+    bad = {'Authorization': 'Basic not-base64-!!!'}
+    r = client.open('/memory/dav/', method='PROPFIND', headers=bad)
+    assert r.status_code == 401
+
+
+def test_no_auth_returns_basic_challenge(client, vault_dir):
+    """Unauthenticated WebDAV requests must include WWW-Authenticate: Basic so
+    Finder / Remotely Save show a login prompt instead of failing silently."""
+    r = client.open('/memory/dav/', method='PROPFIND')
+    assert r.status_code == 401
+    assert 'Basic' in r.headers.get('WWW-Authenticate', '')
+
+
+def test_bearer_still_works_after_basic_patch(client, headers, vault_dir, app):
+    """Regression — existing Bearer-based callers must keep working."""
+    with app.app_context():
+        from storage.memory import MemoryWriter
+        from storage.vault_renderer import VaultRenderer
+        n = MemoryWriter().write_note(user_id='harald', app='bt', title='still',
+                                       body='works', tags=[], folder=None, slug=None)
+        VaultRenderer().render_one(n)
+    r = client.open('/memory/dav/?user_id=harald', method='PROPFIND', headers=headers)
+    assert r.status_code == 207
+
+
+def test_basic_auth_not_accepted_on_non_dav_routes(client, vault_dir, app):
+    """Security: Basic Auth must NOT widen the auth surface beyond WebDAV.
+    /memory/notes still requires Bearer."""
+    import base64
+    raw = f'harald:{Config.SERVICE_TOKEN}'.encode('utf-8')
+    encoded = base64.b64encode(raw).decode('ascii')
+    basic_only = {'Authorization': f'Basic {encoded}'}
+    r = client.get('/memory/notes?user_id=harald', headers=basic_only)
+    assert r.status_code == 401

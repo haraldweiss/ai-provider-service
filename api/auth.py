@@ -10,8 +10,15 @@ Two tokens are recognized:
 A new X-Agent header is read into g.agent (string, may be None). Used
 informationally — currently only flowed into UsageEvent.origin_app when the
 caller hasn't set X-Origin-App. No policy impact.
+
+For the WebDAV bridge only, Basic Auth is additionally accepted (clients
+like Obsidian Remotely Save and macOS Finder cannot send Bearer headers).
+The Basic username becomes the user_id; the Basic password must match
+SERVICE_TOKEN or ADMIN_TOKEN. See `require_token_or_basic` below.
 """
 
+import base64
+import binascii
 import hmac
 from dataclasses import dataclass
 from functools import wraps
@@ -50,6 +57,37 @@ def _resolve_principal():
     return None
 
 
+def _resolve_basic_principal():
+    """Parse `Authorization: Basic <base64(user:password)>` and validate.
+
+    The Basic password must equal SERVICE_TOKEN or ADMIN_TOKEN. Basic username
+    becomes the Principal.user_id directly — there is no separate user database.
+
+    Returns None for any malformed input rather than raising.
+    """
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Basic '):
+        return None
+    encoded = auth.split(' ', 1)[1].strip()
+    try:
+        decoded = base64.b64decode(encoded, validate=True).decode('utf-8')
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+    if ':' not in decoded:
+        return None
+    user, _, password = decoded.partition(':')
+    if Config.ADMIN_TOKEN and hmac.compare_digest(password, Config.ADMIN_TOKEN):
+        # Admin token via Basic still scopes to the asserted user (Basic user
+        # field). This is unusual but mirrors what `?user=` does for the
+        # Bearer/admin path.
+        return Principal(user_id=user or Config.ADMIN_USER_ID, role='admin')
+    if Config.SERVICE_TOKEN and hmac.compare_digest(password, Config.SERVICE_TOKEN):
+        if not user:
+            return None
+        return Principal(user_id=user, role='user')
+    return None
+
+
 def _attach(p):
     g.principal = p
     g.agent = request.headers.get('X-Agent')
@@ -62,6 +100,30 @@ def require_token(f):
         p = _resolve_principal()
         if p is None:
             return jsonify({'error': 'Missing or invalid Bearer token'}), 401
+        _attach(p)
+        return f(*args, **kwargs)
+    return wrapped
+
+
+_BASIC_REALM = 'ai-provider memory vault'
+
+
+def require_token_or_basic(f):
+    """Bearer (preferred) or Basic Auth. For use ONLY on the WebDAV bridge —
+    do not extend Basic Auth to other endpoints without revisiting the threat
+    model. 401 responses include `WWW-Authenticate: Basic` so WebDAV clients
+    show a login prompt instead of failing silently.
+    """
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        p = _resolve_principal()
+        if p is None:
+            p = _resolve_basic_principal()
+        if p is None:
+            resp = jsonify({'error': 'authentication required'})
+            resp.status_code = 401
+            resp.headers['WWW-Authenticate'] = f'Basic realm="{_BASIC_REALM}"'
+            return resp
         _attach(p)
         return f(*args, **kwargs)
     return wrapped

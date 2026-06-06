@@ -13,7 +13,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from flask import Blueprint, request, jsonify, Response, g
 from config import Config
-from api.auth import require_token, _asserted_user_id
+from api.auth import require_token_or_basic, _asserted_user_id
 
 webdav_bp = Blueprint('webdav', __name__, url_prefix='/memory/dav')
 
@@ -103,7 +103,7 @@ def _propfind_xml(path: Path, base_path: Path, base_href: str) -> str:
 
 
 @webdav_bp.route('/<path:subpath>', methods=['PROPFIND', 'GET', 'PUT', 'MKCOL'], strict_slashes=False)
-@require_token
+@require_token_or_basic
 def handle(subpath: str):
     gate = _gate()
     if gate:
@@ -148,7 +148,7 @@ def handle(subpath: str):
 
 
 @webdav_bp.route('', methods=['PROPFIND'], strict_slashes=False)
-@require_token
+@require_token_or_basic
 def handle_root():
     gate = _gate()
     if gate:
