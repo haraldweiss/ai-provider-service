@@ -25,7 +25,7 @@ class OpenAIClient(BaseClient):
             logger.warning(f'OpenAI get_models failed: {e}')
             return []
 
-    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
+    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
         r = self.client.chat.completions.create(
             model=model, messages=messages, max_tokens=max_tokens
         )

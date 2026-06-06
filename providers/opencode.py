@@ -117,7 +117,7 @@ class OpencodeClient(BaseClient):
     def get_free_models(self) -> list[str]:
         return _get_cached_free_models(self.client)
 
-    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
+    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
         clean = _MODEL_PREFIX_RE.sub('', model)
         if clean != model:
             logger.debug('Opencode model normalized: %s -> %s', model, clean)
