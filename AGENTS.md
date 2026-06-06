@@ -251,6 +251,21 @@ and `systemctl restart ai-provider.service`.
 - Claude-KI-Usage-Tracker `main` commit [`58704d5`](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/commit/58704d5) — §7 Eintrag mit Use-Case-Ideen (workspace_discovered events, cost-alert notes)
 - Beide schreiben aktuell NICHT in Memory; die Doku ist informativ damit kommende Integrations-Sessions wissen dass das verfügbar ist.
 
+**Phase-1.6 follow-ups deployed** (2026-06-06):
+- PR [#15](https://github.com/haraldweiss/ai-provider-service/pull/15) — `require_token_or_basic` decorator in `api/auth.py`; nur die WebDAV-Routes akzeptieren jetzt zusätzlich `Authorization: Basic <user:SERVICE_TOKEN>`. Auth-Surface aller anderen Memory-Endpoints unverändert (Bearer-only). 401-Responses senden `WWW-Authenticate: Basic realm="ai-provider memory vault"`.
+- PR [#16](https://github.com/haraldweiss/ai-provider-service/pull/16) — `VaultRenderer.cleanup_orphans()` läuft am Ende von `check_stale()`. Walk `VAULT_PATH/<user>/...`, vergleicht `(user, folder, slug)` gegen live DB-rows, entfernt `.md`-Files ohne Match. Non-`.md`-Files (z.B. `.obsidian/*`) bleiben unangetastet. Self-Heal-Cron räumt jetzt also auch hand-geschriebene/leftover `.md` weg.
+- VPS-Image-Hash nach Deploy: `bdfff82d2938`. Smoke verified: PROPFIND mit Basic → 207, wrong-password → 401+WWW-Authenticate, 3 alte Deploy-Smoke-Test-`.md` automatisch aufgeräumt.
+
+**Obsidian-Live-Sync funktioniert** (2026-06-06):
+- Plugin: [Remotely Save](https://github.com/remotely-save/remotely-save) im Obsidian Community-Catalog
+- WebDAV-URL: `https://bewerbungen.wolfinisoftware.de/ai-provider/memory/dav`
+- Auth: Basic, Username = `<user_id>`, Password = `SERVICE_TOKEN` aus `/etc/ai-provider/ai-provider.env`
+- r/w-Sync läuft direkt — Notes in Obsidian editieren → PUT geht zum VaultRenderer-Filesystem. **Achtung:** der Self-Heal-Cron würde Obsidian-Direkt-Edits an `kind=audit/note/event/summary` overwriten (Hard Rule §3.6: "vault is rendered, not authored"). Für freie Notes ist `PATCH /memory/notes/<id>` der saubere Weg — Phase-2.1-Idee: WebDAV PUT könnte auch DB-Row anlegen statt nur Filesystem.
+
+**Bootstrap-Skript für Mac-Backup-Sync** (separat zur Live-Sync, optional):
+- `~/bin/sync-memory-vault.sh` pulled per `curl /memory/vault.tar.gz` und entpackt nach `~/ObsidianVaults/ai-provider-memory`, wipe-before-extract außer `.obsidian/`
+- `launchctl` agent (`~/Library/LaunchAgents/com.haraldweiss.memory-vault-sync.plist`) ist aktuell **unloaded** (würde sonst mit Remotely Save kollidieren). Bei Bedarf wieder `launchctl load ...`.
+
 ---
 
 **Root cause index (bugs encountered & fixed):**
