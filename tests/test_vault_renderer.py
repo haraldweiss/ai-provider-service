@@ -108,3 +108,82 @@ def test_check_stale_rerenders_modified(app, vault_dir):
 
         r.check_stale()
         assert 'v2' in path.read_text()
+
+
+def test_cleanup_orphans_removes_file_without_db_row(app, vault_dir):
+    """Files that exist on disk but have no matching DB row get removed."""
+    with app.app_context():
+        # Genuine note + render
+        w = MemoryWriter()
+        legit = w.write_note(user_id='harald', app='bt', title='legit',
+                             body='', tags=[], folder=None, slug=None)
+        VaultRenderer().render_one(legit)
+        legit_path = vault_dir / 'harald' / 'bt' / 'notes' / 'legit.md'
+        assert legit_path.exists()
+
+        # Hand-written orphan with no DB row
+        orphan_path = vault_dir / 'harald' / 'bt' / 'notes' / 'orphan.md'
+        orphan_path.write_text('I should not survive\n', encoding='utf-8')
+        assert orphan_path.exists()
+
+        removed = VaultRenderer().cleanup_orphans()
+        assert removed == 1
+        assert not orphan_path.exists()
+        assert legit_path.exists()
+
+
+def test_cleanup_orphans_handles_missing_vault_dir(app, vault_dir):
+    """No vault dir at all → 0 removed, no crash."""
+    import shutil
+    with app.app_context():
+        shutil.rmtree(vault_dir)
+        removed = VaultRenderer().cleanup_orphans()
+        assert removed == 0
+
+
+def test_cleanup_orphans_ignores_non_md_files(app, vault_dir):
+    """Files that are not `.md` are left alone (could be Obsidian configs)."""
+    with app.app_context():
+        (vault_dir / 'harald').mkdir(parents=True, exist_ok=True)
+        config_file = vault_dir / 'harald' / '.obsidian.json'
+        config_file.write_text('{}')
+        removed = VaultRenderer().cleanup_orphans()
+        assert removed == 0
+        assert config_file.exists()
+
+
+def test_cleanup_orphans_user_scope(app, vault_dir):
+    """When user_id is given, only that user's subtree is scanned."""
+    with app.app_context():
+        # Orphan under harald
+        (vault_dir / 'harald' / 'a' / 'notes').mkdir(parents=True)
+        h_orphan = vault_dir / 'harald' / 'a' / 'notes' / 'gone.md'
+        h_orphan.write_text('x')
+        # Orphan under alice
+        (vault_dir / 'alice' / 'a' / 'notes').mkdir(parents=True)
+        a_orphan = vault_dir / 'alice' / 'a' / 'notes' / 'gone.md'
+        a_orphan.write_text('x')
+
+        removed = VaultRenderer().cleanup_orphans(user_id='harald')
+        assert removed == 1
+        assert not h_orphan.exists()
+        assert a_orphan.exists()  # untouched
+
+
+def test_check_stale_also_removes_orphans(app, vault_dir):
+    """The systemd-timer entrypoint check_stale should clean orphans too,
+    so existing deploys pick the behavior up automatically."""
+    with app.app_context():
+        # One legit note (will pass stale check)
+        w = MemoryWriter()
+        n = w.write_note(user_id='u', app='a', title='kept', body='', tags=[],
+                         folder=None, slug=None)
+        VaultRenderer().render_one(n)
+        # One orphan .md with no DB row
+        orphan = vault_dir / 'u' / 'a' / 'notes' / 'ghost.md'
+        orphan.write_text('haunt me')
+        assert orphan.exists()
+
+        VaultRenderer().check_stale()
+        assert not orphan.exists()
+        assert (vault_dir / 'u' / 'a' / 'notes' / 'kept.md').exists()
