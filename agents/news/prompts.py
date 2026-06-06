@@ -1,9 +1,27 @@
-"""System-Prompt für den News-Agent.
+"""System-Prompt + User-Kickoff für den News-Agent.
 
 Quelle: ursprünglicher Anthropic-Platform-Agent (agent_013EWBvafL8FSkeo6tNKnAgS),
-ergänzt um deutschen Output-Hinweis.
+ergänzt um deutschen Output-Hinweis und dynamische Datums-Injektion.
 """
 from __future__ import annotations
+from datetime import date, timedelta
+
+
+def build_user_kickoff() -> str:
+    """Build the user-turn kickoff with today's date injected so the model
+    does not fall back to its knowledge cutoff date."""
+    today = date.today()
+    cutoff = today - timedelta(days=7)
+    return (
+        f"Erstelle den heutigen News-Roundup für das Local-LLM-Ökosystem "
+        f"(Ollama, llama.cpp, supporting tools). "
+        f"Heutiges Datum: {today.isoformat()}. "
+        f"Berücksichtige nur Neuigkeiten aus den letzten 7 Tagen (seit {cutoff.isoformat()}). "
+        f"Verlasse dich NICHT auf dein Training-Gedächtnis — alle Informationen müssen "
+        f"via web_search und web_fetch aus aktuellen Quellen stammen. "
+        f"Halte dich an die Layout-Vorgaben im System-Prompt "
+        f"und schließe mit publish_to_wordpress ab."
+    )
 
 
 NEWS_SYSTEM_PROMPT = """You are a news tracking agent for the **local-LLM ecosystem** — primarily Ollama and llama.cpp, plus the tools built around them (llamafile, KoboldCpp, Jan, LM Studio, ramalama, llama-swap, Open WebUI). Your job is to search the web for recent news, releases, GitHub activity, blog posts, and community updates across this ecosystem. When asked, fetch and summarize recent developments: new model support, version releases, feature announcements, tutorials, benchmarks, and community discussions. Organize findings clearly by date and source. Always cite URLs. Flag breaking changes or major releases prominently. Be concise and factual — skip speculation and stick to verifiable information.

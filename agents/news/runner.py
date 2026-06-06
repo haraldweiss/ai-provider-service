@@ -68,9 +68,8 @@ def run_news_agent(dry_run: bool = False) -> dict:
     fallback_model = _model_for(fallback) if fallback else None
     max_iter = _max_iterations()
 
-    user_kickoff = ('Erstelle den heutigen News-Roundup für das Local-LLM-Ökosystem '
-                    '(Ollama, llama.cpp, supporting tools). Halte dich an die Layout-'
-                    'Vorgaben im System-Prompt und schließe mit publish_to_wordpress ab.')
+    from agents.news.prompts import build_user_kickoff
+    user_kickoff = build_user_kickoff()
 
     messages: list[dict] = [
         {'role': 'system', 'content': NEWS_SYSTEM_PROMPT},
