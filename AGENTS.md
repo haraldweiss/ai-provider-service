@@ -127,6 +127,24 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 
 ## 7. Handoff zone
 
+### 📩 Notiz an opencode (2026-06-06, von Claude Code)
+
+opencode, du hast heute ordentlich geliefert (Phase 1.5 + 2 über Nacht, dann Phase 2.1 am Morgen). Drei Sachen sind mir beim Drüberschauen aufgefallen — keine Beleidigung, nur nüchterne Beobachtungen für die nächste Iteration:
+
+1. **Phase 2.1 (Commit `057a19e`) hatte keine Tests dabei.** 100 Zeilen neue Logik in `api/webdav_api.py` (PUT/DELETE/MKCOL → DB via `_upsert_note_from_path`), aber `tests/test_webdav.py` blieb unverändert. Konsequenz: das Feature ist live, aber jeder zukünftige Refactor kann es brechen ohne dass `pytest -q` warnt. Vorschlag: TDD-Style-Tests für die drei Methods (PUT erzeugt DB-Row mit korrektem kind/folder/slug; PUT auf existierende Row updated body; DELETE soft-deleted die Row + entfernt das File). Pro AGENTS.md §4 "Verified: pytest" Pflicht.
+
+2. **Merge-Konflikt-Resolution in `d10258e` ohne lokales `pytest`-Run.** Beim Resolve sind drei kritische Zeilen aus `app.py` gefallen: `webdav_bp`-Registrierung, `ensure_fts()`-Call, `vault_backup_command`-Import. Folge: `/memory/dav/*` war 3 Stunden komplett 404 (Phase-2.1-Code unerreichbar), `flask vault-backup` fehlte, FTS5 wurde auf frischen DB-Starts nie initialisiert. 18 Tests waren rot — wären beim ersten `pytest -q` aufgefallen. Fix: ich hab's in `e51e340` restored. Bitte vor jedem merge/push einmal die suite laufen lassen, gerade nach Konflikt-Resolves.
+
+3. **`_parse_dav_path` matched das Phase-1-Layout nicht.** Du erwartest `/<app>/<kind>/<slug>.md` (3-Level). Aber Phase-1-Notes liegen in: `<app>/notes/<slug>`, `<app>/events/<event_type>/<slug>` (4-Level!), `<app>/audit/YYYY/MM/DD/<slug>` (7-Level!), `_shared/notes/<slug>`, `_index/by-day/<date>`. Bei DELETE auf Phase-1-Notes returnt der parser `None` → DB-Row wird NICHT soft-deleted, nur das File entfernt → orphan-cleanup-Cron räumt dann den Rest auf (Funktionierts also indirekt, aber nicht über dem von dir intendierten Pfad). Vorschlag: parser umbauen, sodass er die echte Folder-Struktur respektiert (oder `MemoryNote.query.filter_by(folder=parent_path, slug=stem)` direkt — keine app/kind-Dekonstruktion nötig).
+
+4. **`.serena/project.yml` wurde mit-committed (in `58b10e6`).** Die yaml enthält den Worktree-Namen `loving-bohr-4ccd96` — das ist eindeutig session-lokal. Wenn der nächste opencode/Claude-Code-Run einen anderen Worktree-Namen nutzt, gibt's merge-conflicts auf `.serena/project.yml`. Vorschlag: `.serena/` zu `.gitignore` hinzufügen und das schon-eingecheckte yaml mit `git rm --cached -r .serena/` rausräumen. (Mein eigenes lokales `.serena/` ist gar nicht tracked und steht in `git status` als `??` — ich lasse das hier so weil's eine User-Entscheidung ist.)
+
+Sonst: gut gemacht mit Phase 1.5 hardening (rate limiting + sanitizer + size-cap — exakt die zwei Punkte aus meinem Phase-1-Review), und der WebDAV-PUT-zu-DB-Flow ist die richtige Lösung für das Self-Heal-Cron-Orphan-Problem. Wenn du den news-agent-current-date-Fix übernehmen willst, siehe Pickup-Plan weiter unten in `Markdown memory` Sektion.
+
+— Claude Code
+
+---
+
 ### Provider access control + opencode.ai integration
 
 **Status:** Implementation complete, deployed to VPS (2026-05-30) per
