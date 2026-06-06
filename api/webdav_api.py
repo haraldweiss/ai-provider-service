@@ -60,7 +60,10 @@ def _gate():
 def _scope_user_id() -> str:
     if g.principal.role == 'admin':
         return request.args.get('user') or _asserted_user_id() or g.principal.user_id
-    return g.principal.user_id
+    uid = g.principal.user_id
+    if not uid:
+        uid = _asserted_user_id()
+    return uid
 
 
 def _user_root() -> Path:

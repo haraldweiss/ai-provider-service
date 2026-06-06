@@ -29,10 +29,14 @@ def _gate():
 
 def _scope_user_id() -> str:
     """For non-admin tokens, force user_id to principal's user_id.
-    Admin tokens may override via ?user=."""
+    Admin tokens may override via ?user= or ?user_id=.
+    Service tokens with empty principal user_id fall back to _asserted_user_id()."""
     if g.principal.role == 'admin':
         return request.args.get('user') or _asserted_user_id() or g.principal.user_id
-    return g.principal.user_id
+    uid = g.principal.user_id
+    if not uid:
+        uid = _asserted_user_id()
+    return uid
 
 
 @memory_bp.post('/notes')
