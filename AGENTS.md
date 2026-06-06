@@ -256,15 +256,36 @@ and `systemctl restart ai-provider.service`.
 - PR [#16](https://github.com/haraldweiss/ai-provider-service/pull/16) — `VaultRenderer.cleanup_orphans()` läuft am Ende von `check_stale()`. Walk `VAULT_PATH/<user>/...`, vergleicht `(user, folder, slug)` gegen live DB-rows, entfernt `.md`-Files ohne Match. Non-`.md`-Files (z.B. `.obsidian/*`) bleiben unangetastet. Self-Heal-Cron räumt jetzt also auch hand-geschriebene/leftover `.md` weg.
 - VPS-Image-Hash nach Deploy: `bdfff82d2938`. Smoke verified: PROPFIND mit Basic → 207, wrong-password → 401+WWW-Authenticate, 3 alte Deploy-Smoke-Test-`.md` automatisch aufgeräumt.
 
-**Obsidian-Live-Sync funktioniert** (2026-06-06):
-- Plugin: [Remotely Save](https://github.com/remotely-save/remotely-save) im Obsidian Community-Catalog
+**Obsidian-WebDAV serverseitig deployed** (2026-06-06):
+- Plugin: [Remotely Save](https://github.com/remotely-save/remotely-save)
 - WebDAV-URL: `https://bewerbungen.wolfinisoftware.de/ai-provider/memory/dav`
 - Auth: Basic, Username = `<user_id>`, Password = `SERVICE_TOKEN` aus `/etc/ai-provider/ai-provider.env`
-- r/w-Sync läuft direkt — Notes in Obsidian editieren → PUT geht zum VaultRenderer-Filesystem. **Achtung:** der Self-Heal-Cron würde Obsidian-Direkt-Edits an `kind=audit/note/event/summary` overwriten (Hard Rule §3.6: "vault is rendered, not authored"). Für freie Notes ist `PATCH /memory/notes/<id>` der saubere Weg — Phase-2.1-Idee: WebDAV PUT könnte auch DB-Row anlegen statt nur Filesystem.
+- PR [#17](https://github.com/haraldweiss/ai-provider-service/pull/17) — eigener OPTIONS-Handler mit korrekten `Allow: OPTIONS, PROPFIND, GET, PUT, MKCOL` + `DAV: 1, 2` + `MS-Author-Via: DAV` Headers. Auto-Flask-OPTIONS gab nur `Allow: PROPFIND, OPTIONS` zurück was Capability-Discovery vieler Clients abbricht. VPS-Image nach Deploy: `ace533395225`.
+- **Client-side sync status: OFFEN.** Remotely Save zeigt "Failed to sync just now" mit leerem `error: [{}]` im Plugin-Log. Apache-Access-Log zeigt 0 requests vom Plugin — die Requests kommen gar nicht beim Server an. Server-seitig verifiziert sauber (curl PROPFIND/GET/PUT/OPTIONS alle 200/204/207 mit Basic Auth). Hypothese: Plugin-Config falsch (Service-Type, URL-Typo) oder Plugin macht request gar nicht weil internal validation fails. Pickup: User-Screenshot von Settings → Remotely Save + DevTools-Network-Tab nach Sync-Versuch.
+
+**Drei Seed-Notes für `harald` angelegt** (2026-06-06, über API):
+- `gateway/notes/welcome-to-your-memory-vault.md` (id=2, kind=note)
+- `_shared/notes/phase-1-6-deploy-2026-06-06.md` (id=3, kind=note)
+- `gateway/events/deploy_complete/deploy-complete.md` (id=4, kind=event)
 
 **Bootstrap-Skript für Mac-Backup-Sync** (separat zur Live-Sync, optional):
 - `~/bin/sync-memory-vault.sh` pulled per `curl /memory/vault.tar.gz` und entpackt nach `~/ObsidianVaults/ai-provider-memory`, wipe-before-extract außer `.obsidian/`
 - `launchctl` agent (`~/Library/LaunchAgents/com.haraldweiss.memory-vault-sync.plist`) ist aktuell **unloaded** (würde sonst mit Remotely Save kollidieren). Bei Bedarf wieder `launchctl load ...`.
+- Beide Files sind **nicht** im Repo (user-spezifisch). Nur hier dokumentiert.
+
+**VPS-Ops-State außerhalb von git** (2026-06-06, Mail-Spam-Stop — drei Spawn-Task-Chips für proper fixes):
+- `chmod 0755 /var/log/bewerbungen` (war 0777 → logrotate refused as "world writable")
+- `chmod 0755 /var/www/wolfinisoftware/wp-content/uploads/wolfini-logs` (war 0775)
+- `mv /etc/logrotate.d/wolfini-wordpress /etc/logrotate.d/wolfini-wordpress.disabled` (SELinux blockt `logrotate_t → httpd_sys_rw_content_t`; WP-Logs wachsen jetzt ungebremst bis SELinux-policy nachgereicht wird — Chip: "Fix WP logrotate SELinux denial (proper)")
+- `systemctl disable --now api-health-check.timer` (war stündlich am failen weil WP /api/ Route abfängt — Chip: "Fix api-health-check: WP-/api/ routing")
+- `systemctl disable --now news-agent.timer` (dispatch() kwarg-mismatch — Chip: "Fix news-agent: dispatch() tools-arg mismatch")
+- `/etc/systemd/system/news-agent.service` — `Requires=`/`After=` von `ai-provider-service.service` auf `ai-provider.service` korrigiert (Quadlet-Rename); .bak liegt daneben
+
+**Phase 2.1 brainstorming gestartet, NICHT abgeschlossen** (2026-06-06):
+- Scope-Frage gestellt (S1=PUT only / S2=PUT+DELETE / S3=PUT+DELETE+MOVE+COPY), Empfehlung war S2
+- User hat NICHT geantwortet weil Debug-Priorität (WebDAV-Sync-Fail, dann Mail-Spam-Fixes) reinkam
+- Pickup: erst WebDAV-Client-Debug klären, dann Brainstorming fortsetzen mit Scope-Antwort
+- Motivation Phase 2.1: WebDAV PUT schreibt aktuell nur Filesystem (kein DB-Row) → neue Obsidian-Notes werden vom Self-Heal-Cron innerhalb 10 Min als Orphans gelöscht; Edits an existierenden Notes bleiben im Filesystem aber DB läuft auseinander
 
 ---
 
