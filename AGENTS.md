@@ -246,6 +246,11 @@ fixture for the pattern.
 **Rollback:** set `MEMORY_ENABLED=false` in `/etc/ai-provider/ai-provider.env`
 and `systemctl restart ai-provider.service`.
 
+**Sibling-Repos haben Memory-Doku-Sync** (2026-06-06, per §5.1):
+- Bewerbungstracker `master` commit [`728460f`](https://github.com/haraldweiss/Bewerbungstracker/commit/728460f) — §7 Eintrag mit Use-Case-Ideen (event_type=application_created)
+- Claude-KI-Usage-Tracker `main` commit [`58704d5`](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/commit/58704d5) — §7 Eintrag mit Use-Case-Ideen (workspace_discovered events, cost-alert notes)
+- Beide schreiben aktuell NICHT in Memory; die Doku ist informativ damit kommende Integrations-Sessions wissen dass das verfügbar ist.
+
 ---
 
 **Root cause index (bugs encountered & fixed):**
