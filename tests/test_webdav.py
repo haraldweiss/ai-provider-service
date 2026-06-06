@@ -160,3 +160,64 @@ def test_basic_auth_not_accepted_on_non_dav_routes(client, vault_dir, app):
     basic_only = {'Authorization': f'Basic {encoded}'}
     r = client.get('/memory/notes?user_id=harald', headers=basic_only)
     assert r.status_code == 401
+
+
+# --- OPTIONS handler (WebDAV capability discovery so clients don't bail) ---
+
+
+def _allow_set(response):
+    """Parse Allow header into a set of uppercase method names."""
+    raw = response.headers.get('Allow', '')
+    return {m.strip().upper() for m in raw.split(',') if m.strip()}
+
+
+def test_options_root_advertises_all_methods(client, vault_dir):
+    """The OPTIONS response on the WebDAV root MUST list every method the
+    bridge actually supports — otherwise WebDAV clients like Remotely Save
+    bail out during capability discovery."""
+    r = client.open('/memory/dav/', method='OPTIONS')
+    assert r.status_code == 200
+    allow = _allow_set(r)
+    # Required by Obsidian Remotely Save and macOS Finder during discovery.
+    for m in ('OPTIONS', 'PROPFIND', 'GET', 'PUT', 'MKCOL'):
+        assert m in allow, f'OPTIONS Allow header missing {m} — got {allow}'
+
+
+def test_options_subpath_advertises_all_methods(client, vault_dir):
+    r = client.open('/memory/dav/anything.md', method='OPTIONS')
+    assert r.status_code == 200
+    allow = _allow_set(r)
+    for m in ('OPTIONS', 'PROPFIND', 'GET', 'PUT', 'MKCOL'):
+        assert m in allow
+
+
+def test_options_advertises_dav_class_1_and_2(client, vault_dir):
+    """WebDAV clients sniff the `DAV:` header to decide which protocol level
+    is supported. RFC 4918 §10.1 — class 1 = basic, class 2 = locking. We
+    don't lock, so '1' would be minimal, but stating '1, 2' is the canonical
+    value most clients expect and harmlessly ignored if unused."""
+    r = client.open('/memory/dav/', method='OPTIONS')
+    dav = r.headers.get('DAV', '')
+    assert '1' in dav, f'DAV header missing class 1 — got {dav!r}'
+
+
+def test_options_does_not_require_auth(client, vault_dir):
+    """OPTIONS must work without credentials so CORS / WebDAV preflight
+    succeeds before the client has a chance to attach Basic Auth."""
+    r = client.open('/memory/dav/', method='OPTIONS')
+    assert r.status_code == 200
+    r2 = client.open('/memory/dav/notes/x.md', method='OPTIONS')
+    assert r2.status_code == 200
+
+
+def test_options_with_basic_auth_still_ok(client, vault_dir):
+    """Auth-equipped OPTIONS must not break — clients that always send Basic
+    along should still get a clean 200."""
+    import base64
+    raw = f'harald:{Config.SERVICE_TOKEN}'.encode('utf-8')
+    encoded = base64.b64encode(raw).decode('ascii')
+    h = {'Authorization': f'Basic {encoded}'}
+    r = client.open('/memory/dav/', method='OPTIONS', headers=h)
+    assert r.status_code == 200
+    allow = _allow_set(r)
+    assert 'PROPFIND' in allow and 'PUT' in allow

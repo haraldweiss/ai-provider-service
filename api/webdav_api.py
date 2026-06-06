@@ -1,10 +1,12 @@
 """Minimal WebDAV bridge — lets Obsidian open the vault directly.
 
 Implements just enough of the WebDAV protocol (RFC 4918) for Obsidian:
-PROPFIND, GET, PUT, MKCOL. No external dependencies — pure Flask + ElementTree.
+OPTIONS, PROPFIND, GET, PUT, MKCOL. No external dependencies — pure Flask
++ ElementTree.
 
-Mount in Obsidian as: https://host/ai-provider/dav/?user_id=<your_id>
-Auth via Bearer token (same as other endpoints).
+Mount in Obsidian as: https://host/ai-provider/memory/dav
+Auth via Bearer token, or Basic Auth (username=user_id, password=SERVICE_TOKEN).
+OPTIONS responses are unauthenticated so WebDAV/CORS preflight succeeds.
 """
 
 from __future__ import annotations
@@ -19,6 +21,27 @@ webdav_bp = Blueprint('webdav', __name__, url_prefix='/memory/dav')
 
 _DAV_NS = 'DAV:'
 _XML_HEADERS = {'Content-Type': 'application/xml; charset="utf-8"'}
+_DAV_METHODS_ALLOWED = 'OPTIONS, PROPFIND, GET, PUT, MKCOL'
+
+
+def _options_response() -> Response:
+    """Static OPTIONS response with proper WebDAV capability advertisement.
+
+    Required by WebDAV clients (Obsidian Remotely Save, macOS Finder,
+    davfs2) to know which methods are supported. Without correct Allow
+    and DAV headers many clients fail the initial capability handshake
+    and never attempt PROPFIND.
+
+    Returned without an auth check on purpose — capability discovery
+    happens before clients have a chance to attach credentials. The
+    response carries no user-scoped data so this is safe.
+    """
+    return Response('', status=200, headers={
+        'Allow': _DAV_METHODS_ALLOWED,
+        'DAV': '1, 2',
+        'MS-Author-Via': 'DAV',
+        'Content-Length': '0',
+    })
 
 
 def _gate():
@@ -100,6 +123,13 @@ def _propfind_xml(path: Path, base_path: Path, base_href: str) -> str:
                 add_response(child, child_href)
 
     return ET.tostring(multistatus, encoding='unicode', xml_declaration=True)
+
+
+@webdav_bp.route('', methods=['OPTIONS'], strict_slashes=False)
+@webdav_bp.route('/', methods=['OPTIONS'], strict_slashes=False)
+@webdav_bp.route('/<path:subpath>', methods=['OPTIONS'], strict_slashes=False)
+def handle_options(subpath: str = ''):
+    return _options_response()
 
 
 @webdav_bp.route('/<path:subpath>', methods=['PROPFIND', 'GET', 'PUT', 'MKCOL'], strict_slashes=False)
