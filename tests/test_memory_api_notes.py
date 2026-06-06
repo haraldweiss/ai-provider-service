@@ -107,30 +107,3 @@ def test_body_size_limit(client, user_headers):
                     json={'user_id': 'h', 'app': 'a', 'title': 'big',
                           'body': big, 'tags': []})
     assert r.status_code == 413
-
-
-def test_list_notes_filter_by_tags(client, user_headers, app):
-    with app.app_context():
-        from storage.memory import MemoryWriter
-        w = MemoryWriter()
-        w.write_note(user_id='harald', app='bt', title='A', body='',
-                     tags=['urgent', 'meetings'], folder=None, slug=None)
-        w.write_note(user_id='harald', app='bt', title='B', body='',
-                     tags=['meetings'], folder=None, slug=None)
-    r = client.get('/memory/notes?user_id=harald&tags=urgent', headers=user_headers)
-    assert r.status_code == 200
-    titles = [n['title'] for n in r.get_json()['notes']]
-    assert titles == ['A']
-
-
-def test_list_tags_returns_all(client, user_headers, app):
-    with app.app_context():
-        from storage.memory import MemoryWriter
-        w = MemoryWriter()
-        w.write_note(user_id='harald', app='bt', title='X', body='',
-                     tags=['a', 'b'], folder=None, slug=None)
-        w.write_note(user_id='harald', app='bt', title='Y', body='',
-                     tags=['b', 'c'], folder=None, slug=None)
-    r = client.get('/memory/tags?user_id=harald', headers=user_headers)
-    assert r.status_code == 200
-    assert r.get_json()['tags'] == ['a', 'b', 'c']

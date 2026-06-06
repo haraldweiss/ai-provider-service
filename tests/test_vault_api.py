@@ -39,7 +39,7 @@ def test_vault_tarball_contains_only_user_subtree(client, headers, vault_dir, ap
     tar_bytes = io.BytesIO(r.data)
     with tarfile.open(fileobj=tar_bytes, mode='r:gz') as t:
         names = t.getnames()
-    assert all(n.startswith('harald/') for n in names if n)
+    assert all(n == 'harald' or n.startswith('harald/') for n in names if n)
     assert not any('alice' in n for n in names)
 
 

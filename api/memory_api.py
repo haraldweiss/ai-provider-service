@@ -15,8 +15,6 @@ from api.auth import require_token, _asserted_user_id
 from storage.memory_models import MemoryNote, MemoryKind
 from storage.memory import MemoryWriter, NoteAlreadyExists
 from storage.vault_renderer import VaultRenderer
-from storage.sanitize import sanitize_for_summary
-from api.ratelimit import rate_limit
 
 memory_bp = Blueprint('memory', __name__, url_prefix='/memory')
 
@@ -39,7 +37,6 @@ def _scope_user_id() -> str:
 
 @memory_bp.post('/notes')
 @require_token
-@rate_limit('memory:write')
 def create_note():
     gate = _gate()
     if gate:
@@ -79,7 +76,6 @@ def create_note():
 
 @memory_bp.get('/notes')
 @require_token
-@rate_limit('memory:read')
 def list_notes():
     gate = _gate()
     if gate:
@@ -101,29 +97,19 @@ def list_notes():
         q = q.filter(MemoryNote.app == app_filter)
     if folder := request.args.get('folder'):
         q = q.filter(MemoryNote.folder == folder)
-    if tags_filter := request.args.get('tags'):
-        wanted = [t.strip() for t in tags_filter.split(',') if t.strip()]
-        if wanted:
-            for tag in wanted:
-                q = q.filter(MemoryNote.tags.contains(tag))
+    if text := request.args.get('q'):
+        pat = f'%{text}%'
+        q = q.filter(or_(MemoryNote.title.like(pat), MemoryNote.body.like(pat)))
+
     try:
         limit = min(int(request.args.get('limit', '50')), 500)
         offset = max(int(request.args.get('offset', '0')), 0)
     except ValueError:
         return jsonify({'error': 'limit/offset must be integers'}), 400
 
-    if text := request.args.get('q'):
-        from storage.fts import search
-        ids = search(text, user_id=user_id, limit=limit, offset=offset)
-        if not ids:
-            return jsonify({'notes': [], 'total': 0})
-        q = q.filter(MemoryNote.id.in_(ids))
-        total = q.count()
-        rows = q.order_by(MemoryNote.created_at.desc()).all()
-    else:
-        total = q.count()
-        rows = (q.order_by(MemoryNote.created_at.desc())
-                  .limit(limit).offset(offset).all())
+    total = q.count()
+    rows = (q.order_by(MemoryNote.created_at.desc())
+              .limit(limit).offset(offset).all())
     return jsonify({'notes': [r.to_dict() for r in rows], 'total': total})
 
 
@@ -193,7 +179,6 @@ def delete_note(note_id: int):
 
 @memory_bp.post('/events')
 @require_token
-@rate_limit('memory:write')
 def create_event():
     gate = _gate()
     if gate:
@@ -225,32 +210,8 @@ def create_event():
                     'render_pending': render_pending}), 201
 
 
-@memory_bp.get('/tags')
-@require_token
-def list_tags():
-    gate = _gate()
-    if gate:
-        return gate
-    user_id = _scope_user_id()
-    q = MemoryNote.query.filter(
-        MemoryNote.user_id == user_id,
-        MemoryNote.deleted_at.is_(None),
-    )
-    from sqlalchemy import func
-    raw_tags = q.with_entities(MemoryNote.tags).all()
-    seen = set()
-    out = []
-    for (tags_val,) in raw_tags:
-        for t in (tags_val or []):
-            if t not in seen:
-                seen.add(t)
-                out.append(t)
-    return jsonify({'tags': sorted(out)})
-
-
 @memory_bp.get('/events')
 @require_token
-@rate_limit('memory:read')
 def list_events():
     gate = _gate()
     if gate:
@@ -323,7 +284,6 @@ def list_summaries():
 
 @memory_bp.post('/notes/<int:note_id>/summarize')
 @require_token
-@rate_limit('memory:write')
 def summarize_note(note_id: int):
     gate = _gate()
     if gate:
@@ -359,11 +319,9 @@ def _call_summary_model(title: str, body: str, models: list) -> tuple:
     """
     from dispatcher import _execute
     last_err = None
-    safe_title = sanitize_for_summary(title, 500)
-    safe_body = sanitize_for_summary(body, 4000)
     prompt = (
         'Summarize the following note in 1-3 sentences. Respond with the summary only.\n\n'
-        f'Title: {safe_title}\n\n{safe_body}'
+        f'Title: {title}\n\n{body}'
     )
     messages = [{'role': 'user', 'content': prompt}]
     for spec in models:

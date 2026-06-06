@@ -749,33 +749,6 @@ sudo rm -rf /var/lib/ai-provider-service/vault/*
 sudo -u ai-provider /opt/ai-provider-service/venv/bin/flask --app app vault-render --rebuild
 ```
 
-**Obsidian / local access:**
-
-The vault is host-mounted at `/var/lib/ai-provider-service/vault/`.
-Access it from a local machine:
-
-```bash
-# Via rsync (one-shot pull):
-rsync -avz ionos-vps:/var/lib/ai-provider-service/vault/ ./vault/
-
-# Via SSHFS (live mount — requires sshfs):
-mkdir -p ~/vault
-sshfs ionos-vps:/var/lib/ai-provider-service/vault ~/vault
-# Then open ~/vault in Obsidian as a vault folder.
-
-# To unmount:
-fusermount -u ~/vault
-```
-
-**Rate limits** (Phase 1.5, live):
-| Bucket | Limit | Window |
-|---|---|---|
-| `memory:write` (POST notes/events/summarize) | 60 | 1 min |
-| `memory:read` (GET notes) | 120 | 1 min |
-| `vault:export` (GET vault.tar.gz) | 5 | 1 min |
-
-Rate limit hits are logged at WARNING level with bucket, user, and path.
-
 **Deploy of Phase 1 (one-time):**
 
 ```bash

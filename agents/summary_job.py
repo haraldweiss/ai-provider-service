@@ -14,7 +14,6 @@ from database import db
 from storage.memory_models import MemoryNote, MemoryKind, SummaryJob
 from storage.memory import MemoryWriter
 from storage.vault_renderer import VaultRenderer
-from storage.sanitize import sanitize_for_summary
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +117,8 @@ def _structure_notes(notes: Iterable[MemoryNote]) -> str:
     for n in notes:
         ts = n.created_at.isoformat()
         prov = (n.extra or {}).get('provider', '?')
-        title = sanitize_for_summary(n.title or '(no title)', 200)
-        excerpt = sanitize_for_summary((n.body or '')[:300], 300)
+        title = n.title or '(no title)'
+        excerpt = (n.body or '')[:300].replace('\n', ' ')
         lines.append(f'- [{ts}] {n.app}/{prov}: {title} — {excerpt}')
     return '\n'.join(lines)
 
