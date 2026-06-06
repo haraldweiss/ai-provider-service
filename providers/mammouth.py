@@ -26,7 +26,7 @@ class MammouthClient(BaseClient):
             logger.warning(f'Mammouth get_models failed: {e}')
             return []
 
-    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
+    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
         payload = {'model': model, 'messages': messages, 'max_tokens': max_tokens}
         r = requests.post(f'{self.endpoint}/chat/completions', json=payload, timeout=self.timeout)
         r.raise_for_status()

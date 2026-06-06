@@ -28,7 +28,8 @@ class ClaudeClient(BaseClient):
     def get_models(self) -> list[str]:
         return list(KNOWN_MODELS)
 
-    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
+    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600,
+                       *, tools: list[dict] | None = None) -> dict:
         # Anthropic-spezifisch: kein 'system'-Role in der Liste, sondern als top-level.
         system_msg = None
         chat_msgs = []
@@ -53,11 +54,45 @@ class ClaudeClient(BaseClient):
                 'text': system_msg,
                 'cache_control': {'type': 'ephemeral'},
             }]
+        if tools:
+            kwargs['tools'] = tools
 
         response = self.client.messages.create(**kwargs)
         usage = response.usage
+
+        # Project every content block (text or tool_use) into a plain dict so
+        # callers can iterate without depending on the Anthropic SDK types.
+        # Legacy callers reading result['content'][0]['text'] keep working
+        # because Anthropic emits text blocks first by convention.
+        content_blocks: list[dict] = []
+        tool_calls: list[dict] = []
+        for block in response.content or []:
+            btype = getattr(block, 'type', None)
+            if btype == 'text':
+                content_blocks.append({'type': 'text',
+                                       'text': getattr(block, 'text', '')})
+            elif btype == 'tool_use':
+                tc = {'id': getattr(block, 'id', ''),
+                      'name': getattr(block, 'name', ''),
+                      'input': getattr(block, 'input', {}) or {}}
+                content_blocks.append({'type': 'tool_use', **tc})
+                tool_calls.append(tc)
+            else:
+                # Forward unknown block types verbatim (best-effort, may
+                # appear with future Anthropic API extensions).
+                content_blocks.append({'type': btype or 'unknown'})
+
+        # Always include at least one text block so existing callers that do
+        # `result['content'][0]['text']` don't blow up on tool-use-only turns.
+        if not content_blocks:
+            content_blocks = [{'type': 'text', 'text': ''}]
+        elif content_blocks[0].get('type') != 'text':
+            content_blocks.insert(0, {'type': 'text', 'text': ''})
+
         return {
-            'content': [{'text': response.content[0].text if response.content else ''}],
+            'content': content_blocks,
+            'tool_calls': tool_calls,
+            'stop_reason': getattr(response, 'stop_reason', 'end_turn'),
             'usage': {
                 'input_tokens': usage.input_tokens,
                 'output_tokens': usage.output_tokens,

@@ -153,7 +153,7 @@ class OllamaClient(BaseClient):
             return []
         return sorted(seen)
 
-    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600) -> dict:
+    def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
         # num_ctx: Ollama default ist 2048 — viel zu klein für CV+Job-Prompts.
         # Wenn der Prompt das Window überschreitet, schneidet Ollama still ab,
         # die Anweisung "Antworte mit JSON" geht verloren und das Modell
