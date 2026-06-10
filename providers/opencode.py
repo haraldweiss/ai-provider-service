@@ -125,11 +125,13 @@ def _extract_content(choice) -> str:
 
 class OpencodeClient(BaseClient):
     def __init__(self, config: dict):
+        self._free_only = config.get('_free_only', False)
         api_key = config.get('api_key') or Config.OPENCODE_API_KEY
         if not api_key:
             raise ValueError("Opencode: api_key oder OPENCODE_API_KEY erforderlich")
         base_url = config.get('api_endpoint') or Config.OPENCODE_BASE_URL
         self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self._free_models: list[str] | None = None
 
     def get_models(self) -> list[str]:
         try:
@@ -139,7 +141,9 @@ class OpencodeClient(BaseClient):
             return []
 
     def get_free_models(self) -> list[str]:
-        return _get_cached_free_models(self.client)
+        if self._free_models is None:
+            self._free_models = _get_cached_free_models(self.client)
+        return self._free_models
 
     @classmethod
     def try_refresh_free_models(cls) -> list[str]:
@@ -152,10 +156,22 @@ class OpencodeClient(BaseClient):
         client = OpenAI(api_key=api_key, base_url=Config.OPENCODE_BASE_URL)
         return refresh_free_models(client)
 
+    def _check_free_only(self, model: str) -> None:
+        """Raise ValueError if this is a free-only session and model is paid."""
+        if not self._free_only:
+            return
+        free_models = self.get_free_models()
+        if model not in free_models:
+            raise ValueError(
+                f"'{model}' is a paid model — requires your own opencode API key. "
+                f"Free models available: {', '.join(free_models)}"
+            )
+
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
         clean = _MODEL_PREFIX_RE.sub('', model)
         if clean != model:
             logger.debug('Opencode model normalized: %s -> %s', model, clean)
+        self._check_free_only(clean)
 
         try:
             r = self.client.chat.completions.create(

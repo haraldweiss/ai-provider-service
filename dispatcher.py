@@ -41,16 +41,20 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     Sonderfall Claude: der zentrale ANTHROPIC_API_KEY ist nur für allowlistete
     User verfügbar — andere müssen ihren eigenen Key konfigurieren oder einen
     anderen Provider wählen.
+
+    Sonderfall opencode: Free-Modelle laufen über den zentralen OPENCODE_API_KEY
+    (ohne eigene Konfiguration). Paid-Modelle brauchen einen eigenen API-Key.
     """
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     if pc:
         return pc.get_config()
     if PROVIDER_REGISTRY.get(provider_id, {}).get('system'):
         if provider_id == 'claude' and not _is_claude_server_key_allowed(user_id):
-            # → ValueError 'nicht konfiguriert' im _execute, sodass das Frontend
-            #    den User auf die Config-UI hinweisen kann.
             return None
         return {}
+    # Non-system provider: opencode free models via system key
+    if provider_id == 'opencode' and Config.OPENCODE_API_KEY:
+        return {'_free_only': True, 'api_key': Config.OPENCODE_API_KEY}
     return None
 
 

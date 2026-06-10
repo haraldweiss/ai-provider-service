@@ -34,11 +34,13 @@ def list_providers():
         # Server-Key benutzen (Allowlist).
         if meta['system']:
             if pid == 'claude' and user_id and not _is_claude_server_key_allowed(user_id):
-                # User darf den Server-Key nicht — zeigt sich im Frontend als
-                # "nicht konfiguriert" und löst das Config-Form aus.
                 pass
             else:
                 configured = True
+
+        # opencode: als konfiguriert anzeigen wenn der System-Key existiert
+        if pid == 'opencode' and Config.OPENCODE_API_KEY:
+            configured = True
 
         allowed = is_allowed(g.principal, pid)
         health = health_tracker.get_status(pid)
