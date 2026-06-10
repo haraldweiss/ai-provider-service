@@ -38,6 +38,61 @@ def _send_notification(subject: str, body: str) -> None:
         logger.warning('Failed to send notification: %s', e)
 
 
+def refresh_free_models(client: OpenAI) -> list[str]:
+    """Fetch current free models from API, compare with previous state,
+    notify about additions AND removals, update cache."""
+    raw = client.models.list()
+    free_models = sorted(
+        m.id for m in raw
+        if m.id.endswith('-free') or m.id == 'big-pickle'
+    )
+
+    old = set()
+    if os.path.exists(_FREE_CACHE_FILE):
+        try:
+            with open(_FREE_CACHE_FILE) as f:
+                cached = json.load(f)
+                old = set(cached.get('models', []))
+        except Exception:
+            pass
+    elif os.path.exists(_FREE_CACHE_FILE + '.prev'):
+        try:
+            with open(_FREE_CACHE_FILE + '.prev') as pf:
+                old = set(json.load(pf).get('models', []))
+        except Exception:
+            pass
+
+    current = set(free_models)
+    new_free = current - old
+    removed = old - current
+
+    parts = []
+    if new_free:
+        parts.append(
+            'Neue Free-Modelle:\n' + '\n'.join(f'  + {m}' for m in sorted(new_free))
+        )
+    if removed:
+        parts.append(
+            'Nicht mehr kostenlos:\n' + '\n'.join(f'  - {m}' for m in sorted(removed))
+        )
+    if parts:
+        _send_notification(
+            'opencode.ai: Free-Modell-Änderungen',
+            '\n\n'.join(parts)
+            + '\n\nDer Auto-Failover wurde aktualisiert.',
+        )
+
+    try:
+        os.replace(_FREE_CACHE_FILE, _FREE_CACHE_FILE + '.prev')
+    except Exception:
+        pass
+    with open(_FREE_CACHE_FILE, 'w') as f:
+        json.dump({'ts': time.time(), 'models': free_models}, f)
+    logger.info('Discovered %d free models (%d new, %d removed)',
+                 len(free_models), len(new_free), len(removed))
+    return free_models
+
+
 def _get_cached_free_models(client: OpenAI) -> list[str]:
     now = time.time()
     try:
@@ -49,38 +104,7 @@ def _get_cached_free_models(client: OpenAI) -> list[str]:
     except Exception:
         pass
 
-    try:
-        raw = client.models.list()
-        free_models = sorted(
-            m.id for m in raw
-            if m.id.endswith('-free') or m.id == 'big-pickle'
-        )
-        old = set()
-        if os.path.exists(_FREE_CACHE_FILE + '.prev'):
-            try:
-                with open(_FREE_CACHE_FILE + '.prev') as pf:
-                    old = set(json.load(pf).get('models', []))
-            except Exception:
-                pass
-        new_free = set(free_models) - old
-        if new_free:
-            _send_notification(
-                'opencode.ai: Neue Free-Modelle entdeckt',
-                f'Folgende neue Free-Modelle sind verfuegbar:\n'
-                + '\n'.join(f'  - {m}' for m in sorted(new_free))
-                + '\n\nDer Auto-Failover nutzt sie ab sofort.',
-            )
-        try:
-            os.replace(_FREE_CACHE_FILE, _FREE_CACHE_FILE + '.prev')
-        except Exception:
-            pass
-        with open(_FREE_CACHE_FILE, 'w') as f:
-            json.dump({'ts': now, 'models': free_models}, f)
-        logger.info('Discovered %d free models: %s', len(free_models), free_models)
-        return free_models
-    except Exception as e:
-        logger.warning('Failed to fetch free models: %s', e)
-        return []
+    return refresh_free_models(client)
 
 
 def _extract_content(choice) -> str:
@@ -116,6 +140,28 @@ class OpencodeClient(BaseClient):
 
     def get_free_models(self) -> list[str]:
         return _get_cached_free_models(self.client)
+
+    @classmethod
+    def try_refresh_free_models(cls) -> list[str]:
+        """Proactive refresh: find an opencode config in DB, refresh free model cache."""
+        from config import Config
+        from storage.models import ProviderConfig
+        from database import db
+        cfg = ProviderConfig.query.filter_by(provider_id='opencode').first()
+        if not cfg:
+            logger.warning('No opencode provider config in DB, cannot refresh free models')
+            return []
+        try:
+            cfg_dict = cfg.get_config()
+        except Exception as e:
+            logger.warning('Failed to decrypt opencode config: %s', e)
+            return []
+        api_key = cfg_dict.get('api_key')
+        if not api_key:
+            logger.warning('opencode config has no api_key')
+            return []
+        client = OpenAI(api_key=api_key, base_url=Config.OPENCODE_BASE_URL)
+        return refresh_free_models(client)
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
         clean = _MODEL_PREFIX_RE.sub('', model)

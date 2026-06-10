@@ -237,3 +237,16 @@ def vault_backup_command(output, db_only):
             click.echo(f'Vault backup: {tar_path} ({tar_path.stat().st_size} bytes)')
         else:
             click.echo('Vault dir empty or missing, skipped.')
+
+
+@click.command('refresh-free-models')
+def refresh_free_models_command():
+    """Proactively refresh the opencode free model cache from the API."""
+    from providers.opencode import OpencodeClient
+    click.echo('Refreshing opencode free models ...')
+    free = OpencodeClient.try_refresh_free_models()
+    if free:
+        click.echo(f'{len(free)} free models cached: {", ".join(free)}')
+    else:
+        click.echo('No free models found (check config)', err=True)
+        raise click.Abort()

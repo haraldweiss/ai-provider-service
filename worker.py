@@ -58,6 +58,17 @@ def _tick(app: Flask) -> None:
                 logger.warning(f'health-check {pid} crashed: {e}')
 
 
+def _refresh_free_models(app: Flask) -> None:
+    """Proactive free-model refresh: runs periodically to catch additions/removals."""
+    try:
+        from providers.opencode import OpencodeClient
+        free = OpencodeClient.try_refresh_free_models()
+        if free:
+            logger.info('Free model refresh: %d models', len(free))
+    except Exception as e:
+        logger.warning('Free model refresh failed: %s', e)
+
+
 def _drain(app: Flask) -> None:
     """Separater Durchlauf: Queue-Drain für alle recovered Provider."""
     with app.app_context():
@@ -74,8 +85,9 @@ def _drain(app: Flask) -> None:
 def _run(app: Flask) -> None:
     hc_interval = Config.HEALTH_CHECK_INTERVAL_SEC
     qd_interval = Config.QUEUE_DRAIN_INTERVAL_SEC
+    fm_interval = max(21600, hc_interval)  # free model refresh: min 6h
     sleep_sec = min(hc_interval, qd_interval)
-    logger.info(f'Worker startet, health-check={hc_interval}s, drain={qd_interval}s, sleep={sleep_sec}s')
+    logger.info(f'Worker startet, health-check={hc_interval}s, drain={qd_interval}s, free-model={fm_interval}s, sleep={sleep_sec}s')
     tick = 0
     while not _stop_event.is_set():
         try:
@@ -88,6 +100,11 @@ def _run(app: Flask) -> None:
                 _drain(app)
         except Exception as e:
             logger.exception(f'drain crashed: {e}')
+        try:
+            if tick % (fm_interval // sleep_sec) == 0:
+                _refresh_free_models(app)
+        except Exception as e:
+            logger.exception(f'free-model refresh crashed: {e}')
         tick += 1
         for _ in range(sleep_sec):
             if _stop_event.is_set():

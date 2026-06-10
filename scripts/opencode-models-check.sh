@@ -13,3 +13,8 @@ if [ -z "$DATA" ]; then
 fi
 
 python3 /usr/local/bin/opencode-models-check.py "$CACHE" "$PREV" <<< "$DATA"
+
+# Free model cache im ai-provider-Service aktualisieren
+flock -n /tmp/opencode_free_models.lock \
+  docker exec ai-provider flask --app app refresh-free-models 2>&1 \
+  || echo 'Free model refresh skipped (lock held or container busy)'
