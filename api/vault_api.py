@@ -7,12 +7,15 @@ and `..` components before any filesystem call.
 
 from __future__ import annotations
 import io
+import logging
 import os
 import tarfile
 from pathlib import Path
 from flask import Blueprint, request, jsonify, send_file, g
 from config import Config
 from api.auth import require_token, _asserted_user_id
+
+logger = logging.getLogger(__name__)
 
 vault_bp = Blueprint('vault', __name__, url_prefix='/memory')
 
@@ -40,6 +43,32 @@ def vault_tarball():
         return gate
     user_id = _scope_user_id()
     root = Path(Config.VAULT_PATH) / user_id
+
+    # Self-healing: if the on-disk vault is missing notes that exist in the DB
+    # (ephemeral VAULT_PATH lost on container restart, or render failures from
+    # the silent `except` pattern this PR fixes elsewhere), rebuild the user's
+    # subtree before packing. This makes the tarball endpoint authoritative.
+    try:
+        from storage.memory_models import MemoryNote
+        from storage.vault_renderer import VaultRenderer
+        db_note_count = MemoryNote.query.filter_by(
+            user_id=user_id, deleted_at=None,
+        ).count()
+        if db_note_count > 0:
+            disk_md_count = sum(1 for _ in root.rglob('*.md')) if root.exists() else 0
+            if disk_md_count < db_note_count:
+                logger.info(
+                    'vault drift detected for user %s (%d md files on disk, '
+                    '%d notes in DB) — rebuilding before tarball export',
+                    user_id, disk_md_count, db_note_count,
+                )
+                VaultRenderer().rebuild_all(user_id=user_id)
+    except Exception:
+        logger.exception(
+            'vault self-heal check failed for user %s — exporting whatever is on disk',
+            user_id,
+        )
+
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz') as t:
         if root.exists():
