@@ -53,7 +53,7 @@ def _get_cached_free_models(client: OpenAI) -> list[str]:
         raw = client.models.list()
         free_models = sorted(
             m.id for m in raw
-            if m.id.endswith('-free') and m.id != 'big-pickle'
+            if m.id.endswith('-free') or m.id == 'big-pickle'
         )
         old = set()
         if os.path.exists(_FREE_CACHE_FILE + '.prev'):
