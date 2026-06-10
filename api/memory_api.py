@@ -6,6 +6,7 @@ to write on their behalf.
 """
 
 from __future__ import annotations
+import logging
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, g
 from sqlalchemy import or_
@@ -15,6 +16,8 @@ from api.auth import require_token, _asserted_user_id
 from storage.memory_models import MemoryNote, MemoryKind
 from storage.memory import MemoryWriter, NoteAlreadyExists
 from storage.vault_renderer import VaultRenderer
+
+logger = logging.getLogger(__name__)
 
 memory_bp = Blueprint('memory', __name__, url_prefix='/memory')
 
@@ -71,6 +74,12 @@ def create_note():
         VaultRenderer().render_one(note)
         render_pending = False
     except Exception:
+        logger.exception(
+            'VaultRenderer.render_one failed for note id=%s slug=%s app=%s — '
+            'note is in DB but not on disk (vault.tar.gz will miss it). '
+            'Check VAULT_PATH permissions / persistence.',
+            note.id, note.slug, note.app,
+        )
         render_pending = True
 
     return jsonify({'id': note.id,
@@ -157,7 +166,11 @@ def patch_note(note_id: int):
     try:
         VaultRenderer().render_one(n)
     except Exception:
-        pass
+        logger.exception(
+            'VaultRenderer.render_one failed during update for note id=%s slug=%s — '
+            'DB committed but disk copy stale.',
+            n.id, n.slug,
+        )
     return jsonify(n.to_dict())
 
 
@@ -177,7 +190,11 @@ def delete_note(note_id: int):
     try:
         VaultRenderer().cleanup_deleted()
     except Exception:
-        pass
+        logger.exception(
+            'VaultRenderer.cleanup_deleted failed after deleting note id=%s — '
+            'DB tombstone set but disk copy may remain.',
+            n.id,
+        )
     return ('', 204)
 
 
@@ -208,6 +225,11 @@ def create_event():
         VaultRenderer().render_one(note)
         render_pending = False
     except Exception:
+        logger.exception(
+            'VaultRenderer.render_one failed for event id=%s app=%s — '
+            'event is in DB but not on disk.',
+            note.id, note.app,
+        )
         render_pending = True
     return jsonify({'id': note.id,
                     'path': f'{note.folder}/{note.slug}.md',
@@ -312,7 +334,11 @@ def summarize_note(note_id: int):
     try:
         VaultRenderer().render_one(summary_note)
     except Exception:
-        pass
+        logger.exception(
+            'VaultRenderer.render_one failed for summary note id=%s — '
+            'summary is in DB but not on disk.',
+            summary_note.id,
+        )
     return jsonify({'summary': summary_note.to_dict()})
 
 
