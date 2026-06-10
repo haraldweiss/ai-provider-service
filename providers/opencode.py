@@ -125,9 +125,9 @@ def _extract_content(choice) -> str:
 
 class OpencodeClient(BaseClient):
     def __init__(self, config: dict):
-        api_key = config.get('api_key')
+        api_key = config.get('api_key') or Config.OPENCODE_API_KEY
         if not api_key:
-            raise ValueError("Opencode: api_key erforderlich")
+            raise ValueError("Opencode: api_key oder OPENCODE_API_KEY erforderlich")
         base_url = config.get('api_endpoint') or Config.OPENCODE_BASE_URL
         self.client = OpenAI(api_key=api_key, base_url=base_url)
 
@@ -143,22 +143,11 @@ class OpencodeClient(BaseClient):
 
     @classmethod
     def try_refresh_free_models(cls) -> list[str]:
-        """Proactive refresh: find an opencode config in DB, refresh free model cache."""
+        """Proactive refresh: use system OPENCODE_API_KEY, refresh free model cache."""
         from config import Config
-        from storage.models import ProviderConfig
-        from database import db
-        cfg = ProviderConfig.query.filter_by(provider_id='opencode').first()
-        if not cfg:
-            logger.warning('No opencode provider config in DB, cannot refresh free models')
-            return []
-        try:
-            cfg_dict = cfg.get_config()
-        except Exception as e:
-            logger.warning('Failed to decrypt opencode config: %s', e)
-            return []
-        api_key = cfg_dict.get('api_key')
+        api_key = Config.OPENCODE_API_KEY
         if not api_key:
-            logger.warning('opencode config has no api_key')
+            logger.warning('OPENCODE_API_KEY not set, cannot refresh free models')
             return []
         client = OpenAI(api_key=api_key, base_url=Config.OPENCODE_BASE_URL)
         return refresh_free_models(client)
