@@ -13,6 +13,7 @@ from typing import Optional
 from database import db
 from storage.models import ProviderConfig, RequestQueue
 from providers import get_client, PROVIDER_REGISTRY
+from config import Config
 import health_tracker
 
 logger = logging.getLogger(__name__)
@@ -48,13 +49,16 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     if pc:
         return pc.get_config()
+    # opencode: free models via system key, paid models need personal key
+    if provider_id == 'opencode':
+        if Config.OPENCODE_API_KEY:
+            return {'_free_only': True, 'api_key': Config.OPENCODE_API_KEY}
+        return None
+
     if PROVIDER_REGISTRY.get(provider_id, {}).get('system'):
         if provider_id == 'claude' and not _is_claude_server_key_allowed(user_id):
             return None
         return {}
-    # Non-system provider: opencode free models via system key
-    if provider_id == 'opencode' and Config.OPENCODE_API_KEY:
-        return {'_free_only': True, 'api_key': Config.OPENCODE_API_KEY}
     return None
 
 

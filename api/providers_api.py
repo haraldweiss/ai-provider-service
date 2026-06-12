@@ -6,6 +6,7 @@ from api.auth import require_token
 from api.gate import require_provider_access, is_allowed
 from providers import get_client, PROVIDER_REGISTRY, list_provider_ids
 from flask import g
+from config import Config
 from storage.models import ProviderConfig
 import health_tracker
 
@@ -37,10 +38,6 @@ def list_providers():
                 pass
             else:
                 configured = True
-
-        # opencode: als konfiguriert anzeigen wenn der System-Key existiert
-        if pid == 'opencode' and Config.OPENCODE_API_KEY:
-            configured = True
 
         allowed = is_allowed(g.principal, pid)
         health = health_tracker.get_status(pid)
@@ -77,7 +74,13 @@ def get_models(provider_id):
     try:
         client = get_client(provider_id, cfg)
         models = client.get_models()
-        return jsonify({'models': models, 'count': len(models)})
+        free_models = client.get_free_models() if hasattr(client, 'get_free_models') else []
+        return jsonify({
+            'models': models,
+            'count': len(models),
+            'free_models': free_models,
+            'free_count': len(free_models),
+        })
     except Exception as e:
         logger.warning(f'get_models({provider_id}) failed: {e}')
         return jsonify({'error': str(e)}), 502
