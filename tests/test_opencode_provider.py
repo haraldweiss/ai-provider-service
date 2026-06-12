@@ -10,8 +10,14 @@ def test_opencode_registered():
     assert 'opencode' in PROVIDER_REGISTRY
 
 
-def test_opencode_requires_api_key():
-    assert 'api_key' in PROVIDER_REGISTRY['opencode']['requires']
+def test_opencode_is_system_provider_with_optional_api_key():
+    """opencode ist System-Provider (Free-Tier über zentralen OPENCODE_API_KEY).
+    Ein eigener api_key ist optional und schaltet Paid-Modelle frei — er ist
+    daher NICHT in 'requires', sondern in 'optional'."""
+    meta = PROVIDER_REGISTRY['opencode']
+    assert meta['system'] is True
+    assert 'api_key' not in meta['requires']
+    assert 'api_key' in meta['optional']
 
 
 def test_factory_returns_opencode_client():

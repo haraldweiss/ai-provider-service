@@ -38,9 +38,9 @@ PROVIDER_REGISTRY = {
     },
     'opencode': {
         'name': 'opencode.ai (Zen)',
-        'system': False,
-        'requires': ['api_key'],
-        'optional': ['api_endpoint'],
+        'system': True,
+        'requires': [],
+        'optional': ['api_key', 'api_endpoint'],
     },
 }
 
