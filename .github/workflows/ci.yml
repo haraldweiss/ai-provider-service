@@ -1,0 +1,74 @@
+name: CI
+
+# Zwei Gates gegen die Bug-Klasse aus der Bewerbungstracker-Session 2026-06-12
+# (latente Bugs, die erst beim Image-Rebuild zuschlugen — z.B. fehlender
+# 'from config import Config' -> NameError auf jedem opencode-Pfad):
+#   - test:         pytest auf jedem PR/Push
+#   - docker-smoke: Image bauen -> booten -> /health == 200. Ein NameError /
+#                   Import-Fehler / Bind-Problem faellt hier auf, nicht erst
+#                   beim Prod-Rebuild.
+#
+# Security: keine untrusted github.event.* Inputs in run:-Schritten. Der
+# generierte Fernet-Key wird ueber env: durchgereicht.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install deps
+        run: pip install -r requirements.txt pytest
+      - name: pytest
+        run: pytest tests/ -q
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t ai-provider:ci .
+
+      - name: Generate valid Fernet MASTER_KEY
+        id: keys
+        run: |
+          KEY=$(docker run --rm --entrypoint python ai-provider:ci \
+            -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+          echo "master=$KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Boot + /health (faengt NameError/Import/Bind)
+        env:
+          MASTER_KEY: ${{ steps.keys.outputs.master }}
+        run: |
+          docker run -d --name aip \
+            -e MASTER_KEY="$MASTER_KEY" \
+            -e SERVICE_TOKEN=ci-dummy-token \
+            -p 127.0.0.1:8767:8767 \
+            ai-provider:ci
+          ok=
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8767/health || true)
+            if [ "$code" = "200" ]; then echo "OK /health == 200"; ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "FAIL /health nicht erreichbar"; docker logs aip; exit 1
+          fi
+
+      - name: Smoke /providers (opencode muss als system gelistet sein)
+        run: |
+          out=$(curl -s -H "Authorization: Bearer ci-dummy-token" \
+            "http://127.0.0.1:8767/providers" || true)
+          echo "$out"
+          echo "$out" | grep -q '"id": *"opencode"' \
+            || { echo "FAIL opencode nicht in /providers"; docker logs aip; exit 1; }
+          echo "OK opencode gelistet"

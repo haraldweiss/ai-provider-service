@@ -68,6 +68,12 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - ❌ Hand-edit `.md` files under `VAULT_PATH` — the next self-heal cron will overwrite them.
 - ❌ Reference a hardcoded vault path; read `Config.VAULT_PATH` (mirrors §3.2 SQLite rule).
 
+### 3.7 No persistent hotfixes in the running container
+- ❌ Never leave changes applied to the running `ai-provider` container via `sed`/`docker cp`/`docker exec` as the "fix". They do **not** survive an image rebuild and create silent drift between running code and the repo. This bit us on 2026-06-12: opencode fixes lived only in the container, while `main` carried a `NameError` (`Config` not imported) that surfaced the moment someone rebuilt.
+- ✅ An incident hotfix to restore service is fine **only if**, in the same session, you (1) commit the fix to the repo, (2) rebuild the image, (3) recreate the container so running == committed.
+- ✅ Before merge, CI must be green (`.github/workflows/ci.yml`: pytest **and** docker build + boot + `/health` smoke — the smoke catches import/`NameError`/bind regressions that unit tests miss).
+- ✅ Build images with `build.sh` (tags `:<sha>` + `:latest`) so "what's running" is traceable and rollback is possible.
+
 ---
 
 ## 4. Verification standards
