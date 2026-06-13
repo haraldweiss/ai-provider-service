@@ -22,7 +22,7 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Single endpoint for consumer apps (Bewerbungstracker, loganonymizer) to access Claude, Ollama, OpenAI, Mammouth, Custom providers
 - Per-user config with Fernet-encrypted API keys, automatic fallback, SQLite-backed queue for offline resilience
 - Multi-Mac Ollama pool mode with predictive per-model routing
-- Deployed on Rocky 9 VPS behind Apache, reverse-SSH tunnels to local Macs for Ollama
+- Deployed as a Docker container (`ai-provider`) on **oracle-vm** (Oracle Cloud, 92.5.18.29); three local Macs serve Ollama via reverse-SSH tunnels (the IONOS VPS is retired — see §3.3/§6)
 - **Python 3.9+** (Flask, SQLAlchemy, Flask-CORS), SQLite, gunicorn + systemd
 
 ---
@@ -34,7 +34,7 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Avoid: production deploys, DB migrations, VPS config changes
 
 ### Claude Code (Care-optimized)
-- Good for: production deploys (`systemctl restart ai-provider-service`), DB schema migrations, reverse-SSH tunnel changes, Apache/SELinux config, security review of new endpoints or file ops
+- Good for: production deploys (`docker restart ai-provider` on oracle-vm), DB schema migrations, reverse-SSH tunnel changes, Apache/SELinux config, security review of new endpoints or file ops
 
 ---
 
@@ -44,25 +44,28 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Never log or expose decrypted keys, even in debug output
 - `fernet_key` is set via env var `FERNET_KEY` — never hardcode
 
-### 3.2 SQLite path is set by the systemd unit
-- `/etc/ai-provider-service/provider.db` on VPS
-- Never reference a hardcoded path — use config from env or `app.config`
+### 3.2 SQLite path is set by the container env, not hardcoded
+- Live DB is `/app/data/storage.db` inside the `ai-provider` container (Docker volume `bewerbungen_data`); host copy/backup at `/opt/ai-provider-data/storage.db`.
+- Never reference a hardcoded path — use config from env or `app.config`.
 
 ### 3.3 HTTP calls to Ollama Macs go through reverse-SSH tunnels
-- Ports 11434 (Macbook) and 11435 (Mac mini) are tunneled from VPS localhost
-- Never assume Ollama is available locally — always handle `ConnectionError` with fallback to next provider
+- Three Macs serve Ollama, each tunnelled to a distinct oracle-vm port: **11434** (MacBook), **11435** (Mac mini), **11440** (Mac Studio / Michael).
+- Tunnels are initiated **from each Mac**, not from the server: macOS `launchd` autossh agents (`com.wolfini.*tunnel`) connect to `opc@oracle-vm` with `-R 1143x:127.0.0.1:11434`. Each Mac self-monitors and restarts its own tunnel; the gateway has no control over them.
+- On oracle-vm a `socat` layer bridges the Docker gateway to the sshd reverse-forwards: `172.17.0.1:1143x → 127.0.0.1:1143x`. The container reaches Ollama at `172.17.0.1:1143x`.
+- ⚠️ launchd agents on the Macs must NOT log under `~/.ollama` — it's a symlink to an external SSD; an unmounted/TCC-blocked volume makes launchd fail the job with `EX_CONFIG (78)` (silent, no autossh start). Log to internal disk (`~/Library/Logs/…`). Self-monitors must restart via `launchctl kickstart -k`, not legacy `load/unload` (no-op on wedged jobs).
+- Never assume Ollama is available locally — always handle `ConnectionError` with fallback to next provider.
 
 ### 3.4 Provider health checks are async and non-blocking
 - ✅ Use thread pool or async for parallel health checks
 - ❌ Serial `for provider in providers: health_check(provider)` — blocks the gateway
 
-### 3.5 Gunicorn behind Apache
-- Service runs via `systemd` → `gunicorn` on a local socket or port
-- Apache reverse-proxies with `ProxyPass`
-- Never bind directly to port 80/443
+### 3.5 Gunicorn in the container, behind host Apache
+- `gunicorn` runs **inside** the `ai-provider` Docker container, which exposes `127.0.0.1:8767` on oracle-vm.
+- Host Apache (`httpd`) reverse-proxies to it: `ai-admin.wolfinisoftware.de` → `:8767/`, and `bewerbungen.wolfinisoftware.de/ai-provider/` → `:8767/` (see `/etc/httpd/conf.d/`). In-container callers reach the host via `ai-provider-bridge.service` (docker0 gw → loopback :8767).
+- Never bind directly to port 80/443 — Apache owns those.
 
 ### 3.6 Markdown memory vault is rendered, not authored
-- `VAULT_PATH` (default `/var/lib/ai-provider-service/vault`) contains `.md` files **generated from the DB** by `VaultRenderer`. Treat as cache.
+- `VAULT_PATH` (set to `/app/data/vault` in the container env; code default `<app>/vault`) contains `.md` files **generated from the DB** by `VaultRenderer`. Treat as cache.
 - DB tables `memory_notes` and `summary_jobs` are the source of truth.
 - ✅ Edit notes via `PATCH /memory/notes/<id>`.
 - ❌ Hand-edit `.md` files under `VAULT_PATH` — the next self-heal cron will overwrite them.
@@ -113,19 +116,30 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 
 | What | How |
 |---|---|
-| SSH | `ssh ionos-vps` |
-| App dir | `/opt/ai-provider-service/` |
-| Logs | `/var/log/ai-provider-service/` |
-| Service | `sudo systemctl status ai-provider-service` |
-| Restart | `sudo systemctl restart ai-provider-service` |
-| DB | SQLite at `/etc/ai-provider-service/provider.db` |
-| Tunnels | `autossh` systemd units (check `systemctl list-units \| grep tunnel`) |
-| Vault path | `/var/lib/ai-provider-service/vault/<user>/...` (cache; regen via `flask vault-render --rebuild`) |
-| Timers | `systemctl list-timers \| grep ai-provider` — summary @ 02:30 UTC, vault-render every 10 min |
+| SSH | `ssh oracle-vm` (Oracle Cloud, 92.5.18.29) |
+| Runtime | Docker container `ai-provider` (`restart=unless-stopped`, exposes `127.0.0.1:8767`). Fronted by systemd `ai-provider-bridge.service` (docker0 gw → host loopback :8767) + `openai-proxy.service`. Started via `docker run`, not compose/systemd. |
+| Config / env | `/etc/ai-provider/ai-provider.env` (root-owned) |
+| Logs | `docker logs ai-provider` (no `/var/log/ai-provider`; `journalctl -u ai-provider-bridge`/`openai-proxy` for the helpers) |
+| Restart | `docker restart ai-provider` |
+| DB | SQLite in Docker volume `bewerbungen_data` → `/app/data/storage.db`; host copy/backup at `/opt/ai-provider-data/storage.db` |
+| Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + `socat` bridge (see §3.3). Server check: `ss -tln \| grep 1143` and `curl 127.0.0.1:1143x/api/tags` |
+| Vault | `VAULT_PATH=/app/data/vault` (container env; `MEMORY_ENABLED=true`). Cache; regen via `flask vault-render --rebuild` inside the container. |
+| Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT). The old IONOS systemd timers (summary @02:30, vault-render /10min) are gone — any such jobs now run inside the container, not as host timers. |
+| Apache | Host `httpd` reverse-proxies `:8767` → `ai-admin.wolfinisoftware.de` and `bewerbungen.wolfinisoftware.de/ai-provider/` (`/etc/httpd/conf.d/`) |
 
 ---
 
 ## 7. Handoff zone
+
+### Ollama-Tunnel-Ausfall + Doku-Korrektur (2026-06-13, Claude Code)
+
+**Symptom:** Consumer zeigte `● Ollama (Mac) — offline (6 ms)` (6 ms = connection refused, kein Timeout).
+
+**Root cause:** `~/.ollama` auf dem MacBook ist seit 2026-06-11 ein Symlink auf eine externe SSD. Der launchd-Tunnel-Agent `com.wolfini.ollama-tunnel` hatte `StandardOutPath` unter `~/.ollama` → launchd konnte die Log-Datei nicht öffnen → `EX_CONFIG (78)`, autossh startete nie, Server band `127.0.0.1:11434` nicht mehr → socat/Container sahen Ollama offline. Der Self-Monitor „heilte" nicht, weil er legacy `launchctl load/unload` nutzte (No-Op auf wedged Job).
+
+**Fix (alles lokale Mac-Infra, kein Repo-Code):** Log-Pfade des Tunnel-Agents auf interne Disk umgebogen; alle drei Self-Monitore (MacBook/Mini/Studio) auf `launchctl kickstart -k` umgestellt; redundanten `de.wolfini.ollama-app` (EX_CONFIG-Spam) deaktiviert; `~/bin/reactivate-tunnels.sh` von IONOS-Resten auf `oracle-vm`/`com.wolfini.ollama-tunnel` korrigiert. Verifiziert: oracle-vm :11434/:11435/:11440 → alle HTTP 200.
+
+**Doku aktualisiert (oracle-vm only, IONOS retired):** §1, §3.2, §3.3, §3.5, §3.6, §6 + §2-Deploy-Befehl spiegeln jetzt die reale Topologie. Verifiziert auf oracle-vm: Docker-Container `ai-provider` (`:8767`, restart=unless-stopped); DB `/app/data/storage.db` (Volume `bewerbungen_data`); `VAULT_PATH=/app/data/vault`, `MEMORY_ENABLED=true`; **Apache (`httpd`) läuft weiter** und reverse-proxyt `:8767` für `ai-admin.…` + `bewerbungen.…/ai-provider/` (gunicorn läuft im Container); Host-Timer nur noch `wolfini-daily-roundup.timer` (täglich ~04:02). 3 Macs (11434/11435/11440) tunneln per macOS-launchd-autossh → `opc@oracle-vm`, socat-Brücke `172.17.0.1:1143x→127.0.0.1:1143x`.
 
 ### 📩 Notiz an opencode (2026-06-06, von Claude Code)
 
