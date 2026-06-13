@@ -71,6 +71,12 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - ❌ Hand-edit `.md` files under `VAULT_PATH` — the next self-heal cron will overwrite them.
 - ❌ Reference a hardcoded vault path; read `Config.VAULT_PATH` (mirrors §3.2 SQLite rule).
 
+### 3.7 No persistent hotfixes in the running container
+- ❌ Never leave changes applied to the running `ai-provider` container via `sed`/`docker cp`/`docker exec` as the "fix". They do **not** survive an image rebuild and create silent drift between running code and the repo. This bit us on 2026-06-12: opencode fixes lived only in the container, while `main` carried a `NameError` (`Config` not imported) that surfaced the moment someone rebuilt.
+- ✅ An incident hotfix to restore service is fine **only if**, in the same session, you (1) commit the fix to the repo, (2) rebuild the image, (3) recreate the container so running == committed.
+- ✅ Before merge, CI must be green (`.github/workflows/ci.yml`: pytest **and** docker build + boot + `/health` smoke — the smoke catches import/`NameError`/bind regressions that unit tests miss).
+- ✅ Build images with `build.sh` (tags `:<sha>` + `:latest`) so "what's running" is traceable and rollback is possible.
+
 ---
 
 ## 4. Verification standards
@@ -140,6 +146,19 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 **Fix (alles lokale Mac-Infra, kein Repo-Code):** Log-Pfade des Tunnel-Agents auf interne Disk umgebogen; alle drei Self-Monitore (MacBook/Mini/Studio) auf `launchctl kickstart -k` umgestellt; redundanten `de.wolfini.ollama-app` (EX_CONFIG-Spam) deaktiviert; `~/bin/reactivate-tunnels.sh` von IONOS-Resten auf `oracle-vm`/`com.wolfini.ollama-tunnel` korrigiert. Verifiziert: oracle-vm :11434/:11435/:11440 → alle HTTP 200.
 
 **Doku aktualisiert (oracle-vm only, IONOS retired):** §1, §3.2, §3.3, §3.5, §3.6, §6 + §2-Deploy-Befehl spiegeln jetzt die reale Topologie. Verifiziert auf oracle-vm: Docker-Container `ai-provider` (`:8767`, restart=unless-stopped); DB `/app/data/storage.db` (Volume `bewerbungen_data`); `VAULT_PATH=/app/data/vault`, `MEMORY_ENABLED=true`; **Apache (`httpd`) läuft weiter** und reverse-proxyt `:8767` für `ai-admin.…` + `bewerbungen.…/ai-provider/` (gunicorn läuft im Container); Host-Timer nur noch `wolfini-daily-roundup.timer` (täglich ~04:02). 3 Macs (11434/11435/11440) tunneln per macOS-launchd-autossh → `opc@oracle-vm`, socat-Brücke `172.17.0.1:1143x→127.0.0.1:1143x`.
+
+### chore/ci-hardening — gemerged (2026-06-13, opencode)
+
+**What:**
+- CI pipeline (`.github/workflows/ci.yml`): pytest + docker build+smoke
+- `build.sh` — SHA-tagged image builds, Rollback-fähig
+- AGENTS.md aktualisiert: oracle-vm→IONOS, §3.7 No-Hotfix, oracle-vm-Handoff gelöscht
+- `fix/news-agent-current-date` (Commit `3e16baf`) war bereits in History enthalten
+- 205/205 Tests grün
+
+**Offen:**
+- WordPress-Post 34017 (falsche News-Agent-Daten vom 2026-06-06) — optional löschen
+- Branch `fix/news-agent-current-date` hat `22f0fbf Fix: include big-pickle` noch nicht in `chore/ci-hardening`
 
 ### 📩 Notiz an opencode (2026-06-06, von Claude Code)
 
