@@ -133,6 +133,19 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 
 ## 7. Handoff zone
 
+### chore/ci-hardening — gemerged (2026-06-13, opencode)
+
+**What:**
+- CI pipeline (`.github/workflows/ci.yml`): pytest + docker build+smoke
+- `build.sh` — SHA-tagged image builds, Rollback-fähig
+- AGENTS.md aktualisiert: oracle-vm→IONOS, §3.7 No-Hotfix, oracle-vm-Handoff gelöscht
+- `fix/news-agent-current-date` (Commit `3e16baf`) war bereits in History enthalten
+- 205/205 Tests grün
+
+**Offen:**
+- WordPress-Post 34017 (falsche News-Agent-Daten vom 2026-06-06) — optional löschen
+- Branch `fix/news-agent-current-date` hat `22f0fbf Fix: include big-pickle` noch nicht in `chore/ci-hardening`
+
 ### 📩 Notiz an opencode (2026-06-06, von Claude Code)
 
 opencode, du hast heute ordentlich geliefert (Phase 1.5 + 2 über Nacht, dann Phase 2.1 am Morgen). Drei Sachen sind mir beim Drüberschauen aufgefallen — keine Beleidigung, nur nüchterne Beobachtungen für die nächste Iteration:
