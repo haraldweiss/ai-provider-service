@@ -158,7 +158,29 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 
 **Offen:**
 - WordPress-Post 34017 (falsche News-Agent-Daten vom 2026-06-06) — optional löschen
-- Branch `fix/news-agent-current-date` hat `22f0fbf Fix: include big-pickle` noch nicht in `chore/ci-hardening`
+
+### Cross-Repo Cleanup (2026-06-13, opencode)
+
+**Bewerbungstracker:**
+- `fix/app-gunicorn-bind-host` (PR#23) — gemergt 🔴
+- `fix/setup-script-cron-env` (PR#24) — gemergt 🔴
+- `fix/admin-bg-jobs-double-api-prefix` — gemergt
+- `fix/free-models-grouping` — gemergt
+- `claude/naughty-turing-5e5603` (get_models_raw, cache-invalidation) — gemergt
+- 4 untracked Files `SUSPICIOUS_FEEDBACK_*` liegen noch在工作目录
+- **Verifiziert:** alle 5 Branches auf `origin/master`
+
+**Claude-KI-Usage-Tracker:**
+- `fix/quadlet-healthcmd-quoting` — gemergt
+- `claude/crazy-jang-63096d-test` (Workspace Discovery) — gemergt
+- Beide lokalen Kopien auf `origin/main` geupdated
+- Backend-Tests: 7 passed, 26 failed (alles pre-existing infra issues)
+
+**wolfini_de_web:**
+- `security/agent-shield-sudo-fix` — gemergt
+- `claude/modest-wilbur-1611de` (AGENTS.md §5.1 + IONOS-VPS-MANAGEMENT.md) — gemergt
+- 14 merged Branches auf origin wegen GH013-Branch-Protection nicht löschbar
+- 7 orphaned Branches (alter `master`, 322 commits diverged) bewusst belassen
 
 ### 📩 Notiz an opencode (2026-06-06, von Claude Code)
 
