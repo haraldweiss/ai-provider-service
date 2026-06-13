@@ -34,7 +34,7 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Avoid: production deploys, DB migrations, VPS config changes
 
 ### Claude Code (Care-optimized)
-- Good for: production deploys (`systemctl restart ai-provider-service`), DB schema migrations, reverse-SSH tunnel changes, Apache/SELinux config, security review of new endpoints or file ops
+- Good for: production deploys (`docker restart ai-provider` on oracle-vm), DB schema migrations, reverse-SSH tunnel changes, Apache/SELinux config, security review of new endpoints or file ops
 
 ---
 
@@ -44,9 +44,9 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Never log or expose decrypted keys, even in debug output
 - `fernet_key` is set via env var `FERNET_KEY` — never hardcode
 
-### 3.2 SQLite path is set by the systemd unit
-- `/etc/ai-provider-service/provider.db` on VPS
-- Never reference a hardcoded path — use config from env or `app.config`
+### 3.2 SQLite path is set by the container env, not hardcoded
+- Live DB is `/app/data/storage.db` inside the `ai-provider` container (Docker volume `bewerbungen_data`); host copy/backup at `/opt/ai-provider-data/storage.db`.
+- Never reference a hardcoded path — use config from env or `app.config`.
 
 ### 3.3 HTTP calls to Ollama Macs go through reverse-SSH tunnels
 - Three Macs serve Ollama, each tunnelled to a distinct oracle-vm port: **11434** (MacBook), **11435** (Mac mini), **11440** (Mac Studio / Michael).
@@ -59,13 +59,13 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - ✅ Use thread pool or async for parallel health checks
 - ❌ Serial `for provider in providers: health_check(provider)` — blocks the gateway
 
-### 3.5 Gunicorn behind Apache
-- Service runs via `systemd` → `gunicorn` on a local socket or port
-- Apache reverse-proxies with `ProxyPass`
-- Never bind directly to port 80/443
+### 3.5 Gunicorn in the container, behind host Apache
+- `gunicorn` runs **inside** the `ai-provider` Docker container, which exposes `127.0.0.1:8767` on oracle-vm.
+- Host Apache (`httpd`) reverse-proxies to it: `ai-admin.wolfinisoftware.de` → `:8767/`, and `bewerbungen.wolfinisoftware.de/ai-provider/` → `:8767/` (see `/etc/httpd/conf.d/`). In-container callers reach the host via `ai-provider-bridge.service` (docker0 gw → loopback :8767).
+- Never bind directly to port 80/443 — Apache owns those.
 
 ### 3.6 Markdown memory vault is rendered, not authored
-- `VAULT_PATH` (default `/var/lib/ai-provider-service/vault`) contains `.md` files **generated from the DB** by `VaultRenderer`. Treat as cache.
+- `VAULT_PATH` (set to `/app/data/vault` in the container env; code default `<app>/vault`) contains `.md` files **generated from the DB** by `VaultRenderer`. Treat as cache.
 - DB tables `memory_notes` and `summary_jobs` are the source of truth.
 - ✅ Edit notes via `PATCH /memory/notes/<id>`.
 - ❌ Hand-edit `.md` files under `VAULT_PATH` — the next self-heal cron will overwrite them.
@@ -123,7 +123,9 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 | Restart | `docker restart ai-provider` |
 | DB | SQLite in Docker volume `bewerbungen_data` → `/app/data/storage.db`; host copy/backup at `/opt/ai-provider-data/storage.db` |
 | Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + `socat` bridge (see §3.3). Server check: `ss -tln \| grep 1143` and `curl 127.0.0.1:1143x/api/tags` |
-| Vault / timers | Now inside the container under `/app/data` (was `/var/lib/ai-provider-service/vault` on the retired IONOS VPS). Exact in-container schedule **unverified** — confirm before relying on it. |
+| Vault | `VAULT_PATH=/app/data/vault` (container env; `MEMORY_ENABLED=true`). Cache; regen via `flask vault-render --rebuild` inside the container. |
+| Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT). The old IONOS systemd timers (summary @02:30, vault-render /10min) are gone — any such jobs now run inside the container, not as host timers. |
+| Apache | Host `httpd` reverse-proxies `:8767` → `ai-admin.wolfinisoftware.de` and `bewerbungen.wolfinisoftware.de/ai-provider/` (`/etc/httpd/conf.d/`) |
 
 ---
 
@@ -137,13 +139,7 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 
 **Fix (alles lokale Mac-Infra, kein Repo-Code):** Log-Pfade des Tunnel-Agents auf interne Disk umgebogen; alle drei Self-Monitore (MacBook/Mini/Studio) auf `launchctl kickstart -k` umgestellt; redundanten `de.wolfini.ollama-app` (EX_CONFIG-Spam) deaktiviert; `~/bin/reactivate-tunnels.sh` von IONOS-Resten auf `oracle-vm`/`com.wolfini.ollama-tunnel` korrigiert. Verifiziert: oracle-vm :11434/:11435/:11440 → alle HTTP 200.
 
-**Doku in diesem Commit aktualisiert:** §1, §3.3, §6 spiegeln jetzt die reale Topologie (oracle-vm Docker, 3 Macs, launchd-autossh, socat). **IONOS-VPS ist retired.**
-
-**⚠️ Noch stale (nächste Session bereinigen — selbe Migration):**
-- §2: „production deploys (`systemctl restart ai-provider-service`)" → ist jetzt `docker restart ai-provider`.
-- §3.2: DB-Pfad-Beispiel `/etc/ai-provider-service/provider.db` → real `/app/data/storage.db` (Volume `bewerbungen_data`).
-- §3.5: „Gunicorn behind Apache" → kein Apache mehr; Container `:8767` hinter `ai-provider-bridge` + `openai-proxy`.
-- §3.6: Vault-Pfad `/var/lib/ai-provider-service/vault` → jetzt in-Container unter `/app/data` (verifizieren).
+**Doku aktualisiert (oracle-vm only, IONOS retired):** §1, §3.2, §3.3, §3.5, §3.6, §6 + §2-Deploy-Befehl spiegeln jetzt die reale Topologie. Verifiziert auf oracle-vm: Docker-Container `ai-provider` (`:8767`, restart=unless-stopped); DB `/app/data/storage.db` (Volume `bewerbungen_data`); `VAULT_PATH=/app/data/vault`, `MEMORY_ENABLED=true`; **Apache (`httpd`) läuft weiter** und reverse-proxyt `:8767` für `ai-admin.…` + `bewerbungen.…/ai-provider/` (gunicorn läuft im Container); Host-Timer nur noch `wolfini-daily-roundup.timer` (täglich ~04:02). 3 Macs (11434/11435/11440) tunneln per macOS-launchd-autossh → `opc@oracle-vm`, socat-Brücke `172.17.0.1:1143x→127.0.0.1:1143x`.
 
 ### 📩 Notiz an opencode (2026-06-06, von Claude Code)
 
