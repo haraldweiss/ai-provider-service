@@ -22,7 +22,7 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Single endpoint for consumer apps (Bewerbungstracker, loganonymizer) to access Claude, Ollama, OpenAI, Mammouth, Custom providers
 - Per-user config with Fernet-encrypted API keys, automatic fallback, SQLite-backed queue for offline resilience
 - Multi-Mac Ollama pool mode with predictive per-model routing
-- Deployed on Rocky 9 VPS behind Apache, reverse-SSH tunnels to local Macs for Ollama
+- Deployed as a Docker container (`ai-provider`) on **oracle-vm** (Oracle Cloud, 92.5.18.29); three local Macs serve Ollama via reverse-SSH tunnels (the IONOS VPS is retired — see §3.3/§6)
 - **Python 3.9+** (Flask, SQLAlchemy, Flask-CORS), SQLite, gunicorn + systemd
 
 ---
@@ -49,8 +49,11 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Never reference a hardcoded path — use config from env or `app.config`
 
 ### 3.3 HTTP calls to Ollama Macs go through reverse-SSH tunnels
-- Ports 11434 (Macbook) and 11435 (Mac mini) are tunneled from VPS localhost
-- Never assume Ollama is available locally — always handle `ConnectionError` with fallback to next provider
+- Three Macs serve Ollama, each tunnelled to a distinct oracle-vm port: **11434** (MacBook), **11435** (Mac mini), **11440** (Mac Studio / Michael).
+- Tunnels are initiated **from each Mac**, not from the server: macOS `launchd` autossh agents (`com.wolfini.*tunnel`) connect to `opc@oracle-vm` with `-R 1143x:127.0.0.1:11434`. Each Mac self-monitors and restarts its own tunnel; the gateway has no control over them.
+- On oracle-vm a `socat` layer bridges the Docker gateway to the sshd reverse-forwards: `172.17.0.1:1143x → 127.0.0.1:1143x`. The container reaches Ollama at `172.17.0.1:1143x`.
+- ⚠️ launchd agents on the Macs must NOT log under `~/.ollama` — it's a symlink to an external SSD; an unmounted/TCC-blocked volume makes launchd fail the job with `EX_CONFIG (78)` (silent, no autossh start). Log to internal disk (`~/Library/Logs/…`). Self-monitors must restart via `launchctl kickstart -k`, not legacy `load/unload` (no-op on wedged jobs).
+- Never assume Ollama is available locally — always handle `ConnectionError` with fallback to next provider.
 
 ### 3.4 Provider health checks are async and non-blocking
 - ✅ Use thread pool or async for parallel health checks
@@ -113,19 +116,34 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 
 | What | How |
 |---|---|
-| SSH | `ssh ionos-vps` |
-| App dir | `/opt/ai-provider-service/` |
-| Logs | `/var/log/ai-provider-service/` |
-| Service | `sudo systemctl status ai-provider-service` |
-| Restart | `sudo systemctl restart ai-provider-service` |
-| DB | SQLite at `/etc/ai-provider-service/provider.db` |
-| Tunnels | `autossh` systemd units (check `systemctl list-units \| grep tunnel`) |
-| Vault path | `/var/lib/ai-provider-service/vault/<user>/...` (cache; regen via `flask vault-render --rebuild`) |
-| Timers | `systemctl list-timers \| grep ai-provider` — summary @ 02:30 UTC, vault-render every 10 min |
+| SSH | `ssh oracle-vm` (Oracle Cloud, 92.5.18.29) |
+| Runtime | Docker container `ai-provider` (`restart=unless-stopped`, exposes `127.0.0.1:8767`). Fronted by systemd `ai-provider-bridge.service` (docker0 gw → host loopback :8767) + `openai-proxy.service`. Started via `docker run`, not compose/systemd. |
+| Config / env | `/etc/ai-provider/ai-provider.env` (root-owned) |
+| Logs | `docker logs ai-provider` (no `/var/log/ai-provider`; `journalctl -u ai-provider-bridge`/`openai-proxy` for the helpers) |
+| Restart | `docker restart ai-provider` |
+| DB | SQLite in Docker volume `bewerbungen_data` → `/app/data/storage.db`; host copy/backup at `/opt/ai-provider-data/storage.db` |
+| Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + `socat` bridge (see §3.3). Server check: `ss -tln \| grep 1143` and `curl 127.0.0.1:1143x/api/tags` |
+| Vault / timers | Now inside the container under `/app/data` (was `/var/lib/ai-provider-service/vault` on the retired IONOS VPS). Exact in-container schedule **unverified** — confirm before relying on it. |
 
 ---
 
 ## 7. Handoff zone
+
+### Ollama-Tunnel-Ausfall + Doku-Korrektur (2026-06-13, Claude Code)
+
+**Symptom:** Consumer zeigte `● Ollama (Mac) — offline (6 ms)` (6 ms = connection refused, kein Timeout).
+
+**Root cause:** `~/.ollama` auf dem MacBook ist seit 2026-06-11 ein Symlink auf eine externe SSD. Der launchd-Tunnel-Agent `com.wolfini.ollama-tunnel` hatte `StandardOutPath` unter `~/.ollama` → launchd konnte die Log-Datei nicht öffnen → `EX_CONFIG (78)`, autossh startete nie, Server band `127.0.0.1:11434` nicht mehr → socat/Container sahen Ollama offline. Der Self-Monitor „heilte" nicht, weil er legacy `launchctl load/unload` nutzte (No-Op auf wedged Job).
+
+**Fix (alles lokale Mac-Infra, kein Repo-Code):** Log-Pfade des Tunnel-Agents auf interne Disk umgebogen; alle drei Self-Monitore (MacBook/Mini/Studio) auf `launchctl kickstart -k` umgestellt; redundanten `de.wolfini.ollama-app` (EX_CONFIG-Spam) deaktiviert; `~/bin/reactivate-tunnels.sh` von IONOS-Resten auf `oracle-vm`/`com.wolfini.ollama-tunnel` korrigiert. Verifiziert: oracle-vm :11434/:11435/:11440 → alle HTTP 200.
+
+**Doku in diesem Commit aktualisiert:** §1, §3.3, §6 spiegeln jetzt die reale Topologie (oracle-vm Docker, 3 Macs, launchd-autossh, socat). **IONOS-VPS ist retired.**
+
+**⚠️ Noch stale (nächste Session bereinigen — selbe Migration):**
+- §2: „production deploys (`systemctl restart ai-provider-service`)" → ist jetzt `docker restart ai-provider`.
+- §3.2: DB-Pfad-Beispiel `/etc/ai-provider-service/provider.db` → real `/app/data/storage.db` (Volume `bewerbungen_data`).
+- §3.5: „Gunicorn behind Apache" → kein Apache mehr; Container `:8767` hinter `ai-provider-bridge` + `openai-proxy`.
+- §3.6: Vault-Pfad `/var/lib/ai-provider-service/vault` → jetzt in-Container unter `/app/data` (verifizieren).
 
 ### 📩 Notiz an opencode (2026-06-06, von Claude Code)
 
