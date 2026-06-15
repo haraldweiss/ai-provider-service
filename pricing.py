@@ -62,26 +62,58 @@ _PRICING_USD_PER_MTOK: dict[tuple[str, str], dict[str, float]] = {
     ('opencode', 'gpt-5'):                    {'in': 1.07, 'out': 8.50},
     ('opencode', 'gpt-5-codex'):              {'in': 1.07, 'out': 8.50},
     ('opencode', 'gpt-5-nano'):               {'in': 0.05, 'out': 0.40},
+    # z.ai (Zhipu / GLM) rate card — USD per 1M tokens.
+    # Quelle: https://docs.z.ai/guides/overview/pricing.md (Stand Juni 2026).
+    # Täglich via `flask update-zai-pricing` aktualisiert → pricing_overrides_zai.json.
+    ('zai', 'glm-5.1'):                       {'in': 1.4, 'out': 4.4},
+    ('zai', 'glm-5'):                         {'in': 1.0, 'out': 3.2},
+    ('zai', 'glm-5-turbo'):                   {'in': 1.2, 'out': 4.0},
+    ('zai', 'glm-4.7'):                       {'in': 0.6, 'out': 2.2},
+    ('zai', 'glm-4.7-flashx'):                {'in': 0.07, 'out': 0.4},
+    ('zai', 'glm-4.6'):                       {'in': 0.6, 'out': 2.2},
+    ('zai', 'glm-4.5'):                       {'in': 0.6, 'out': 2.2},
+    ('zai', 'glm-4.5-x'):                     {'in': 2.2, 'out': 8.9},
+    ('zai', 'glm-4.5-air'):                   {'in': 0.2, 'out': 1.1},
+    ('zai', 'glm-4.5-airx'):                  {'in': 1.1, 'out': 4.5},
+    ('zai', 'glm-4-32b-0414-128k'):           {'in': 0.1, 'out': 0.1},
+    ('zai', 'glm-4.7-flash'):                 {'in': 0.0, 'out': 0.0},
+    ('zai', 'glm-4.5-flash'):                 {'in': 0.0, 'out': 0.0},
+    # Vision models
+    ('zai', 'glm-5v-turbo'):                  {'in': 1.2, 'out': 4.0},
+    ('zai', 'glm-4.6v'):                      {'in': 0.3, 'out': 0.9},
+    ('zai', 'glm-ocr'):                       {'in': 0.03, 'out': 0.03},
+    ('zai', 'glm-4.6v-flashx'):               {'in': 0.04, 'out': 0.4},
+    ('zai', 'glm-4.5v'):                      {'in': 0.6, 'out': 1.8},
+    ('zai', 'glm-4.6v-flash'):                {'in': 0.0, 'out': 0.0},
 }
 
 # Provider, die immer als kostenfrei (lokal) gelten.
 _LOCAL_PROVIDERS = {'ollama'}
 
-# Pfad zur JSON-Override-Datei (täglich via Cron aktualisierbar).
+# Pfade zu JSON-Override-Dateien (täglich via Cron aktualisierbar).
+# Getrennte Dateien pro Provider, damit der opencode-Daily-Cron die z.ai-Preise
+# nicht überschreibt (und umgekehrt).
 _PRICING_OVERRIDE_PATH = Path(os.path.dirname(__file__)) / 'pricing_overrides.json'
+_ZAI_OVERRIDE_PATH = Path(os.path.dirname(__file__)) / 'pricing_overrides_zai.json'
 
 
-def _load_merged_pricing() -> dict[tuple[str, str], dict[str, float]]:
-    """Gibt die gemergte Pricing-Dict zurück: statisch + Overrides."""
-    pricing = dict(_PRICING_USD_PER_MTOK)
+def _merge_override_file(pricing: dict, path: Path) -> None:
+    """Mergt eine `{provider::model: {in,out}}`-Override-Datei in-place."""
     try:
-        if _PRICING_OVERRIDE_PATH.exists():
-            raw = json.loads(_PRICING_OVERRIDE_PATH.read_text())
+        if path.exists():
+            raw = json.loads(path.read_text())
             for key, rates in raw.items():
                 provider, model = key.split('::', 1)
                 pricing[(provider, model)] = rates
     except Exception:
         pass
+
+
+def _load_merged_pricing() -> dict[tuple[str, str], dict[str, float]]:
+    """Gibt die gemergte Pricing-Dict zurück: statisch + Overrides."""
+    pricing = dict(_PRICING_USD_PER_MTOK)
+    _merge_override_file(pricing, _PRICING_OVERRIDE_PATH)
+    _merge_override_file(pricing, _ZAI_OVERRIDE_PATH)
     return pricing
 
 
