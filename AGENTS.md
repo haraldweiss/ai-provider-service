@@ -126,7 +126,7 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 | Runtime | Docker container `ai-provider` (`restart=unless-stopped`, exposes `127.0.0.1:8767`). Fronted by systemd `ai-provider-bridge.service` (docker0 gw → host loopback :8767) + `openai-proxy.service`. Started via `docker run`, not compose/systemd. |
 | Config / env | `/etc/ai-provider/ai-provider.env` (root-owned) |
 | Logs | `docker logs ai-provider` (no `/var/log/ai-provider`; `journalctl -u ai-provider-bridge`/`openai-proxy` for the helpers) |
-| Restart | `docker restart ai-provider` |
+| Restart | `docker restart ai-provider` — ⚠️ liest `--env-file` NICHT neu; nach Env-Änderungen voller `docker rm` + `docker run`-Recreate nötig (Netz `bewerbungen-net`, Mounts inkl. `pricing_overrides_zai.json`) |
 | DB | SQLite in Docker volume `bewerbungen_data` → `/app/data/storage.db`; host copy/backup at `/opt/ai-provider-data/storage.db` |
 | Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + `socat` bridge (see §3.3). Server check: `ss -tln \| grep 1143` and `curl 127.0.0.1:1143x/api/tags` |
 | Vault | `VAULT_PATH=/app/data/vault` (container env; `MEMORY_ENABLED=true`). Cache; regen via `flask vault-render --rebuild` inside the container. |
@@ -162,19 +162,42 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 - `config.py`: `ZAI_BASE_URL`, `ZAI_API_KEY`, `ZAI_SERVER_KEY_ALLOWED_USERS`.
   `.env.example` + README (Features, Access-Control-Sektion) aktualisiert.
 
-**Verified:** pytest ✓ (232/232, +27 neue Tests), Live-Parse gegen die echte
-z.ai-Preisseite ✓ (19 GLM-Modelle, Free-Tier korrekt erkannt:
-glm-4.5-flash/glm-4.6v-flash/glm-4.7-flash), CLI-Command registriert ✓.
-**NICHT auf oracle-vm deployed.**
+**Fix während Deploy (Commit `f3bd215`):** GLM-Reasoning-Modelle
+(z.B. `glm-4.5-flash`) legen Output in `reasoning_content` ab — `ZaiClient`
+fällt jetzt darauf zurück, wenn `content` leer ist (mirror
+`providers/opencode.py _extract_content`). Sonst leere Antworten bei
+Reasoning-Modellen / knappem `max_tokens`.
 
-**Offen (Deploy-Schritte auf oracle-vm, kein Repo-Code):**
-1. `ZAI_API_KEY=<key>` in `/etc/ai-provider/ai-provider.env` setzen (Owner-Key),
-   `docker restart ai-provider`.
-2. Image rebuild + recreate (§3.7), damit running == committed.
-3. Daily-Cron installieren (Host-Crontab, mirror opencode 06:00 UTC):
-   `0 6 * * * docker exec ai-provider flask update-zai-pricing >> /var/log/ai-provider-zai-pricing.log 2>&1`
-4. Optional: andere User, die z.ai wollen, brauchen eigenen Key + Grant
-   (`flask grants-bootstrap` / Admin-UI).
+**DEPLOYED auf oracle-vm (2026-06-15), running == committed (`f3bd215`):**
+- `main` fast-forward auf `f3bd215`, CI grün (`7e4744e`-Run ✓).
+- Image `localhost/ai-provider:f3bd215` (+`:latest`) via `build.sh` auf
+  oracle-vm gebaut; Container recreated. `docker ps`: Up, **healthy**.
+- `ZAI_API_KEY` in `/etc/ai-provider/ai-provider.env` (User hat ihn gesetzt;
+  hatte ihn versehentlich auf `ZAI_API_KEX` getippt → mechanisch korrigiert;
+  env-file von `644`→`600` gehärtet).
+- Neuer **persistenter Mount** `/opt/ai-provider-data/pricing_overrides_zai.json`
+  → `/app/pricing_overrides_zai.json` (getrennt von opencodes
+  `pricing_overrides.json`, überlebt Rebuilds).
+- Daily-Cron (root crontab, 06:00): `docker exec ai-provider flask
+  update-zai-pricing >> /var/log/ai-provider-zai-pricing.log 2>&1`. `docker`
+  liegt in `/usr/bin` (in cron-PATH), Cron-Env-Smoke ✓.
+- **Verifiziert live:** pytest 233/233; /health zeigt `zai` healthy; Gate:
+  `harald`→System-Key, `eve`→denied; echter z.ai-Call (200 OK,
+  `api.z.ai/api/paas/v4`); `update-zai-pricing` schrieb 19 GLM-Modelle ins
+  Host-File.
+
+**Deploy-Specifics (für die nächste Session — nicht offensichtlich):**
+- Container läuft im Docker-Netz **`bewerbungen-net`** (NICHT default bridge;
+  Host-Gateway dort `172.19.0.1`), Build-Source ist die `/tmp/ai-provider-src`
+  Checkout (`origin/main`). Recreate-Command s. Git-Historie dieser Session.
+- ⚠️ **Env-File-Änderungen brauchen `docker run`-Recreate, KEIN `docker
+  restart`** — `--env-file` wird nur bei Create gelesen. (Healthcheck ist im
+  Dockerfile gebacken, kein Run-Flag.)
+- Rollback: `localhost/ai-provider:7e4744e` und `:rollback-20260612-045814`
+  liegen noch auf der Box.
+
+**Offen (optional):** andere User, die z.ai wollen, brauchen eigenen Key +
+Grant (`flask grants-bootstrap` / Admin-UI). Free-Tier ist bewusst owner-only.
 
 ### Ollama-Tunnel-Ausfall + Doku-Korrektur (2026-06-13, Claude Code)
 
