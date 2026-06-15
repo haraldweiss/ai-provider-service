@@ -5,9 +5,28 @@ import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 
+from sqlalchemy.exc import OperationalError
+
 from config import Config
 from database import db
 import worker
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_create_all(db_) -> None:
+    """Run create_all() tolerating the concurrent-worker race on a fresh DB.
+
+    Multiple gunicorn workers can call create_all() simultaneously on a fresh
+    SQLite file; the loser sees 'table ... already exists'. The end state is
+    correct, so swallow that — but re-raise any other OperationalError.
+    """
+    try:
+        db_.create_all()
+    except OperationalError as e:
+        if 'already exists' not in str(e).lower():
+            raise
+        logger.info('db.create_all race tolerated (table already exists): %s', e)
 
 
 def create_app() -> Flask:
@@ -40,7 +59,7 @@ def create_app() -> Flask:
         # Models importieren, damit Tables registriert werden.
         from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile  # noqa: F401
         from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
-        db.create_all()
+        _safe_create_all(db)
         from storage.fts import ensure_fts
         ensure_fts()
 
