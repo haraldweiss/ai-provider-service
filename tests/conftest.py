@@ -26,6 +26,7 @@ import api.admin_ui      # noqa: F401, E402
 import providers.opencode  # noqa: F401, E402
 import providers.claude    # noqa: F401, E402
 import providers.ollama    # noqa: F401, E402
+import providers.zai       # noqa: F401, E402
 
 
 @pytest.fixture

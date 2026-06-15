@@ -42,6 +42,12 @@ PROVIDER_REGISTRY = {
         'requires': [],
         'optional': ['api_key', 'api_endpoint'],
     },
+    'zai': {
+        'name': 'z.ai (GLM)',
+        'system': True,
+        'requires': [],
+        'optional': ['api_key', 'api_endpoint'],
+    },
 }
 
 
@@ -71,6 +77,9 @@ def get_client(provider_id: str, config: Optional[dict] = None) -> BaseClient:
     if provider_id == 'opencode':
         from providers.opencode import OpencodeClient
         return OpencodeClient(config)
+    if provider_id == 'zai':
+        from providers.zai import ZaiClient
+        return ZaiClient(config)
 
     raise ValueError(f"Unbekannter Provider: {provider_id}")
 
