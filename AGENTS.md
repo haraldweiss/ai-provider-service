@@ -137,6 +137,45 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 
 ## 7. Handoff zone
 
+### z.ai (GLM) Provider + Tarif-Sync (2026-06-15, Claude Code)
+
+**Was:** Neuer Provider `zai` (z.ai / Zhipu GLM, OpenAI-kompatibel,
+`https://api.z.ai/api/paas/v4`).
+
+- `providers/zai.py` (`ZaiClient`) + Registry-Eintrag (`system: True`,
+  `optional: ['api_key','api_endpoint']`) + Factory-Zweig.
+- **Access-Modell (Owner-only):** der zentrale `ZAI_API_KEY` ist NUR für die
+  Allowlist nutzbar. `ZAI_SERVER_KEY_ALLOWED_USERS` leer ⇒ Default = nur
+  `Config.ADMIN_USER_ID` (`harald`) — **inkl. der kostenlosen GLM-Flash-Modelle**.
+  Alle anderen User brauchen einen eigenen Key via ProviderConfig
+  (`/configs/<user_id>/zai`). Gate in `dispatcher._load_config` +
+  `_is_zai_server_key_allowed` (mirror der Claude-Allowlist, aber restriktiver
+  Default statt offen).
+- **Pricing:** statischer GLM-Snapshot in `pricing.py` + getrennte Override-Datei
+  `pricing_overrides_zai.json` (NICHT `pricing_overrides.json`, sonst clobbert
+  der opencode-06:00-Cron die z.ai-Preise). `_load_merged_pricing` lädt jetzt
+  beide Dateien.
+- **Täglicher Tarif-Check:** `flask update-zai-pricing` lädt
+  `docs.z.ai/guides/overview/pricing.md` (saubere Markdown-Tabellen), parst die
+  Rate-Card, difft gegen den letzten Snapshot, speichert und **mailt
+  harald.weiss@wolfinisoftware.de bei jeder Tarif-Änderung** (neu/entfernt/Preis).
+- `config.py`: `ZAI_BASE_URL`, `ZAI_API_KEY`, `ZAI_SERVER_KEY_ALLOWED_USERS`.
+  `.env.example` + README (Features, Access-Control-Sektion) aktualisiert.
+
+**Verified:** pytest ✓ (232/232, +27 neue Tests), Live-Parse gegen die echte
+z.ai-Preisseite ✓ (19 GLM-Modelle, Free-Tier korrekt erkannt:
+glm-4.5-flash/glm-4.6v-flash/glm-4.7-flash), CLI-Command registriert ✓.
+**NICHT auf oracle-vm deployed.**
+
+**Offen (Deploy-Schritte auf oracle-vm, kein Repo-Code):**
+1. `ZAI_API_KEY=<key>` in `/etc/ai-provider/ai-provider.env` setzen (Owner-Key),
+   `docker restart ai-provider`.
+2. Image rebuild + recreate (§3.7), damit running == committed.
+3. Daily-Cron installieren (Host-Crontab, mirror opencode 06:00 UTC):
+   `0 6 * * * docker exec ai-provider flask update-zai-pricing >> /var/log/ai-provider-zai-pricing.log 2>&1`
+4. Optional: andere User, die z.ai wollen, brauchen eigenen Key + Grant
+   (`flask grants-bootstrap` / Admin-UI).
+
 ### Ollama-Tunnel-Ausfall + Doku-Korrektur (2026-06-13, Claude Code)
 
 **Symptom:** Consumer zeigte `● Ollama (Mac) — offline (6 ms)` (6 ms = connection refused, kein Timeout).

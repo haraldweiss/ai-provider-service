@@ -8,7 +8,8 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 
 ## Features
 
-- **5 Provider** out of the box: Claude, Ollama, OpenAI, Mammouth, Custom (OpenAI-kompatibel)
+- **7 Provider** out of the box: Claude, Ollama, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM)
+- **Server-Key-Allowlist** für zentrale Provider-Keys (Claude, z.ai): der zentrale Key ist nur für gelistete User nutzbar; z.ai ist per Default auf `ADMIN_USER_ID` beschränkt — alle anderen brauchen einen eigenen Key (auch für die kostenlosen GLM-Flash-Modelle)
 - **Per-User-Konfiguration** mit Fernet-verschlüsselten API-Keys
 - **Fallback-Provider**: bei Nicht-Erreichbarkeit automatisch auf z.B. Claude umschalten
 - **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist
@@ -490,9 +491,39 @@ Migrations-Endpoint.
 The gateway gates non-`ollama` providers behind admin approval. Defaults:
 
 - **ollama** — available to all callers (configurable via `UNGATED_PROVIDERS`)
-- **claude, opencode, openai, mammouth, custom** — require an active
+- **claude, opencode, openai, mammouth, custom, zai** — require an active
   `ProviderGrant` row for the calling `user_id`, OR the caller must hold
   the `ADMIN_TOKEN`.
+
+### Zentrale Provider-Keys (Server-Key-Allowlist)
+
+Claude und z.ai können einen zentralen Server-Key nutzen, der per Allowlist
+auf bestimmte `user_id`s beschränkt ist:
+
+- **Claude** (`CLAUDE_SERVER_KEY_ALLOWED_USERS`) — leer = offen für alle
+  (single-tenant Default).
+- **z.ai** (`ZAI_SERVER_KEY_ALLOWED_USERS`) — leer = **nur `ADMIN_USER_ID`**
+  darf den zentralen `ZAI_API_KEY` nutzen (Owner-only Default, inkl. der
+  kostenlosen GLM-Flash-Modelle). Alle anderen User müssen einen eigenen
+  z.ai-Key unter `/configs/<user_id>/zai` hinterlegen.
+
+### z.ai (GLM) Tarif-Sync
+
+Die GLM-Preise werden in `pricing.py` als statischer Snapshot gepflegt und
+durch eine eigene Override-Datei `pricing_overrides_zai.json` ergänzt (getrennt
+von `pricing_overrides.json`, damit der opencode-Cron sie nicht überschreibt):
+
+- `flask update-zai-pricing` — lädt die z.ai-Preisseite
+  (`docs.z.ai/guides/overview/pricing.md`), parst die Rate-Card, vergleicht sie
+  mit dem letzten Snapshot, speichert sie und **mailt den Owner bei jeder
+  Tarif-Änderung** (neue/entfernte Modelle, Preisänderungen).
+
+Täglich ausführen (analog zum opencode-Pricing-Cron, 06:00 UTC), auf
+oracle-vm via Host-Crontab gegen den Docker-Container:
+
+```cron
+0 6 * * * docker exec ai-provider flask update-zai-pricing >> /var/log/ai-provider-zai-pricing.log 2>&1
+```
 
 ### Tokens
 
