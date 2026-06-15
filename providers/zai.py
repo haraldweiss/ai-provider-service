@@ -20,6 +20,16 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
+def _extract_content(choice) -> str:
+    """Pull text from a chat choice. GLM-Reasoning-Modelle legen Output teils
+    in reasoning_content statt content ab — ist content leer, dort nachsehen."""
+    msg = getattr(choice, 'message', None)
+    text = getattr(msg, 'content', None) or ''
+    if not text:
+        text = getattr(msg, 'reasoning_content', None) or ''
+    return text
+
+
 class ZaiClient(BaseClient):
     def __init__(self, config: dict):
         api_key = config.get('api_key') or Config.ZAI_API_KEY
@@ -43,7 +53,7 @@ class ZaiClient(BaseClient):
             model=model, messages=messages, max_tokens=max_tokens,
         )
         return {
-            'content': [{'text': r.choices[0].message.content}],
+            'content': [{'text': _extract_content(r.choices[0])}],
             'usage': {
                 'input_tokens': r.usage.prompt_tokens,
                 'output_tokens': r.usage.completion_tokens,

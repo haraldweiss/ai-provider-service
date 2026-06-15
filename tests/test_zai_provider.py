@@ -77,6 +77,23 @@ def test_zai_create_message_returns_claude_format(mock_openai):
 
 
 @patch('providers.zai.OpenAI')
+def test_zai_falls_back_to_reasoning_content_when_content_empty(mock_openai):
+    """GLM-Reasoning-Modelle legen Output teils in reasoning_content ab.
+    Ist content leer, muss der Client auf reasoning_content zurückfallen
+    (statt einen leeren String zu liefern)."""
+    from providers.zai import ZaiClient
+    msg = MagicMock(content='', reasoning_content='the real answer')
+    fake = MagicMock()
+    fake.choices = [MagicMock(message=msg)]
+    fake.usage = MagicMock(prompt_tokens=5, completion_tokens=7)
+    mock_openai.return_value.chat.completions.create.return_value = fake
+
+    c = ZaiClient({'api_key': 'sk-test'})
+    out = c.create_message('glm-4.5-flash', [{'role': 'user', 'content': 'hi'}], 50)
+    assert out['content'] == [{'text': 'the real answer'}]
+
+
+@patch('providers.zai.OpenAI')
 def test_zai_get_models_filters_glm(mock_openai):
     from providers.zai import ZaiClient
     mock_openai.return_value.models.list.return_value.data = [
