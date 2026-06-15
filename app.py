@@ -75,13 +75,14 @@ def create_app() -> Flask:
 
     from cli import (grants_bootstrap_command, update_opencode_pricing_command,
                      summary_job_command, vault_render_command, vault_backup_command,
-                     refresh_free_models_command)
+                     refresh_free_models_command, update_zai_pricing_command)
     app.cli.add_command(grants_bootstrap_command)
     app.cli.add_command(update_opencode_pricing_command)
     app.cli.add_command(summary_job_command)
     app.cli.add_command(vault_render_command)
     app.cli.add_command(vault_backup_command)
     app.cli.add_command(refresh_free_models_command)
+    app.cli.add_command(update_zai_pricing_command)
 
     @app.route('/')
     def index():

@@ -148,6 +148,163 @@ def update_opencode_pricing_command():
         raise click.Abort()
 
 
+# --- z.ai (GLM) tariff sync ------------------------------------------------
+
+ZAI_PRICING_URL = 'https://docs.z.ai/guides/overview/pricing.md'
+ZAI_NOTIFY_EMAIL = 'harald.weiss@wolfinisoftware.de'
+
+
+def _split_md_row(line: str) -> list[str]:
+    """Splits a markdown table row '| a | b |' into trimmed cells."""
+    return [c.strip() for c in line.strip().strip('|').split('|')]
+
+
+def _is_md_separator(line: str) -> bool:
+    return bool(re.match(r'^\s*\|?[\s:|-]+\|?\s*$', line)) and '-' in line
+
+
+def _parse_zai_price_cell(val: str):
+    """Parse a price cell. 'Free' → 0.0; '\\$1.4' → 1.4; '-'/'\\\\'/'' → None."""
+    v = val.strip()
+    if v.lower() == 'free':
+        return 0.0
+    v = v.replace('\\', '').replace('$', '').strip()
+    if not v or v == '-':
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        return None
+
+
+def _parse_zai_pricing(md: str) -> dict[str, dict[str, float]]:
+    """Parse the z.ai pricing markdown into {'zai::<model-id>': {in, out}}.
+
+    Only tables whose header has both an 'Input' and an 'Output' column are
+    token-priced (Text + Vision models); other tables (tools, image, video)
+    are ignored. Model display names map to lowercased API ids.
+    """
+    result: dict[str, dict[str, float]] = {}
+    in_idx = out_idx = None
+    for line in md.splitlines():
+        if '|' not in line:
+            in_idx = out_idx = None
+            continue
+        if _is_md_separator(line):
+            continue
+        cells = _split_md_row(line)
+        lowered = [c.lower() for c in cells]
+        if 'input' in lowered and 'output' in lowered:
+            in_idx = lowered.index('input')
+            out_idx = lowered.index('output')
+            continue
+        if in_idx is None or len(cells) <= max(in_idx, out_idx):
+            continue
+        model = cells[0]
+        if not model or model.lower() == 'model':
+            continue
+        pin = _parse_zai_price_cell(cells[in_idx])
+        pout = _parse_zai_price_cell(cells[out_idx])
+        if pin is None or pout is None:
+            continue
+        result[f'zai::{model.lower()}'] = {'in': pin, 'out': pout}
+    return result
+
+
+def fetch_zai_pricing() -> dict[str, dict[str, float]]:
+    """Fetch and parse the z.ai pricing markdown page."""
+    req = urllib.request.Request(
+        ZAI_PRICING_URL,
+        headers={'User-Agent': 'ai-provider-service/1.0 (pricing sync)'},
+    )
+    resp = urllib.request.urlopen(req, timeout=15)
+    md = resp.read().decode('utf-8')
+    data = _parse_zai_pricing(md)
+    if not data:
+        raise ValueError('No GLM models parsed from z.ai pricing page')
+    return data
+
+
+def load_existing_zai_pricing() -> dict[str, dict[str, float]]:
+    import pricing
+    path = pricing._ZAI_OVERRIDE_PATH
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def save_zai_pricing(data: dict[str, dict[str, float]]) -> Path:
+    """Persist z.ai pricing to its own override file (separate from opencode)."""
+    import pricing
+    path = pricing._ZAI_OVERRIDE_PATH
+    path.write_text(json.dumps(data, indent=2) + '\n')
+    return path
+
+
+def _diff_pricing(old: dict, new: dict) -> dict:
+    """Returns {'added', 'removed', 'changed'} between two pricing dicts."""
+    added = {k: new[k] for k in new if k not in old}
+    removed = {k: old[k] for k in old if k not in new}
+    changed = {
+        k: (old[k], new[k]) for k in new if k in old and new[k] != old[k]
+    }
+    return {'added': added, 'removed': removed, 'changed': changed}
+
+
+def _format_zai_change_email(diff: dict) -> str:
+    """Human-readable diff body for the tariff-change notification."""
+    def _fmt(rates: dict) -> str:
+        return f"in \\${rates['in']}/Mtok, out \\${rates['out']}/Mtok"
+
+    parts = []
+    if diff['added']:
+        parts.append('Neue Modelle / Tarife:\n' + '\n'.join(
+            f'  + {k.split("::", 1)[1]} ({_fmt(v)})'
+            for k, v in sorted(diff['added'].items())))
+    if diff['removed']:
+        parts.append('Nicht mehr gelistet:\n' + '\n'.join(
+            f'  - {k.split("::", 1)[1]}' for k in sorted(diff['removed'])))
+    if diff['changed']:
+        parts.append('Preisänderungen:\n' + '\n'.join(
+            f'  ~ {k.split("::", 1)[1]}: {_fmt(o)} → {_fmt(n)}'
+            for k, (o, n) in sorted(diff['changed'].items())))
+    return '\n\n'.join(parts)
+
+
+def _send_email(subject: str, body: str, to: str = ZAI_NOTIFY_EMAIL) -> None:
+    import subprocess
+    try:
+        msg = (f'Subject: {subject}\nFrom: ai-provider@wolfinisoftware.de\n'
+               f'To: {to}\n\n{body}\n')
+        subprocess.run(['/usr/sbin/sendmail', '-t'], input=msg,
+                       capture_output=True, timeout=10, text=True)
+    except Exception:
+        pass
+
+
+@click.command('update-zai-pricing')
+def update_zai_pricing_command():
+    """Fetch z.ai (GLM) rate card, persist it, and email the owner on change."""
+    try:
+        click.echo('Fetching z.ai pricing ...')
+        new = fetch_zai_pricing()
+        old = load_existing_zai_pricing()
+        diff = _diff_pricing(old, new)
+        path = save_zai_pricing(new)
+        click.echo(f'{len(new)} models written to {path}')
+        if old and (diff['added'] or diff['removed'] or diff['changed']):
+            _send_email('z.ai: Tarif-Änderungen erkannt',
+                        _format_zai_change_email(diff)
+                        + f'\n\nQuelle: {ZAI_PRICING_URL}')
+            click.echo('Tariff change detected — notification sent.')
+    except Exception as e:
+        click.echo(f'Error: {e}', err=True)
+        raise click.Abort()
+
+
 @click.command('summary-job')
 @click.option('--period', default='day', type=click.Choice(['day', 'app']),
               help='Aggregate by day or by app.')
