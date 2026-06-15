@@ -35,6 +35,22 @@ def _is_claude_server_key_allowed(user_id: str) -> bool:
     return user_id in allowed
 
 
+def _is_zai_server_key_allowed(user_id: str) -> bool:
+    """Allowlist für den zentralen ZAI_API_KEY (z.ai Server-Key).
+
+    Im Gegensatz zum Claude-Server-Key ist der z.ai-Key NICHT offen: ist
+    `ZAI_SERVER_KEY_ALLOWED_USERS` leer, gilt nur `Config.ADMIN_USER_ID` als
+    berechtigt (der Owner). Alle anderen müssen einen eigenen z.ai-Key
+    konfigurieren. Eine explizit gesetzte Allowlist ersetzt diesen Default.
+    """
+    allowed_raw = (Config.ZAI_SERVER_KEY_ALLOWED_USERS or '').strip()
+    if not allowed_raw:
+        allowed = {Config.ADMIN_USER_ID}
+    else:
+        allowed = {u.strip() for u in allowed_raw.split(',') if u.strip()}
+    return user_id in allowed
+
+
 def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     """Lädt + entschlüsselt Provider-Config aus DB. Für System-Provider (Claude,
     Ollama) leeres Dict, falls keine User-Config existiert.
@@ -57,6 +73,8 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
 
     if PROVIDER_REGISTRY.get(provider_id, {}).get('system'):
         if provider_id == 'claude' and not _is_claude_server_key_allowed(user_id):
+            return None
+        if provider_id == 'zai' and not _is_zai_server_key_allowed(user_id):
             return None
         return {}
     return None
