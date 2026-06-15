@@ -168,10 +168,16 @@ fällt jetzt darauf zurück, wenn `content` leer ist (mirror
 `providers/opencode.py _extract_content`). Sonst leere Antworten bei
 Reasoning-Modellen / knappem `max_tokens`.
 
-**DEPLOYED auf oracle-vm (2026-06-15), running == committed (`f3bd215`):**
-- `main` fast-forward auf `f3bd215`, CI grün (`7e4744e`-Run ✓).
-- Image `localhost/ai-provider:f3bd215` (+`:latest`) via `build.sh` auf
+**DEPLOYED auf oracle-vm (2026-06-15), running == committed (`7fd3c86`):**
+- `main` fast-forward auf `7fd3c86`, CI grün.
+- Image `localhost/ai-provider:7fd3c86` (+`:latest`) via `build.sh` auf
   oracle-vm gebaut; Container recreated. `docker ps`: Up, **healthy**.
+- **Nebenbefund + Fix (`7fd3c86`):** CI-docker-smoke war intermittierend rot —
+  bei `gunicorn --workers 2` auf frischer SQLite-DB racen beide Worker auf
+  `db.create_all()` → `table provider_configs already exists`, Worker-Boot
+  failed. `app._safe_create_all()` schluckt jetzt genau diesen Race
+  (re-raises andere OperationalErrors). Prod war nie betroffen (DB schon
+  befüllt), aber schützt frische Deploys/Restarts.
 - `ZAI_API_KEY` in `/etc/ai-provider/ai-provider.env` (User hat ihn gesetzt;
   hatte ihn versehentlich auf `ZAI_API_KEX` getippt → mechanisch korrigiert;
   env-file von `644`→`600` gehärtet).
