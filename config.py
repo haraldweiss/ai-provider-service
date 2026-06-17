@@ -42,6 +42,14 @@ class Config:
     OPENCODE_BASE_URL = os.getenv('OPENCODE_BASE_URL', 'https://opencode.ai/zen/v1')
     OPENCODE_API_KEY = os.getenv('OPENCODE_API_KEY', '')
 
+    # z.ai (Zhipu / GLM) provider — OpenAI-compatible endpoint.
+    # The central ZAI_API_KEY is restricted to the owner (see
+    # ZAI_SERVER_KEY_ALLOWED_USERS); all other users must configure their own
+    # key. Leave the allowlist empty to default to ADMIN_USER_ID only.
+    ZAI_BASE_URL = os.getenv('ZAI_BASE_URL', 'https://api.z.ai/api/paas/v4')
+    ZAI_API_KEY = os.getenv('ZAI_API_KEY', '')
+    ZAI_SERVER_KEY_ALLOWED_USERS = os.getenv('ZAI_SERVER_KEY_ALLOWED_USERS', '')
+
     # Flask sessions (admin UI cookie)
     SECRET_KEY = os.getenv('SECRET_KEY', '')
 
