@@ -14,10 +14,32 @@ view_args, query, or JSON body and gates the route. Must be used AFTER
 from __future__ import annotations
 
 from functools import wraps
+import logging
 from flask import jsonify, g, request
 from config import Config
-from storage.models import ProviderGrant
+from storage.models import ProviderGrant, ProviderConfig
 from api.auth import Principal
+from providers import provider_supports_personal_key
+
+logger = logging.getLogger(__name__)
+
+
+def has_personal_api_key(user_id: str, provider_id: str) -> bool:
+    if not user_id or not provider_supports_personal_key(provider_id):
+        return False
+    row = ProviderConfig.query.filter_by(
+        user_id=user_id, provider_id=provider_id,
+    ).first()
+    if row is None:
+        return False
+    try:
+        return bool(str(row.get_config().get('api_key') or '').strip())
+    except Exception:
+        logger.warning(
+            'Personal provider config could not be decrypted: user=%s provider=%s',
+            user_id, provider_id,
+        )
+        return False
 
 
 def is_allowed(principal: Principal, provider_id: str) -> bool:
@@ -26,6 +48,8 @@ def is_allowed(principal: Principal, provider_id: str) -> bool:
     if provider_id in Config.UNGATED_PROVIDERS:
         return True
     if principal.role == 'admin':
+        return True
+    if has_personal_api_key(principal.user_id, provider_id):
         return True
     grant = ProviderGrant.query.filter_by(
         user_id=principal.user_id,
