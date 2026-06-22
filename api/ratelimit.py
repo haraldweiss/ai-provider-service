@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from flask import request, jsonify, g
+from flask import request, jsonify, g, has_request_context
 from functools import wraps
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ def _key(bucket: str) -> str:
     try:
         uid = g.principal.user_id
     except (RuntimeError, AttributeError):
-        uid = request.remote_addr or 'anonymous'
+        uid = (request.remote_addr or 'anonymous') if has_request_context() else 'anonymous'
     return f'{bucket}:{uid}'
 
 
