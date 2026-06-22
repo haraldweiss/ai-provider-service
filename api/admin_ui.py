@@ -19,11 +19,24 @@ from config import Config
 from database import db
 from storage.models import ProviderConfig, ProviderGrant, UsageEvent, UserAccessToken
 
+
+_no_cache_headers = {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+}
+
 admin_ui_bp = Blueprint(
     'admin_ui', __name__,
     url_prefix='/admin/ui',
     template_folder='../templates',
 )
+
+
+@admin_ui_bp.after_request
+def _apply_no_cache(response):
+    response.headers.update(_no_cache_headers)
+    return response
 
 
 def _is_authed() -> bool:

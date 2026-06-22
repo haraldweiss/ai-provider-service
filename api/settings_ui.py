@@ -17,10 +17,23 @@ from storage.user_tokens import (
 from api.ratelimit import rate_limit
 
 
+_no_cache_headers = {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+}
+
+
 settings_ui_bp = Blueprint(
     'settings_ui', __name__, url_prefix='/settings',
     template_folder='../templates',
 )
+
+
+@settings_ui_bp.after_request
+def _apply_no_cache(response):
+    response.headers.update(_no_cache_headers)
+    return response
 
 
 @settings_ui_bp.before_request
