@@ -11,4 +11,5 @@ venv/
 
 # AI tooling
 .claude/
+.worktrees/
 /vault/
