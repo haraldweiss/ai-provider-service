@@ -145,7 +145,8 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 
 ### Personal Provider API Keys (2026-06-22, Codex)
 
-**Status:** Implemented on `codex/personal-api-keys`; not deployed.
+**Status:** Merged via PR #24 and deployed to oracle-vm; running == committed
+merge SHA `a54c6ec`.
 
 - Hashed, admin-issued per-user tokens with rotation/revocation and strict
   identity binding.
@@ -154,10 +155,18 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 - Self-service UI at `/settings/login` + `/settings/providers` with CSRF,
   throttled login, safe status-only rendering, test, and remove actions.
 - New distinct `ollama_cloud` provider for `https://ollama.com/api`.
-- Local verification: pytest **268/268 passed**. Docker build/boot/`/health`
-  smoke was not runnable on this Mac (`docker: command not found`) and remains
-  required in CI before merge/deploy. Recreate the container for deployment;
-  no live provider key is needed for automated verification.
+- Verification: pytest **268/268 passed**; GitHub CI test + Docker smoke green.
+  Production image `localhost/ai-provider:a54c6ec` built with `build.sh` and
+  container fully recreated on `bewerbungen-net` with the existing env-file,
+  data volume, and both pricing mounts.
+- Live smoke: container healthy; `/health` 200/status=ok; `/settings/login` 200;
+  `user_access_tokens` table query succeeds; `/providers` lists
+  `ollama_cloud`; bridge + proxy helpers active; no startup traceback.
+- Deploy note: `/etc/ai-provider/ai-provider.env` is root-owned/600, so recreate
+  must use `sudo docker run --env-file ...`. The first non-sudo attempt failed
+  before container creation and the rollback trap restored `7fd3c86` healthy;
+  the sudo retry deployed `a54c6ec` successfully.
+- No live third-party personal key was used during smoke verification.
 
 ### z.ai (GLM) Provider + Tarif-Sync (2026-06-15, Claude Code)
 
