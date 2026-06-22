@@ -328,7 +328,9 @@ Kleinere Macs (z.B. M4 mini mit 24 GB unified memory) sollten reduzierte
 
 ## API-Übersicht
 
-Alle Endpoints (außer `/health`) brauchen `Authorization: Bearer <SERVICE_TOKEN>`.
+Alle Endpoints (außer `/health`) brauchen einen Bearer-Token. Unterstützt sind
+`SERVICE_TOKEN`, `ADMIN_TOKEN` und ein admin-ausgestellter persönlicher
+User-Token. Ein User-Token ist fest an genau eine `user_id` gebunden.
 
 ### Providers
 
@@ -363,6 +365,21 @@ POST-Body Beispiel (OpenAI):
   "queue_when_unavailable": false
 }
 ```
+
+Persönliche Keys werden für `claude`, `opencode`, `openai`, `zai` und
+`ollama_cloud` unterstützt. Sie liegen Fernet-verschlüsselt in
+`ProviderConfig` und werden nie zurückgegeben; Responses enthalten nur
+`has_api_key`. Beispiel mit persönlichem User-Token:
+
+```bash
+curl -X POST https://<service>/configs/lisa/ollama_cloud \
+  -H 'Authorization: Bearer aips_<one-time-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"config":{"api_key":"<OLLAMA_API_KEY>"}}'
+```
+
+Ollama Cloud ist ein eigener Provider und spricht `https://ollama.com/api`.
+Er teilt weder Pool-, Tunnel- noch Health-Routing-Zustand mit lokalem `ollama`.
 
 POST-Body Beispiel (Ollama mit Fallback auf Claude):
 ```json
@@ -488,12 +505,18 @@ Migrations-Endpoint.
 
 ## Access control (provider gating)
 
-The gateway gates non-`ollama` providers behind admin approval. Defaults:
+The gateway gates server-funded non-`ollama` providers behind admin approval.
+A personal key authorizes its owning user for that provider because that user
+bears the cost. Authorization precedence is: gate kill switch, ungated provider,
+admin, owning personal key, active grant.
 
 - **ollama** — available to all callers (configurable via `UNGATED_PROVIDERS`)
-- **claude, opencode, openai, mammouth, custom, zai** — require an active
-  `ProviderGrant` row for the calling `user_id`, OR the caller must hold
-  the `ADMIN_TOKEN`.
+- **claude, opencode, openai, zai, ollama_cloud** — an owning personal key
+  bypasses approval; server-key use still follows grant/allowlist rules.
+- **mammouth, custom** — require an active `ProviderGrant` or admin access.
+
+A failed personal key never silently falls back to a server-funded key. Removing
+the personal config restores the normal grant/allowlist behavior.
 
 ### Zentrale Provider-Keys (Server-Key-Allowlist)
 
@@ -531,6 +554,7 @@ oracle-vm via Host-Crontab gegen den Docker-Container:
 |---|---|---|
 | `ADMIN_TOKEN` | admin | always `Config.ADMIN_USER_ID` (env, default `harald`) |
 | `SERVICE_TOKEN` | user | from request body/query (current behavior) |
+| `aips_…` user token | user | fixed DB association; another `user_id` returns 403 |
 
 ### Admin UI
 
@@ -539,7 +563,16 @@ a signed session cookie. After that, the URL is `/admin/ui/users`.
 
 Shows per-user roster with configured providers, active grants, and
 30-day usage rollup. Approve/revoke buttons hit `/admin/grants` via the
-session cookie.
+session cookie. The user-detail page also issues, rotates, or revokes a
+personal token. Its plaintext is shown exactly once.
+
+### Personal settings UI
+
+Users open `https://<service>/settings/login`, enter the one-time `aips_…`
+token, and manage personal keys at `/settings/providers`. The signed session
+stores only the user identity and token generation—not the token or provider
+keys. Rotation/revocation invalidates existing settings sessions. Save, test,
+remove, and logout actions are CSRF-protected; provider errors are sanitized.
 
 ### Admin REST API
 
@@ -549,6 +582,8 @@ session cookie.
 POST   /admin/grants           {user_id, provider_id, note?}  → 201
 GET    /admin/grants[?user_id=&provider_id=&include_revoked=true]
 DELETE /admin/grants/<id>      → 204 (soft-delete)
+POST   /admin/users/<user_id>/token   → 201 + plaintext token (shown once)
+DELETE /admin/users/<user_id>/token   → 204 (also invalidates UI sessions)
 GET    /admin/overview         → {users: [...]}
 ```
 

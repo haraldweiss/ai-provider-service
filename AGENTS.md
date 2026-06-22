@@ -77,6 +77,12 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - ✅ Before merge, CI must be green (`.github/workflows/ci.yml`: pytest **and** docker build + boot + `/health` smoke — the smoke catches import/`NameError`/bind regressions that unit tests miss).
 - ✅ Build images with `build.sh` (tags `:<sha>` + `:latest`) so "what's running" is traceable and rollback is possible.
 
+### 3.8 Personal provider keys are identity-bound
+- Personal keys for `claude`, `opencode`, `openai`, `zai`, and `ollama_cloud` authorize only their owning `user_id`; they bypass grants because the user bears the cost.
+- A personal key must take precedence over any server key. If it fails, never silently retry with an owner-funded key.
+- Never log, return, or render personal keys. User access tokens are hashed; plaintext is shown only on issuance/rotation.
+- User tokens must reject a different asserted path/query/body `user_id`. Token rotation or revocation must invalidate existing settings sessions.
+
 ---
 
 ## 4. Verification standards
@@ -136,6 +142,22 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 ---
 
 ## 7. Handoff zone
+
+### Personal Provider API Keys (2026-06-22, Codex)
+
+**Status:** Implemented on `codex/personal-api-keys`; not deployed.
+
+- Hashed, admin-issued per-user tokens with rotation/revocation and strict
+  identity binding.
+- Personal keys bypass provider grants for their owner; server-funded access
+  keeps existing grant/allowlist behavior.
+- Self-service UI at `/settings/login` + `/settings/providers` with CSRF,
+  throttled login, safe status-only rendering, test, and remove actions.
+- New distinct `ollama_cloud` provider for `https://ollama.com/api`.
+- Local verification: pytest **267/267 passed**. Docker build/boot/`/health`
+  smoke was not runnable on this Mac (`docker: command not found`) and remains
+  required in CI before merge/deploy. Recreate the container for deployment;
+  no live provider key is needed for automated verification.
 
 ### z.ai (GLM) Provider + Tarif-Sync (2026-06-15, Claude Code)
 
