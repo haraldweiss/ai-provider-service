@@ -14,9 +14,10 @@ from flask import (
     jsonify, current_app,
 )
 from datetime import datetime, timedelta, timezone
+import secrets
 from config import Config
 from database import db
-from storage.models import ProviderConfig, ProviderGrant, UsageEvent
+from storage.models import ProviderConfig, ProviderGrant, UsageEvent, UserAccessToken
 
 admin_ui_bp = Blueprint(
     'admin_ui', __name__,
@@ -44,6 +45,7 @@ def _entry():
     if token:
         if Config.ADMIN_TOKEN and token == Config.ADMIN_TOKEN:
             session['admin'] = True
+            session['admin_csrf'] = secrets.token_urlsafe(32)
             kwargs = request.view_args or {}
             return redirect(url_for(request.endpoint, **kwargs))
         return redirect(url_for('admin_ui.login'))
@@ -59,6 +61,7 @@ def login():
 @admin_ui_bp.get('/logout')
 def logout():
     session.pop('admin', None)
+    session.pop('admin_csrf', None)
     return redirect(url_for('admin_ui.login'))
 
 
@@ -104,6 +107,7 @@ def user_detail(user_id):
         })
 
     is_admin = (user_id == Config.ADMIN_USER_ID)
+    token_row = db.session.get(UserAccessToken, user_id)
 
     return render_template(
         'admin/user_detail.html',
@@ -111,4 +115,6 @@ def user_detail(user_id):
         is_admin=is_admin,
         provider_rows=provider_rows,
         configured=[r.to_safe_dict() for r in configured],
+        token_status=token_row.to_safe_dict() if token_row else None,
+        admin_csrf=session.get('admin_csrf', ''),
     )

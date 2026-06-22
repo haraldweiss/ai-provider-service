@@ -42,9 +42,22 @@
 <p class="muted">none</p>
 {% endif %}
 
+<h3>Personal access token</h3>
+{% if token_status and token_status.configured %}
+<p>Active token: <code>{{ token_status.prefix }}…</code>
+  <button id="issue-token">rotate personal token</button>
+  <button id="revoke-token">revoke</button>
+</p>
+{% else %}
+<p><button id="issue-token">issue personal token</button></p>
+{% endif %}
+<p id="token-result" class="row-msg"></p>
+
 <script>
 const userId = {{ user_id | tojson }};
 const grantsUrl = "{{ url_for('admin.create_grant') }}";
+const tokenUrl = {{ url_for('admin.issue_access_token', user_id=user_id) | tojson }};
+const adminCsrf = {{ admin_csrf | tojson }};
 document.querySelectorAll('#grants-table button').forEach(btn => {
   btn.addEventListener('click', async () => {
     const tr = btn.closest('tr');
@@ -76,6 +89,26 @@ document.querySelectorAll('#grants-table button').forEach(btn => {
       btn.disabled = false;
     }
   });
+});
+
+document.querySelector('#issue-token').addEventListener('click', async () => {
+  const result = document.querySelector('#token-result');
+  const resp = await fetch(tokenUrl, {
+    method: 'POST', credentials: 'same-origin',
+    headers: {'X-CSRF-Token': adminCsrf},
+  });
+  if (!resp.ok) { result.textContent = 'Token issue failed'; return; }
+  const body = await resp.json();
+  result.textContent = 'Copy now (shown once): ' + body.token;
+});
+const revokeButton = document.querySelector('#revoke-token');
+if (revokeButton) revokeButton.addEventListener('click', async () => {
+  if (!confirm('Revoke this user token?')) return;
+  const resp = await fetch(tokenUrl, {
+    method: 'DELETE', credentials: 'same-origin',
+    headers: {'X-CSRF-Token': adminCsrf},
+  });
+  if (resp.ok) location.reload();
 });
 </script>
 {% endblock %}
