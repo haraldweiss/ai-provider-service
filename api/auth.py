@@ -30,6 +30,7 @@ from config import Config
 class Principal:
     user_id: str
     role: str  # 'admin' | 'user'
+    credential: str = 'service'  # admin | service | user_token | basic
 
 
 def _asserted_user_id() -> str:
@@ -51,9 +52,13 @@ def _resolve_principal():
         return None
     token = auth.split(' ', 1)[1].strip()
     if Config.ADMIN_TOKEN and hmac.compare_digest(token, Config.ADMIN_TOKEN):
-        return Principal(user_id=Config.ADMIN_USER_ID, role='admin')
+        return Principal(user_id=Config.ADMIN_USER_ID, role='admin', credential='admin')
     if Config.SERVICE_TOKEN and hmac.compare_digest(token, Config.SERVICE_TOKEN):
-        return Principal(user_id=_asserted_user_id(), role='user')
+        return Principal(user_id=_asserted_user_id(), role='user', credential='service')
+    from storage.user_tokens import resolve_user_token
+    resolved = resolve_user_token(token)
+    if resolved:
+        return Principal(user_id=resolved[0], role='user', credential='user_token')
     return None
 
 
@@ -80,11 +85,11 @@ def _resolve_basic_principal():
         # Admin token via Basic still scopes to the asserted user (Basic user
         # field). This is unusual but mirrors what `?user=` does for the
         # Bearer/admin path.
-        return Principal(user_id=user or Config.ADMIN_USER_ID, role='admin')
+        return Principal(user_id=user or Config.ADMIN_USER_ID, role='admin', credential='basic')
     if Config.SERVICE_TOKEN and hmac.compare_digest(password, Config.SERVICE_TOKEN):
         if not user:
             return None
-        return Principal(user_id=user, role='user')
+        return Principal(user_id=user, role='user', credential='basic')
     return None
 
 
@@ -94,12 +99,28 @@ def _attach(p):
     return p
 
 
+def _identity_mismatch(p) -> bool:
+    asserted = _asserted_user_id()
+    return bool(
+        p.credential == 'user_token' and asserted and asserted != p.user_id
+    )
+
+
+def _identity_mismatch_response():
+    return jsonify({
+        'error': 'identity_mismatch',
+        'message': 'user token cannot access another user',
+    }), 403
+
+
 def require_token(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
         p = _resolve_principal()
         if p is None:
             return jsonify({'error': 'Missing or invalid Bearer token'}), 401
+        if _identity_mismatch(p):
+            return _identity_mismatch_response()
         _attach(p)
         return f(*args, **kwargs)
     return wrapped
@@ -124,6 +145,8 @@ def require_token_or_basic(f):
             resp.status_code = 401
             resp.headers['WWW-Authenticate'] = f'Basic realm="{_BASIC_REALM}"'
             return resp
+        if _identity_mismatch(p):
+            return _identity_mismatch_response()
         _attach(p)
         return f(*args, **kwargs)
     return wrapped

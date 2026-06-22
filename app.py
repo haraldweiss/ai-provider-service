@@ -57,7 +57,7 @@ def create_app() -> Flask:
     db.init_app(app)
     with app.app_context():
         # Models importieren, damit Tables registriert werden.
-        from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile  # noqa: F401
+        from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile, UserAccessToken  # noqa: F401
         from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
         _safe_create_all(db)
         from storage.fts import ensure_fts
