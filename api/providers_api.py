@@ -82,8 +82,8 @@ def get_models(provider_id):
             'free_count': len(free_models),
         })
     except Exception as e:
-        logger.warning(f'get_models({provider_id}) failed: {e}')
-        return jsonify({'error': str(e)}), 502
+        logger.warning('get_models(%s) failed: %s', provider_id, type(e).__name__)
+        return jsonify({'error': 'provider_request_failed'}), 502
 
 
 @providers_bp.get('/<provider_id>/health')
@@ -123,5 +123,6 @@ def test_provider(provider_id):
             'sample_models': models[:5],
         })
     except Exception as e:
-        health_tracker.set_status(provider_id, False, reason=str(e))
-        return jsonify({'status': 'error', 'error': str(e)}), 400
+        logger.warning('test_provider(%s) failed: %s', provider_id, type(e).__name__)
+        health_tracker.set_status(provider_id, False, reason=type(e).__name__)
+        return jsonify({'status': 'error', 'error': 'provider_request_failed'}), 400

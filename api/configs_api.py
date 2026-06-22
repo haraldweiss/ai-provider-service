@@ -8,6 +8,7 @@ from api.gate import has_personal_api_key, is_allowed
 from providers import PROVIDER_REGISTRY, provider_supports_personal_key
 from flask import g
 from storage.models import ProviderConfig
+from storage.provider_configs import save_provider_config, delete_provider_config
 
 logger = logging.getLogger(__name__)
 
@@ -85,22 +86,7 @@ def save_config(user_id, provider_id):
     if missing:
         return jsonify({'error': f'Pflichtfelder fehlen: {", ".join(missing)}'}), 400
 
-    pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
-
-    # Wenn Update + api_key leer → bestehenden Wert beibehalten
-    if pc and not config_dict.get('api_key'):
-        try:
-            old = pc.get_config()
-            if old.get('api_key'):
-                config_dict['api_key'] = old['api_key']
-        except Exception:
-            pass
-
-    if not pc:
-        pc = ProviderConfig(user_id=user_id, provider_id=provider_id)
-        db.session.add(pc)
-
-    pc.set_config(config_dict)
+    pc = save_provider_config(user_id, provider_id, config_dict)
     if 'fallback_provider' in body:
         pc.fallback_provider = body['fallback_provider'] or None
     if 'queue_when_unavailable' in body:
@@ -119,9 +105,6 @@ def delete_config(user_id, provider_id):
         return jsonify({'error': f'Unbekannter Provider: {provider_id}'}), 400
     if not _can_manage(user_id, provider_id, read_or_delete=True):
         return _access_denied(provider_id, user_id)
-    pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
-    if not pc:
+    if not delete_provider_config(user_id, provider_id):
         return jsonify({'message': 'kein Config-Eintrag vorhanden'}), 200
-    db.session.delete(pc)
-    db.session.commit()
     return jsonify({'message': 'gelöscht'})

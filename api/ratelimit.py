@@ -14,6 +14,7 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     'memory:write': (60, 60),    # 60 POST/min per user
     'memory:read':  (120, 60),   # 120 GET/min per user
     'vault:export': (5, 60),     # 5 vault exports/min per user
+    'settings:login': (10, 60),  # slow token guessing without logging tokens
 }
 
 
@@ -21,7 +22,7 @@ def _key(bucket: str) -> str:
     try:
         uid = g.principal.user_id
     except (RuntimeError, AttributeError):
-        uid = 'anonymous'
+        uid = request.remote_addr or 'anonymous'
     return f'{bucket}:{uid}'
 
 
