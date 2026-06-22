@@ -5,13 +5,43 @@ Mounted at /admin.
 """
 
 from datetime import datetime, timedelta, timezone
-from flask import Blueprint, jsonify, request, g
+import hmac
+
+from flask import Blueprint, jsonify, request, g, session
 from database import db
 from api.auth import require_admin_or_session
-from storage.models import ProviderGrant, ProviderConfig, UsageEvent, UserProfile
+from storage.models import ProviderGrant, ProviderConfig, UsageEvent, UserProfile, UserAccessToken
+from storage.user_tokens import issue_user_token, revoke_user_token
 from config import Config
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+
+def _token_csrf_valid() -> bool:
+    if request.headers.get('Authorization', '').startswith('Bearer '):
+        return True
+    expected = session.get('admin_csrf', '')
+    supplied = request.headers.get('X-CSRF-Token', '')
+    return bool(expected and supplied and hmac.compare_digest(expected, supplied))
+
+
+@admin_bp.post('/users/<user_id>/token')
+@require_admin_or_session
+def issue_access_token(user_id):
+    if not _token_csrf_valid():
+        return jsonify({'error': 'invalid_csrf'}), 403
+    raw = issue_user_token(user_id)
+    row = db.session.get(UserAccessToken, user_id)
+    return jsonify({'token': raw, 'token_status': row.to_safe_dict()}), 201
+
+
+@admin_bp.delete('/users/<user_id>/token')
+@require_admin_or_session
+def revoke_access_token(user_id):
+    if not _token_csrf_valid():
+        return jsonify({'error': 'invalid_csrf'}), 403
+    revoke_user_token(user_id)
+    return '', 204
 
 
 @admin_bp.post('/grants')

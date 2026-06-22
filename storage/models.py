@@ -6,6 +6,26 @@ from datetime import datetime, timezone
 from database import db
 
 
+class UserAccessToken(db.Model):
+    """Hashed, revocable bearer token bound to exactly one user."""
+    __tablename__ = 'user_access_tokens'
+
+    user_id = db.Column(db.String(255), primary_key=True)
+    token_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    token_prefix = db.Column(db.String(12), nullable=False)
+    generation = db.Column(db.String(32), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+
+    def to_safe_dict(self) -> dict:
+        return {
+            'configured': self.revoked_at is None,
+            'prefix': self.token_prefix,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'revoked_at': self.revoked_at.isoformat() if self.revoked_at else None,
+        }
+
+
 class ProviderConfig(db.Model):
     """Provider-Konfiguration pro user_id + provider_id.
 

@@ -85,3 +85,11 @@ def test_admin_ui_logout_clears_session(client):
     assert _is_redirect(r.status_code)
     r2 = client.get('/admin/ui/', follow_redirects=False)
     assert 'login' in r2.location.lower()
+
+
+def test_user_detail_shows_safe_token_controls(client, app):
+    client.get('/admin/ui/?token=admin-test-token', follow_redirects=False)
+    r = client.get('/admin/ui/users/lisa')
+    assert r.status_code == 200
+    assert b'issue personal token' in r.data.lower()
+    assert b'token_hash' not in r.data

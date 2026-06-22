@@ -25,14 +25,14 @@ def test_save_config_ollama_works_without_grant(client):
     assert r.status_code == 200
 
 
-def test_save_config_claude_blocked_without_grant(client):
+def test_save_personal_claude_key_allowed_without_grant(client):
     r = client.post(
         '/configs/lisa/claude',
         json={'config': {'api_key': 'sk-test'}},
         headers={'Authorization': 'Bearer test-token'},
     )
-    assert r.status_code == 403
-    assert r.get_json()['error'] == 'needs_approval'
+    assert r.status_code == 200
+    assert r.get_json()['has_api_key'] is True
 
 
 def test_save_config_claude_allowed_with_grant(app, client):

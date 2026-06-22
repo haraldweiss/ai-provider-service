@@ -1,0 +1,12 @@
+{% extends "settings/base.html" %}{% block content %}
+{% for provider in providers %}<section class="card">
+<h2>{{ provider.name }}</h2>
+{% if provider.config and provider.config.has_api_key %}<p class="ok">Configured with a personal key.</p>{% else %}<p class="muted">Not configured.</p>{% endif %}
+<form method="post" action="{{ url_for('settings_ui.save', provider_id=provider.id) }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="password" name="api_key" required autocomplete="off" placeholder="Add or replace API key"><button type="submit">Save</button></form>
+{% if provider.config and provider.config.has_api_key %}<div class="actions">
+<form method="post" action="{{ url_for('settings_ui.test_provider', provider_id=provider.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Test</button></form>
+<form method="post" action="{{ url_for('settings_ui.remove', provider_id=provider.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Remove</button></form>
+</div>{% endif %}</section>{% endfor %}
+<form method="post" action="{{ url_for('settings_ui.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Sign out</button></form>
+{% endblock %}

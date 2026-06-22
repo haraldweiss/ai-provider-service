@@ -57,7 +57,7 @@ def create_app() -> Flask:
     db.init_app(app)
     with app.app_context():
         # Models importieren, damit Tables registriert werden.
-        from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile  # noqa: F401
+        from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile, UserAccessToken  # noqa: F401
         from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
         _safe_create_all(db)
         from storage.fts import ensure_fts
@@ -77,6 +77,7 @@ def create_app() -> Flask:
     from api.memory_api import memory_bp
     from api.vault_api import vault_bp
     from api.webdav_api import webdav_bp
+    from api.settings_ui import settings_ui_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -91,6 +92,7 @@ def create_app() -> Flask:
     app.register_blueprint(memory_bp)
     app.register_blueprint(vault_bp)
     app.register_blueprint(webdav_bp)
+    app.register_blueprint(settings_ui_bp)
 
     from cli import (grants_bootstrap_command, update_opencode_pricing_command,
                      summary_job_command, vault_render_command, vault_backup_command,

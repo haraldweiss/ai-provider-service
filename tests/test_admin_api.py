@@ -187,3 +187,33 @@ def test_overview_includes_30d_call_counts(client, app):
     assert lisa['last_30d']['total_calls'] == 5
     assert lisa['last_30d']['by_provider']['ollama'] == 5
     assert lisa['last_30d']['by_origin_app']['loganonymizer'] == 5
+
+
+def test_admin_issues_and_revokes_user_token(client, app):
+    from storage.user_tokens import resolve_user_token
+
+    issued = client.post('/admin/users/lisa/token', headers=H_admin())
+    assert issued.status_code == 201
+    body = issued.get_json()
+    raw = body['token']
+    assert raw.startswith('aips_')
+    assert body['token_status']['prefix'] == raw[:12]
+    assert 'token_hash' not in str(body)
+
+    revoked = client.delete('/admin/users/lisa/token', headers=H_admin())
+    assert revoked.status_code == 204
+    with app.app_context():
+        assert resolve_user_token(raw) is None
+
+
+def test_user_cannot_manage_access_tokens(client):
+    response = client.post('/admin/users/lisa/token', headers=H_user())
+    assert response.status_code == 403
+
+
+def test_session_token_issue_requires_admin_csrf(client, app):
+    app.config['SECRET_KEY'] = 'test-secret-key-for-sessions'
+    Config.SECRET_KEY = 'test-secret-key-for-sessions'
+    client.get('/admin/ui/?token=admin-test-token', follow_redirects=False)
+    response = client.post('/admin/users/lisa/token')
+    assert response.status_code == 403

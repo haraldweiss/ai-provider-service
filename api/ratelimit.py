@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
-from flask import request, jsonify, g
+from flask import request, jsonify, g, has_request_context
 from functools import wraps
 
 logger = logging.getLogger(__name__)
@@ -14,6 +14,7 @@ _RATE_LIMITS: dict[str, tuple[int, int]] = {
     'memory:write': (60, 60),    # 60 POST/min per user
     'memory:read':  (120, 60),   # 120 GET/min per user
     'vault:export': (5, 60),     # 5 vault exports/min per user
+    'settings:login': (10, 60),  # slow token guessing without logging tokens
 }
 
 
@@ -21,7 +22,7 @@ def _key(bucket: str) -> str:
     try:
         uid = g.principal.user_id
     except (RuntimeError, AttributeError):
-        uid = 'anonymous'
+        uid = (request.remote_addr or 'anonymous') if has_request_context() else 'anonymous'
     return f'{bucket}:{uid}'
 
 
@@ -38,10 +39,14 @@ def _check(bucket: str, limit: int, window: int) -> bool:
     return True
 
 
-def rate_limit(bucket: str):
+def rate_limit(bucket: str, methods=None):
+    limited_methods = {m.upper() for m in methods} if methods else None
+
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
+            if limited_methods and request.method.upper() not in limited_methods:
+                return f(*args, **kwargs)
             if bucket not in _RATE_LIMITS:
                 return f(*args, **kwargs)
             limit, window = _RATE_LIMITS[bucket]
