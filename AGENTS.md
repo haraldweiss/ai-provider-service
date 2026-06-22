@@ -477,6 +477,35 @@ and `systemctl restart ai-provider.service`.
   4. PR → merge → deploy → manueller Test-Run, neuen Post verifizieren
   5. **Optional:** WordPress-Post `34017` löschen (er ist sachlich falsch und steht jetzt online)
 
+### Fix: Admin/Settings UI Cache-Control — stale CSRF-Token (2026-06-22, Claude Code)
+
+**Symptom:** Token-Issue im Admin-UI schlug fehl mit 403 `invalid_csrf`.
+
+**Root cause:** Admin-UI- und Settings-UI-Seiten setzten keine `Cache-Control`-Header.
+Der Browser konnte die HTML-Seite inklusive des eingebetteten `adminCsrf`-CSRF-Tokens
+im JavaScript cachen. Ein späterer POST verwendete den gecachten (stalen) CSRF-Token,
+der nicht mehr mit dem `session['admin_csrf']` übereinstimmte → 403 Forbidden.
+
+**Fix (Commit `6a0130c`):**
+- `api/admin_ui.py`: `after_request`-Handler setzt
+  `Cache-Control: no-cache, no-store, must-revalidate` + `Pragma: no-cache` +
+  `Expires: 0` auf alle Admin-UI-Responses.
+- `api/settings_ui.py`: Gleicher Fix für Settings-UI (hat auch CSRF-Tokens in Templates).
+
+**DEPLOYED auf oracle-vm (2026-06-22), running == committed (`6a0130c`):**
+- `main` fast-forward auf `6a0130c`.
+- Image `localhost/ai-provider:6a0130c` (+`:latest`) via `build.sh` auf oracle-vm gebaut;
+  Container recreated (`bewerbungen-net`, selbe Volumes + Mounts + Env-File).
+- `docker ps`: Up, **healthy**.
+- **Verifiziert live:**
+  - `curl -I /admin/ui/` → `Cache-Control: no-cache, no-store, must-revalidate` ✓
+  - `curl -I /settings/login` → gleiche Header ✓
+  - `POST /admin/users/harald/token` mit Bearer Auth → 201, Token
+    `aips_gkZ0tllswl65XJjPbRLv3ehT84sFqk3kxMhBWGGQ68I` ✓
+  - 268/268 Tests pass (pytest auf Mac) ✓
+
+**Nächster Session:** Keine offenen Punkte.
+
 ---
 
 **Root cause index (bugs encountered & fixed):**
