@@ -154,7 +154,7 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 - Self-service UI at `/settings/login` + `/settings/providers` with CSRF,
   throttled login, safe status-only rendering, test, and remove actions.
 - New distinct `ollama_cloud` provider for `https://ollama.com/api`.
-- Local verification: pytest **267/267 passed**. Docker build/boot/`/health`
+- Local verification: pytest **268/268 passed**. Docker build/boot/`/health`
   smoke was not runnable on this Mac (`docker: command not found`) and remains
   required in CI before merge/deploy. Recreate the container for deployment;
   no live provider key is needed for automated verification.

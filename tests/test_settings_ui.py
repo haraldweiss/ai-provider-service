@@ -26,6 +26,11 @@ def test_login_stores_identity_and_generation_not_plaintext(client, app):
         assert raw not in repr(dict(session))
 
 
+def test_login_page_views_do_not_consume_attempt_limit(client):
+    for _ in range(12):
+        assert client.get('/settings/login').status_code == 200
+
+
 def test_rotation_invalidates_existing_settings_session(client, app):
     raw = issue_user_token('lisa')
     _login(client, raw)

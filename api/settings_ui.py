@@ -55,7 +55,7 @@ def _supported(provider_id: str) -> bool:
 
 
 @settings_ui_bp.route('/login', methods=['GET', 'POST'])
-@rate_limit('settings:login')
+@rate_limit('settings:login', methods={'POST'})
 def login():
     if request.method == 'POST':
         resolved = resolve_user_token(request.form.get('token', '').strip())

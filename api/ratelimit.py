@@ -39,10 +39,14 @@ def _check(bucket: str, limit: int, window: int) -> bool:
     return True
 
 
-def rate_limit(bucket: str):
+def rate_limit(bucket: str, methods=None):
+    limited_methods = {m.upper() for m in methods} if methods else None
+
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
+            if limited_methods and request.method.upper() not in limited_methods:
+                return f(*args, **kwargs)
             if bucket not in _RATE_LIMITS:
                 return f(*args, **kwargs)
             limit, window = _RATE_LIMITS[bucket]
