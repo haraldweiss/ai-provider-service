@@ -98,6 +98,9 @@ def get_client(provider_id: str, config: Optional[dict] = None) -> BaseClient:
     if provider_id == 'zai':
         from providers.zai import ZaiClient
         return ZaiClient(config)
+    if provider_id == 'ollama_cloud':
+        from providers.ollama_cloud import OllamaCloudClient
+        return OllamaCloudClient(config)
 
     raise ValueError(f"Unbekannter Provider: {provider_id}")
 
