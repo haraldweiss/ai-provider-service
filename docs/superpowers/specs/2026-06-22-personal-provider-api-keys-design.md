@@ -31,9 +31,10 @@ billing, provider subscriptions, or multiple simultaneous user tokens.
 
 Add a `UserAccessToken` database model with one active token per `user_id`. The
 token is generated from at least 256 bits of cryptographically secure entropy.
-Only a SHA-256 hash, a short non-secret display prefix, timestamps, and the
-associated `user_id` are stored. Because the token is high entropy, the hash is
-not a password substitute and does not require a slow password KDF.
+Only a SHA-256 hash, a short non-secret display prefix, a random generation ID,
+timestamps, and the associated `user_id` are stored. Because the token is high
+entropy, the hash is not a password substitute and does not require a slow
+password KDF.
 
 An administrator can issue, rotate, or revoke a token from the existing user
 detail page. Issuance or rotation invalidates the previous token. The plaintext
@@ -47,9 +48,11 @@ prefix and status.
 
 Existing `ADMIN_TOKEN` and `SERVICE_TOKEN` behavior remains available for
 backward compatibility. The new self-service UI accepts a user token, stores
-only the resolved `user_id` in a signed, HTTP-only session, and never stores the
-plaintext token in the session. State-changing UI requests use a session-bound
-CSRF token. Logout clears the user session.
+only the resolved `user_id` and non-secret token generation ID in a signed,
+HTTP-only session, and never stores the plaintext token in the session. Every
+settings request verifies that the generation is still active, so token
+rotation or revocation also invalidates existing UI sessions. State-changing UI
+requests use a session-bound CSRF token. Logout clears the user session.
 
 ## Credential storage and API behavior
 
