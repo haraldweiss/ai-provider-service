@@ -520,3 +520,12 @@ der nicht mehr mit dem `session['admin_csrf']` übereinstimmte → 403 Forbidden
 | JS edit/save button double-fires | `stopPropagation()` in edit handler blocked save handler | `cloneNode(true)` then direct `addEventListener` (eventual fix: `data-mode` flag) |
 | Approve/revoke → state not refreshed | No `location.reload()` after success | Added `location.reload()` in both overview and detail page |
 | `build_overview` missing (NameError) | Accidentally deleted during user profile endpoint edit | Restored function |
+
+### OpenAI-compatible Endpoint (2026-06-26)
+- **Was:** `/v1/chat/completions` + `/v1/models` in OpenAI-Format hinzugefügt.
+- **Model-Format:** `provider/model_name` (z.B. `zai/glm-4-flash`, `ollama/qwen3.6:latest`).
+- **Streaming:** SSE via `stream=true` (backend sync → ein Chunk, aber Pi-kompatibel).
+- **Auth:** Gleicher Bearer-Token wie `/chat` (`@require_token` + `@require_provider_access`).
+- **Zweck:** Pi kann den Service als OpenAI-kompatiblen Provider nutzen.
+- **Pi Extension:** `~/.pi/agent/extensions/ai-provider-service.ts` registriert den Service in Pi.
+- **Skill:** `pi-connect-ai-provider-service` (global) dokumentiert Setup + Fallstricke.
