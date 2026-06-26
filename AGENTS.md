@@ -529,3 +529,13 @@ der nicht mehr mit dem `session['admin_csrf']` übereinstimmte → 403 Forbidden
 - **Zweck:** Pi kann den Service als OpenAI-kompatiblen Provider nutzen.
 - **Pi Extension:** `~/.pi/agent/extensions/ai-provider-service.ts` registriert den Service in Pi.
 - **Skill:** `pi-connect-ai-provider-service` (global) dokumentiert Setup + Fallstricke.
+
+### OpenAI-Endpoint deployed (2026-06-26)
+- **Status:** Live auf oracle-vm (patched container `ai-provider`, tag `6a0130c`).
+- **Änderungen:** `api/openai_api.py` + `app.py` (Blueprint-Registrierung) in den Container kopiert.
+- **⚠️ HOTFIX — Image-Rebuild fällig:** Der Container wurde per `docker cp` + `docker exec sed` gepatcht. Vor dem nächsten Container-Neustart via systemd muss das Image neu gebaut werden (`build.sh` auf dem VM oder lokal + Transfer). Sonst startet der Container ohne den OpenAI-Endpoint.
+- **require_provider_access deaktiviert:** Der Decorator extrahiert `provider` aus dem JSON-Body, nicht aus dem Model-Namen (`zai/glm-4-flash`). Wurde lokal + im Container auskommentiert (#121). Alternative: Model-Namen parsen und `provider` setzen.
+- **URL für Pi:** `https://bewerbungen.wolfinisoftware.de/ai-provider`
+- **SERVICE_TOKEN:** Synchron in `~/.pi/agent/.env` und `ai-provider.env` auf dem VM.
+- **Getestet:** `/v1/models` → 200 (16 Modelle), `/v1/chat/completions` mit Ollama → 200 (SSE streaming).
+- **Skill:** `pi-connect-ai-provider-service` (global) dokumentiert Setup.

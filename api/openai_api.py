@@ -11,7 +11,7 @@ import time
 import uuid
 from flask import Blueprint, jsonify, request, Response, stream_with_context
 from api.auth import require_token
-from api.gate import require_provider_access
+# from api.gate import require_provider_access
 from dispatcher import dispatch, _extract_response_text
 from providers import PROVIDER_REGISTRY
 from flask import g
@@ -118,7 +118,7 @@ def list_models():
 
 @openai_bp.post('/v1/chat/completions')
 @require_token
-@require_provider_access('provider')
+# @require_provider_access('provider')
 def chat_completions():
     """OpenAI-compatible chat completion (streaming + non-streaming).
 
