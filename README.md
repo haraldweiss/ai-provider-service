@@ -462,8 +462,10 @@ Das Model-Format ist `provider/model_name`, z.B.:
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
 Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
 
-**Auth:** Gleicher Bearer-Token wie `/chat` (`@require_token` +
-`@require_provider_access`).
+**Auth:** Gleicher Bearer-Token wie `/chat` (`@require_token`).  
+`@require_provider_access` ist **deaktiviert** — der Decorator sucht `provider` 
+im JSON-Body, nicht im Model-Namen (`zai/glm-4-flash`). Für OpenAI-kompatible 
+Clients reicht die Token-Authentisierung.
 
 **Zweck:** Ermöglicht Pi und anderen OpenAI-kompatiblen Clients den Zugriff
 auf den Service. Pi-Extension in `~/.pi/agent/extensions/ai-provider-service.ts`
@@ -479,6 +481,25 @@ Beispiel (streaming):
 curl -sN https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4-flash","messages":[{"role":"user","content":"Hallo"}],"stream":true}'
 ```
 
+### Pi-Einrichtung
+
+Damit Pi den Service als OpenAI-kompatiblen Provider nutzen kann:
+
+1. **Extension** in `~/.pi/agent/extensions/ai-provider-service.ts` — registriert den
+   Service per `pi.registerProvider()` mit `api: "openai-completions"`.
+2. **Env-Variablen** in `~/.pi/agent/.env` setzen:
+   ```bash
+   SERVICE_TOKEN=<gleicher Token wie im ai-provider-service .env>
+   AI_PROVIDER_SERVICE_URL=http://localhost:8767  # oder https://service.domain.de/ai-provider
+   ```
+3. **Modelle** sind dann als `ai-provider-service/...` in Pi wählbar:
+   - `--model ai-provider-service/zai/glm-4-flash` — GLM-4 Flash
+   - `--model ai-provider-service/ollama/qwen3.6:latest` — Lokales Ollama
+   - `--model ai-provider-service/claude/claude-sonnet-4-6-20250514` — Claude
+
+**Hinweis:** Der Service läuft auf dem **oracle-vm** hinter Apache Reverse-Proxy.
+Die URL ist `https://bewerbungen.wolfinisoftware.de/ai-provider/`. Bei lokalem
+Betrieb (`http://localhost:8767`) kann die Extension direkt verbinden.
 
 ### Queue
 
