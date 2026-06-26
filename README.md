@@ -433,6 +433,53 @@ Antwort queued (Ollama down + queue=on):
   "primary_provider": "ollama", "expires_at": "..." }
 ```
 
+
+### OpenAI-compatible Endpoint (v1)
+
+```
+GET /v1/models
+  → Liste aller Modelle im OpenAI-Format
+
+POST /v1/chat/completions
+  Body (OpenAI-Format): {
+    "model": "zai/glm-4-flash",
+    "messages": [{"role": "user", "content": "..."}],
+    "stream": true,       // SSE streaming
+    "max_tokens": 4096
+  }
+```
+
+Das Model-Format ist `provider/model_name`, z.B.:
+
+| Model-ID | Provider |
+|---|---|
+| `zai/glm-4-flash` | z.ai (GLM-4 Flash) |
+| `zai/glm-4` | z.ai (GLM-4) |
+| `ollama/qwen3.6:latest` | Lokales Ollama |
+| `ollama/dev-coder:latest` | Lokales Ollama |
+| `claude/claude-sonnet-4-6-20250514` | Claude (Server-Key) |
+
+**Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
+Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
+
+**Auth:** Gleicher Bearer-Token wie `/chat` (`@require_token` +
+`@require_provider_access`).
+
+**Zweck:** Ermöglicht Pi und anderen OpenAI-kompatiblen Clients den Zugriff
+auf den Service. Pi-Extension in `~/.pi/agent/extensions/ai-provider-service.ts`
+registriert den Service automatisch.
+
+Beispiel (non-streaming):
+```bash
+curl -s https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4-flash","messages":[{"role":"user","content":"Hallo"}],"stream":false}'
+```
+
+Beispiel (streaming):
+```bash
+curl -sN https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4-flash","messages":[{"role":"user","content":"Hallo"}],"stream":true}'
+```
+
+
 ### Queue
 
 ```
