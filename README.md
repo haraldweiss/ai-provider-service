@@ -596,10 +596,11 @@ oracle-vm via Host-Crontab gegen den Docker-Container:
 
 ### Admin UI
 
-Open `https://<service>/admin/ui/login` in a browser and log in with
-**username** `ADMIN_USER_ID` (default: `harald`) and **password** `ADMIN_PASSWORD`
-from the environment, or use `ADMIN_TOKEN` via the token form or URL
-(`/admin/ui?token=<ADMIN_TOKEN>`).
+The admin UI is served at `/admin/ui/`.
+- **via ai-admin.wolfinisoftware.de** — Apache Basic Auth + `X-Forwarded-User` auto-auth,
+  no second login step needed.
+- **direct access** — log in with `ADMIN_USER_ID`/`ADMIN_PASSWORD` or
+  `ADMIN_TOKEN` via the form or URL (`/admin/ui?token=<ADMIN_TOKEN>`).
 After login, the URL is `/admin/ui/users`.
 
 Shows per-user roster with configured providers, active grants, and
