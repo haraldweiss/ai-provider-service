@@ -1,17 +1,17 @@
 """Admin UI — Jinja-rendered pages at /admin/ui.
 
 Auth flow:
-  1. GET /admin/ui?token=<ADMIN_TOKEN>  → validates, sets session cookie, redirects.
-  2. Subsequent navigation uses session['admin']=True.
-  3. GET /admin/ui/logout → clears session.
+  1. GET /admin/ui/login → shows a form. POST with token → validates, sets session.
+  2. GET /admin/ui?token=<ADMIN_TOKEN>  → validates, sets session cookie, redirects.
+  3. Subsequent navigation uses session['admin']=True.
+  4. GET /admin/ui/logout → clears session.
 
-Single-admin scope. No login form posts a password; the URL-token bootstrap
-plus a signed Flask session cookie is acceptable for this use case.
+Single-admin scope. Works with or without ADMIN_TOKEN env var.
 """
 
 from flask import (
     Blueprint, render_template, request, redirect, url_for, session, abort,
-    jsonify, current_app,
+    jsonify, current_app, flash,
 )
 from datetime import datetime, timedelta, timezone
 import secrets
@@ -64,10 +64,16 @@ def _entry():
         return redirect(url_for('admin_ui.login'))
 
 
-@admin_ui_bp.get('/login')
+@admin_ui_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    if Config.ADMIN_TOKEN:
-        return redirect(url_for('admin_ui.root', token=Config.ADMIN_TOKEN))
+    if request.method == 'POST':
+        token = request.form.get('token', '')
+        if Config.ADMIN_TOKEN and token == Config.ADMIN_TOKEN:
+            session['admin'] = True
+            session['admin_csrf'] = secrets.token_urlsafe(32)
+            return redirect(url_for('admin_ui.root'))
+        flash('Invalid admin token', 'error')
+        return render_template('admin/login.html')
     return render_template('admin/login.html')
 
 

@@ -1,0 +1,9 @@
+# Project-local Codex defaults for ai-provider-service.
+
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+model_reasoning_effort = "high"
+model_verbosity = "medium"
+
+[sandbox_workspace_write]
+network_access = false

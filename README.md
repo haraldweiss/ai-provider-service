@@ -596,8 +596,10 @@ oracle-vm via Host-Crontab gegen den Docker-Container:
 
 ### Admin UI
 
-Visit `https://<service>/admin/ui?token=<ADMIN_TOKEN>` once to bootstrap
-a signed session cookie. After that, the URL is `/admin/ui/users`.
+Open `https://<service>/admin/ui/login` in a browser and enter the
+`ADMIN_TOKEN` in the password form, or visit `/admin/ui?token=<ADMIN_TOKEN>`
+to bootstrap the session in one step.
+After login, the URL is `/admin/ui/users`.
 
 Shows per-user roster with configured providers, active grants, and
 30-day usage rollup. Approve/revoke buttons hit `/admin/grants` via the

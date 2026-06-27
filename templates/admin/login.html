@@ -1,7 +1,22 @@
 {% extends "admin/base.html" %}
 {% block content %}
 <h2>admin login</h2>
-<p>This page requires the admin bearer token. To start a session, visit:</p>
-<pre>/admin/ui?token=&lt;ADMIN_TOKEN&gt;</pre>
-<p class="muted">The token is set via the <code>ADMIN_TOKEN</code> env var.</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <p class="{{ category }}">{{ message }}</p>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="post" action="{{ url_for('admin_ui.login') }}">
+  <label>Admin token<br>
+    <input type="password" name="token" required autocomplete="off" style="width:24em;">
+  </label><br><br>
+  <button type="submit">Sign in</button>
+</form>
+
+<hr>
+<p class="muted">Alternatively, visit <code>/admin/ui?token=&lt;ADMIN_TOKEN&gt;</code> directly.</p>
 {% endblock %}

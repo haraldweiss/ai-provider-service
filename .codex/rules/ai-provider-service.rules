@@ -1,0 +1,48 @@
+# ai-provider-service production and container operations should stay explicit.
+
+prefix_rule(
+    pattern = ["ssh", "oracle-vm"],
+    decision = "prompt",
+    justification = "oracle-vm runs the production ai-provider container and tunnels; confirm remote operations.",
+    match = [
+        "ssh oracle-vm docker ps",
+        "ssh oracle-vm sudo docker logs ai-provider",
+    ],
+)
+
+prefix_rule(
+    pattern = ["docker"],
+    decision = "prompt",
+    justification = "Docker commands can create drift from committed ai-provider images; confirm build/recreate/rollback intent.",
+    match = [
+        "docker restart ai-provider",
+        "docker run --env-file /etc/ai-provider/ai-provider.env",
+    ],
+)
+
+prefix_rule(
+    pattern = ["./build.sh"],
+    decision = "prompt",
+    justification = "Image builds affect deploy traceability; confirm tests and SHA-tagged image expectations.",
+    match = [
+        "./build.sh",
+    ],
+)
+
+prefix_rule(
+    pattern = ["./deploy.sh"],
+    decision = "prompt",
+    justification = "Deploying ai-provider touches production routing, env, and persistent data; confirm the deploy checklist.",
+    match = [
+        "./deploy.sh",
+    ],
+)
+
+prefix_rule(
+    pattern = ["rsync"],
+    decision = "prompt",
+    justification = "Copying source or config to the production host can bypass the image-based deploy model.",
+    match = [
+        "rsync -az . oracle-vm:/tmp/ai-provider-src/",
+    ],
+)

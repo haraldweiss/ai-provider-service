@@ -540,3 +540,11 @@ der nicht mehr mit dem `session['admin_csrf']` übereinstimmte → 403 Forbidden
 - **SERVICE_TOKEN:** Synchron in `~/.pi/agent/.env` und `ai-provider.env` auf dem VM.
 - **Getestet:** `/v1/models` → 200 (16 Modelle), `/v1/chat/completions` mit Ollama → 200 (SSE streaming).
 - **Skill:** `pi-connect-ai-provider-service` (global) dokumentiert Setup.
+### 2026-06-27 — Admin login form instead of bare token instruction
+- **Trigger:** User opened /admin/ui/login and saw informational text instead of a login form.
+- **Change:** GET /admin/ui/login now shows a password form where the admin can enter ADMIN_TOKEN.
+- **Change:** POST /admin/ui/login validates the token from form data, sets session, redirects to /admin/ui/.
+- **Change:** ?token= URL-param flow retained as convenience alternative.
+- **Files changed:** api/admin_ui.py, templates/admin/login.html, tests/test_admin_ui.py
+- **Tests:** 270/270 pass (3 new tests for form rendering, valid POST, invalid POST).
+

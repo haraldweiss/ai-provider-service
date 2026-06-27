@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Provider Workflow"
+  short_description: "Docker, key-safety, provider, and production workflow for ai-provider-service."
+  default_prompt: "Use the AI Provider workflow while changing or deploying this service."
