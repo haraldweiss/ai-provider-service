@@ -46,3 +46,20 @@ def list_events():
         'next_since': rows[-1].created_at.isoformat() if rows else since_raw,
         'has_more': len(rows) == limit,
     })
+@bp.route('/usage/users', methods=['GET'])
+@require_token
+def list_known_users():
+    """Return all known user IDs with their aliases (for tracker discovery)."""
+    from storage.models import UserAccessToken, UserProfile
+    tokens = UserAccessToken.query.all()
+    profiles = {p.user_id: p.alias for p in UserProfile.query.all()}
+    seen = set()
+    users = []
+    for t in tokens:
+        seen.add(t.user_id)
+        users.append({'user_id': t.user_id, 'alias': profiles.get(t.user_id)})
+    for p in UserProfile.query.all():
+        if p.user_id not in seen:
+            users.append({'user_id': p.user_id, 'alias': p.alias})
+    return jsonify({'users': users})
+
