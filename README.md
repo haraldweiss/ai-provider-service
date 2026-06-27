@@ -82,126 +82,93 @@ Smoke-Test:
 curl http://127.0.0.1:8767/health
 ```
 
-## Deployment (VPS + Mac-Tunnel)
+## Deployment (oracle-vm Docker)
 
-### VPS
+Der Service läuft als Docker-Container auf **oracle-vm** (Oracle Linux 9, aarch64)
+hinter Apache Reverse-Proxy.
 
-> ⚠️ **Niemals den `venv/`-Ordner auf den VPS kopieren / rsyncen.** Python-venvs
-> sind nicht portabel: die Shebangs in `venv/bin/*` hardcoden den absoluten Pfad
-> zum Mac-Interpreter (z.B. `/Users/haraldweiss/.../venv/bin/python3.14`), der
-> auf dem Linux-VPS nicht existiert. Folge: gunicorn-Start scheitert mit
-> `status=126` ("bad interpreter") und systemd restartet endlos (am 2026-05-26
-> bis Restart-Counter 33000+ gelaufen, bevor's aufgefallen ist). Deshalb beim
-> Deploy `--exclude='venv'` setzen und das venv **auf dem VPS** mit dem
-> Linux-Python neu bauen — nicht mit dem mitgebrachten Mac-`python3.14`.
-
-1) Code rüberkopieren (venv + caches ausschliessen!):
-```bash
-rsync -avz --delete \
-    --exclude='venv' --exclude='__pycache__' --exclude='.git' --exclude='.env' \
-    ./ root@bewerbungen.wolfinisoftware.de:/var/www/ai-provider-service/
-```
-
-2) Venv auf dem VPS bauen + Setup-Script:
-```bash
-ssh root@bewerbungen.wolfinisoftware.de
-cd /var/www/ai-provider-service
-/usr/bin/python3.12 -m venv venv
-venv/bin/pip install -r requirements.txt
-bash deploy/setup-vps.sh
-# → installiert systemd-Unit
-# → enabled Service für Auto-Start beim Server-Neustart
-```
-
-3) `.env` auf dem VPS füllen:
-   - `ANTHROPIC_API_KEY` (falls Claude verwendet)
-   - `SERVICE_TOKEN` (für Client-Apps)
-   - `ALLOWED_ORIGINS` (für CORS)
-
-4) Apache-Config einfügen — Inhalt von `deploy/apache-vhost.conf` in den
-   bestehenden vhost (z.B. `/etc/httpd/conf.d/bewerbungen.conf`) kopieren,
-   dann `systemctl reload httpd`.
-
-5) Service starten und überprüfen:
-```bash
-systemctl start ai-provider-service.service
-systemctl status ai-provider-service.service
-curl http://127.0.0.1:8767/health
-
-# Service ist auto-enabled — startet automatisch nach Server-Neustart
-systemctl is-enabled ai-provider-service.service
-# → enabled
-```
-
-**Auto-Restart-Verhalten:** Die systemd-Unit ist konfiguriert mit:
-- `Restart=always` — Service restartet bei Crash oder Server-Reboot
-- `RestartSec=10` — 10 Sekunden Pause zwischen Restart-Versuchen
-- `WantedBy=multi-user.target` — Auto-Start beim Boot
-
-### Container (production, current)
-
-The production deploy on the IONOS VPS runs the service as a podman-managed
-container, driven by a Quadlet at
-`/etc/containers/systemd/ai-provider.container` (versioned in
-`deploy/ai-provider.container`).
-
-**First-time setup on the VPS:**
+### Deploy (Quick)
 
 ```bash
-# 1. Data dir — persistent SQLite DB + pricing overrides
-mkdir -p /opt/ai-provider-data
-chcon -Rt container_file_t /opt/ai-provider-data
+cd ~/projects/ai-provider-service
+# 1) Source auf oracle-vm syncen
+rsync -avz --delete     --exclude='venv' --exclude='__pycache__' --exclude='.git' --exclude='.env' --exclude='node_modules'     ./ opc@oracle-vm:/tmp/ai-provider-service-build/
 
-# 2. Secrets file (never in git) — copy from existing .env
-mkdir -p /etc/ai-provider && chmod 700 /etc/ai-provider
-# Only secrets, not the non-secret defaults (those are in the Quadlet):
-python3 -c "
-import os
-with open('/var/www/ai-provider-service/.env') as f:
-    content = f.read()
-lines = content.strip().split('\n')
-skip_prefixes = ['HOST=', 'PORT=', 'GATE_ENABLED=', 'UNGATED_PROVIDERS=',
-    'HEALTH_CHECK_INTERVAL_SEC=', 'QUEUE_DRAIN_INTERVAL_SEC=',
-    'QUEUE_TTL_HOURS=', 'DATABASE_URL=']
-filtered = [l for l in lines if not any(l.startswith(p) for p in skip_prefixes)]
-with open('/etc/ai-provider/ai-provider.env', 'w') as f:
-    f.write('\n'.join(filtered) + '\n')
-"
-chmod 600 /etc/ai-provider/ai-provider.env
+# 2) Per SSH auf oracle-vm deployen
+ssh opc@oracle-vm
+cd /tmp/ai-provider-service-build
+bash deploy.sh
+# → docker compose build + up -d
 ```
 
-**Important:** In the env file, set `OLLAMA_URL` / `OLLAMA_URLS` / `SEARXNG_URL`
-to `host.containers.internal` instead of `127.0.0.1` because inside the
-container, `127.0.0.1` refers to the container's own loopback, not the host.
+### First-Time Setup (oracle-vm)
 
 ```bash
-# 3. Install the Quadlet
-cp /var/www/ai-provider-service/deploy/ai-provider.container \
-   /etc/containers/systemd/
-systemctl daemon-reload
+# 1) Env-Datei anlegen
+sudo mkdir -p /etc/ai-provider
+sudo nano /etc/ai-provider/ai-provider.env
+# → MASTER_KEY, SERVICE_TOKEN, SECRET_KEY, FERNET_KEY eintragen
 
-# 4. Build the image and start
-cd /var/www/ai-provider-service
-podman build -t localhost/ai-provider:latest .
-systemctl start ai-provider.service
+# 2) Env-Datei schützen
+sudo chmod 600 /etc/ai-provider/ai-provider.env
+
+# 3) Datenverzeichnis
+sudo mkdir -p /opt/ai-provider-data
+sudo chown opc:opc /opt/ai-provider-data
+
+# 4) Apache VHost (eigener VirtualHost)
+# /etc/httpd/conf.d/ai-provider-service.wolfinisoftware.de.conf:
+#   <VirtualHost *:443>
+#     ServerName ai-provider-service.wolfinisoftware.de
+#     SSLProxyEngine On
+#     ProxyPreserveHost On
+#     ProxyPass / http://127.0.0.1:8767/ retry=0 timeout=600
+#     ProxyPassReverse / http://127.0.0.1:8767/
+#   </VirtualHost>
+sudo systemctl reload httpd
+
+# 5) SSL-Zertifikat (falls nötig)
+sudo certbot --apache -d ai-provider-service.wolfinisoftware.de
 ```
 
-**Re-deploy after a code change:**
+### docker-compose.yml
+
+```yaml
+services:
+  ai-provider:
+    build: .
+    container_name: ai-provider
+    restart: always
+    ports:
+      - 127.0.0.1:8767:8767
+    volumes:
+      - /opt/ai-provider-data:/app/data
+      - /opt/ai-provider-data/pricing_overrides.json:/app/pricing_overrides.json
+    env_file: /etc/ai-provider/ai-provider.env
+    extra_hosts:
+      - host.docker.internal:host-gateway  # für Ollama-Tunnel-Zugriff
+```
+
+**OLLAMA_URL:** Container-intern `http://host.docker.internal:11434` verwenden
+(löst über Docker-DNS zum Host-Loopback auf — überlebt Bridge-IP-Wechsel).
+
+### Apache-Config
+
+Siehe `deploy/apache-vhost.conf`.
+
+### systemd-Unit (Boot-Order)
+
+`/etc/systemd/system/ai-provider-docker.service` (siehe `deploy/ai-provider-docker.service`)
+startet den Container nach `docker.service` + `network.target`.
 
 ```bash
-cd /var/www/ai-provider-service
-git pull
-podman build -t localhost/ai-provider:latest .
-systemctl restart ai-provider.service
+sudo systemctl enable ai-provider-docker.service
+sudo systemctl start ai-provider-docker.service
 ```
-
-The container is dual-bound: `127.0.0.1:8767` (host services like
-daily-roundup, bewerbungen) and `10.88.0.1:8767` (container consumers like
-claudetracker). No consumer URL changes needed after migration.
 
 ### Mac (für Ollama-Tunnel)
 
-Ollama läuft lokal auf dem Mac. Damit der VPS-Service Ollama erreicht, brauchen
+Ollama läuft lokal auf dem Mac. Damit der oracle-vm-Container Ollama erreicht, brauchen
 wir einen persistenten Reverse-SSH-Tunnel.
 
 1) autossh installieren:
@@ -209,9 +176,9 @@ wir einen persistenten Reverse-SSH-Tunnel.
 brew install autossh
 ```
 
-2) SSH-Key auf dem VPS hinterlegen (passwordless-Login):
+2) SSH-Key auf oracle-vm hinterlegen (passwordless-Login):
 ```bash
-ssh-copy-id root@bewerbungen.wolfinisoftware.de
+ssh-copy-id opc@oracle-vm
 ```
 
 3) LaunchAgent installieren:
@@ -223,14 +190,17 @@ launchctl load ~/Library/LaunchAgents/com.ai-provider.ollama-tunnel.plist
 4) Status prüfen:
 ```bash
 launchctl list | grep ai-provider
-# Auf dem VPS:
-ssh root@bewerbungen.wolfinisoftware.de 'curl -s http://127.0.0.1:11434/api/tags'
+# Auf oracle-vm:
+ssh opc@oracle-vm 'curl -s http://127.0.0.1:11434/api/tags'
 ```
 
 Der Tunnel restarted sich automatisch bei Drop / Mac-Reboot. Wenn der Mac aus ist
 oder schläft, ist Ollama nicht erreichbar — der Service queued Requests dann
 automatisch und arbeitet sie ab, sobald der Mac (und damit der Tunnel) wieder da
 ist.
+
+**Wichtig:** Container-intern wird `host.docker.internal` statt `127.0.0.1`
+für Ollama-URLs verwendet (siehe docker-compose.yml `extra_hosts`).
 
 ## Ollama Pool Mode (Load-Balanced Multi-Mac)
 
@@ -498,7 +468,7 @@ Damit Pi den Service als OpenAI-kompatiblen Provider nutzen kann:
    - `--model ai-provider-service/claude/claude-sonnet-4-6-20250514` — Claude
 
 **Hinweis:** Der Service läuft auf dem **oracle-vm** hinter Apache Reverse-Proxy.
-Die URL ist `https://bewerbungen.wolfinisoftware.de/ai-provider/`. Bei lokalem
+Die URL ist `https://ai-provider-service.wolfinisoftware.de/`. Bei lokalem
 Betrieb (`http://localhost:8767`) kann die Extension direkt verbinden.
 
 ### Queue

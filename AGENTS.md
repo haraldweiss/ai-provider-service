@@ -61,7 +61,7 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 
 ### 3.5 Gunicorn in the container, behind host Apache
 - `gunicorn` runs **inside** the `ai-provider` Docker container, which exposes `127.0.0.1:8767` on oracle-vm.
-- Host Apache (`httpd`) reverse-proxies to it: `ai-admin.wolfinisoftware.de` → `:8767/`, and `bewerbungen.wolfinisoftware.de/ai-provider/` → `:8767/` (see `/etc/httpd/conf.d/`). In-container callers reach the host via `ai-provider-bridge.service` (docker0 gw → loopback :8767).
+- Host Apache (`httpd`) reverse-proxies to it: `ai-admin.wolfinisoftware.de` → `:8767/`, and `ai-provider-service.wolfinisoftware.de/` → `:8767/` (see `/etc/httpd/conf.d/`). In-container callers reach the host via `ai-provider-bridge.service` (docker0 gw → loopback :8767).
 - Never bind directly to port 80/443 — Apache owns those.
 
 ### 3.6 Markdown memory vault is rendered, not authored
@@ -137,7 +137,7 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-U
 | Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + `socat` bridge (see §3.3). Server check: `ss -tln \| grep 1143` and `curl 127.0.0.1:1143x/api/tags` |
 | Vault | `VAULT_PATH=/app/data/vault` (container env; `MEMORY_ENABLED=true`). Cache; regen via `flask vault-render --rebuild` inside the container. |
 | Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT). The old IONOS systemd timers (summary @02:30, vault-render /10min) are gone — any such jobs now run inside the container, not as host timers. |
-| Apache | Host `httpd` reverse-proxies `:8767` → `ai-admin.wolfinisoftware.de` and `bewerbungen.wolfinisoftware.de/ai-provider/` (`/etc/httpd/conf.d/`) |
+| Apache | Host `httpd` reverse-proxies `:8767` → `ai-admin.wolfinisoftware.de` and `ai-provider-service.wolfinisoftware.de/` (`/etc/httpd/conf.d/`) |
 
 ---
 
@@ -244,7 +244,7 @@ Grant (`flask grants-bootstrap` / Admin-UI). Free-Tier ist bewusst owner-only.
 
 **Fix (alles lokale Mac-Infra, kein Repo-Code):** Log-Pfade des Tunnel-Agents auf interne Disk umgebogen; alle drei Self-Monitore (MacBook/Mini/Studio) auf `launchctl kickstart -k` umgestellt; redundanten `de.wolfini.ollama-app` (EX_CONFIG-Spam) deaktiviert; `~/bin/reactivate-tunnels.sh` von IONOS-Resten auf `oracle-vm`/`com.wolfini.ollama-tunnel` korrigiert. Verifiziert: oracle-vm :11434/:11435/:11440 → alle HTTP 200.
 
-**Doku aktualisiert (oracle-vm only, IONOS retired):** §1, §3.2, §3.3, §3.5, §3.6, §6 + §2-Deploy-Befehl spiegeln jetzt die reale Topologie. Verifiziert auf oracle-vm: Docker-Container `ai-provider` (`:8767`, restart=unless-stopped); DB `/app/data/storage.db` (Volume `bewerbungen_data`); `VAULT_PATH=/app/data/vault`, `MEMORY_ENABLED=true`; **Apache (`httpd`) läuft weiter** und reverse-proxyt `:8767` für `ai-admin.…` + `bewerbungen.…/ai-provider/` (gunicorn läuft im Container); Host-Timer nur noch `wolfini-daily-roundup.timer` (täglich ~04:02). 3 Macs (11434/11435/11440) tunneln per macOS-launchd-autossh → `opc@oracle-vm`, socat-Brücke `172.17.0.1:1143x→127.0.0.1:1143x`.
+**Doku aktualisiert (oracle-vm only, IONOS retired):** §1, §3.2, §3.3, §3.5, §3.6, §6 + §2-Deploy-Befehl spiegeln jetzt die reale Topologie. Verifiziert auf oracle-vm: Docker-Container `ai-provider` (`:8767`, restart=unless-stopped); DB `/app/data/storage.db` (Volume `bewerbungen_data`); `VAULT_PATH=/app/data/vault`, `MEMORY_ENABLED=true`; **Apache (`httpd`) läuft weiter** und reverse-proxyt `:8767` für `ai-provider-service.wolfinisoftware.de` (gunicorn läuft im Container); Host-Timer nur noch `wolfini-daily-roundup.timer` (täglich ~04:02). 3 Macs (11434/11435/11440) tunneln per macOS-launchd-autossh → `opc@oracle-vm`, socat-Brücke `172.17.0.1:1143x→127.0.0.1:1143x`.
 
 ### chore/ci-hardening — gemerged (2026-06-13, opencode)
 
@@ -305,11 +305,11 @@ Sonst: gut gemacht mit Phase 1.5 hardening (rate limiting + sanitizer + size-cap
 [`docs/superpowers/plans/2026-05-30-provider-access-control.md`](docs/superpowers/plans/2026-05-30-provider-access-control.md)
 ([spec](docs/superpowers/specs/2026-05-30-provider-access-control-design.md)).
 
-**Deployed:** Yes — VPS at `bewerbungen.wolfinisoftware.de` (see OPERATIONS.md).
+**Deployed:** Yes — VPS at `ai-provider-service.wolfinisoftware.de` (see OPERATIONS.md).
 All 89 tests pass (`pytest -q`).
 
 **Admin UI URL:**
-`https://bewerbungen.wolfinisoftware.de/ai-provider/admin/ui/?token=<ADMIN_TOKEN>`
+`https://ai-provider-service.wolfinisoftware.de/admin/ui/?token=<ADMIN_TOKEN>`
 (token in VPS `.env`). Also linked from WordPress Admin Dashboard at
 `/wp-admin/tools.php?page=wolfini-admin-tools` (plugin `wolfini-admin-tools`
 in `wp-content/plugins/wolfini-admin-tools/`, activated via WP-CLI).
@@ -430,7 +430,7 @@ and `systemctl restart ai-provider.service`.
 
 **Obsidian-WebDAV deployed + Phase 2.1 + Regression-Fix** (2026-06-06):
 - Plugin: [Remotely Save](https://github.com/remotely-save/remotely-save)
-- WebDAV-URL: `https://bewerbungen.wolfinisoftware.de/ai-provider/memory/dav`
+- WebDAV-URL: `https://ai-provider-service.wolfinisoftware.de/memory/dav`
 - Auth: Basic, Username = `<user_id>`, Password = `SERVICE_TOKEN` aus `/etc/ai-provider/ai-provider.env`
 - PR [#17](https://github.com/haraldweiss/ai-provider-service/pull/17) — eigener OPTIONS-Handler mit `Allow: OPTIONS, PROPFIND, GET, PUT, MKCOL, DELETE` + `DAV: 1, 2` + `MS-Author-Via: DAV`. Capability-Discovery sauber.
 - Commit `057a19e` (Phase 2.1) — WebDAV `PUT` legt ab jetzt **DB-Row via `_upsert_note_from_path()`** an (vorher nur Filesystem → orphan-cleanup hat neue Obsidian-Notes innerhalb 10 Min gelöscht). `DELETE` soft-deletes die DB-Row + removed File. Add `DELETE` zum Allow-Header.
@@ -536,7 +536,7 @@ der nicht mehr mit dem `session['admin_csrf']` übereinstimmte → 403 Forbidden
 - **Container:** Via `sudo docker run` mit denselben Volumes und `/etc/ai-provider/ai-provider.env` neu gestartet.
 - **Endpoints:** `/v1/models` (16 Modelle), `/v1/chat/completions` (OpenAI-Format), `/health` — alle 200.
 - **require_provider_access deaktiviert:** Der Decorator extrahiert `provider` aus dem JSON-Body, nicht aus dem Model-Namen (`zai/glm-4-flash`). Wurde lokal + im Container auskommentiert (#121). Alternative: Model-Namen parsen und `provider` setzen.
-- **URL für Pi:** `https://bewerbungen.wolfinisoftware.de/ai-provider`
+- **URL für Pi:** `https://ai-provider-service.wolfinisoftware.de`
 - **SERVICE_TOKEN:** Synchron in `~/.pi/agent/.env` und `ai-provider.env` auf dem VM.
 - **Getestet:** `/v1/models` → 200 (16 Modelle), `/v1/chat/completions` mit Ollama → 200 (SSE streaming).
 - **Skill:** `pi-connect-ai-provider-service` (global) dokumentiert Setup.
