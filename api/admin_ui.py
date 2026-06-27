@@ -1,18 +1,20 @@
 """Admin UI — Jinja-rendered pages at /admin/ui.
 
 Auth flow:
-  1. GET /admin/ui/login → shows a form. POST with token → validates, sets session.
-  2. GET /admin/ui?token=<ADMIN_TOKEN>  → validates, sets session cookie, redirects.
-  3. Subsequent navigation uses session['admin']=True.
-  4. GET /admin/ui/logout → clears session.
+  1. GET /admin/ui/login → shows a form with username + password fields.
+  2. POST /admin/ui/login with ADMIN_USER_ID + ADMIN_PASSWORD → validates, sets session.
+  3. GET /admin/ui?token=<ADMIN_TOKEN>  → validates, sets session cookie, redirects.
+  4. Subsequent navigation uses session['admin']=True.
+  5. GET /admin/ui/logout → clears session.
 
-Single-admin scope. Works with or without ADMIN_TOKEN env var.
+Single-admin scope. At least ADMIN_PASSWORD or ADMIN_TOKEN must be set.
 """
 
 from flask import (
     Blueprint, render_template, request, redirect, url_for, session, abort,
     jsonify, current_app, flash,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timedelta, timezone
 import secrets
 from config import Config
@@ -67,12 +69,30 @@ def _entry():
 @admin_ui_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
         token = request.form.get('token', '')
-        if Config.ADMIN_TOKEN and token == Config.ADMIN_TOKEN:
-            session['admin'] = True
-            session['admin_csrf'] = secrets.token_urlsafe(32)
-            return redirect(url_for('admin_ui.root'))
-        flash('Invalid admin token', 'error')
+
+        # Username + password auth
+        if username and password:
+            if (username == Config.ADMIN_USER_ID and Config.ADMIN_PASSWORD
+                    and password == Config.ADMIN_PASSWORD):
+                session['admin'] = True
+                session['admin_csrf'] = secrets.token_urlsafe(32)
+                return redirect(url_for('admin_ui.root'))
+            flash('Invalid username or password', 'error')
+            return render_template('admin/login.html')
+
+        # Token auth (form field)
+        if token:
+            if Config.ADMIN_TOKEN and token == Config.ADMIN_TOKEN:
+                session['admin'] = True
+                session['admin_csrf'] = secrets.token_urlsafe(32)
+                return redirect(url_for('admin_ui.root'))
+            flash('Invalid admin token', 'error')
+            return render_template('admin/login.html')
+
+        flash('Enter username + password or admin token', 'error')
         return render_template('admin/login.html')
     return render_template('admin/login.html')
 

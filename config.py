@@ -32,6 +32,7 @@ class Config:
 
     # Access control (provider gating)
     ADMIN_TOKEN = os.getenv('ADMIN_TOKEN', '')
+    ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '')
     ADMIN_USER_ID = os.getenv('ADMIN_USER_ID', 'harald')
     UNGATED_PROVIDERS = set(
         p.strip() for p in (os.getenv('UNGATED_PROVIDERS') or 'ollama').split(',') if p.strip()

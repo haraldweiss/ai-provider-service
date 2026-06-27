@@ -11,12 +11,22 @@
 {% endwith %}
 
 <form method="post" action="{{ url_for('admin_ui.login') }}">
-  <label>Admin token<br>
-    <input type="password" name="token" required autocomplete="off" style="width:24em;">
+  <label>Username<br>
+    <input type="text" name="username" autocomplete="username" style="width:20em;">
+  </label><br>
+  <label>Password<br>
+    <input type="password" name="password" autocomplete="current-password" style="width:20em;">
   </label><br><br>
   <button type="submit">Sign in</button>
 </form>
 
-<hr>
-<p class="muted">Alternatively, visit <code>/admin/ui?token=&lt;ADMIN_TOKEN&gt;</code> directly.</p>
+<details style="margin-top:1rem;"><summary class="muted">Alternative: token login</summary>
+<form method="post" action="{{ url_for('admin_ui.login') }}" style="margin-top:.5rem;">
+  <label>Admin token<br>
+    <input type="password" name="token" autocomplete="off" style="width:24em;">
+  </label><br><br>
+  <button type="submit">Sign in with token</button>
+</form>
+<p class="muted">Or visit <code>/admin/ui?token=&lt;ADMIN_TOKEN&gt;</code> directly.</p>
+</details>
 {% endblock %}

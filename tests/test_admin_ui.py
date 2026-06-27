@@ -8,6 +8,7 @@ from config import Config
 @pytest.fixture(autouse=True)
 def setup_admin():
     Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_PASSWORD = 'admin-pw'
     Config.SECRET_KEY = 'test-secret-key-for-sessions'
 
 
@@ -38,7 +39,25 @@ def test_admin_ui_login_returns_form(client):
     r = client.get('/admin/ui/login', follow_redirects=False)
     assert r.status_code == 200
     assert b'Sign in' in r.data
-    assert b'type="password"' in r.data
+    assert b'username' in r.data or b'Username' in r.data
+
+
+def test_admin_ui_login_post_valid_username_password(client):
+    r = client.post('/admin/ui/login', data={'username': 'harald', 'password': 'admin-pw'}, follow_redirects=False)
+    assert r.status_code in (302, 303)
+    assert '/admin/ui/' in r.location
+
+
+def test_admin_ui_login_post_wrong_password(client):
+    r = client.post('/admin/ui/login', data={'username': 'harald', 'password': 'wrong'}, follow_redirects=False)
+    assert r.status_code == 200
+    assert b'Invalid' in r.data or b'invalid' in r.data
+
+
+def test_admin_ui_login_post_wrong_username(client):
+    r = client.post('/admin/ui/login', data={'username': 'admin', 'password': 'admin-pw'}, follow_redirects=False)
+    assert r.status_code == 200
+    assert b'Invalid' in r.data or b'invalid' in r.data
 
 
 def test_admin_ui_login_post_valid_token(client):
