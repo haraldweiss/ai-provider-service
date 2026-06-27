@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
+#
+# Systemd-Unit für ai-provider-service als Docker-Container.
+# Robuster als `--restart=always` allein: systemd startet den Container
+# erst NACH docker.service + network.target und überwacht ihn.
+#
+# Installation:
+#   sudo cp ai-provider-docker.service /etc/systemd/system/ai-provider-docker.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ai-provider-docker.service
+#
+# Logs: sudo journalctl -u ai-provider-docker.service -f
+
+[Unit]
+Description=AI Provider Service (Docker container)
+Documentation=https://github.com/haraldweiss/ai-provider-service
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/bin/docker kill ai-provider
+ExecStartPre=-/usr/bin/docker rm ai-provider
+ExecStart=/usr/bin/docker compose -f /opt/ai-provider-service/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /opt/ai-provider-service/docker-compose.yml down
+ExecReload=/usr/bin/docker compose -f /opt/ai-provider-service/docker-compose.yml restart
+Restart=no
+
+# docker compose up -d ist asynchron; der Container läuft als eigener
+# Prozess. systemd startet den compose-Befehl, nicht den Container direkt.
+# Der Docker-Restart-Policy (restart: always in docker-compose.yml) überlassen
+# wir die Container-Überwachung zur Laufzeit.
+# systemd dient hier nur als Boot-Order-Garantie.
+
+[Install]
+WantedBy=multi-user.target

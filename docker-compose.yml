@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# © 2026 Harald Weiss
+#
+# docker compose für ai-provider-service auf oracle-vm.
+# Env-Datei: /etc/ai-provider/ai-provider.env (manuell angelegt, chmod 600)
+#
+# Verwendung:
+#   docker compose build --pull   # Image neu bauen
+#   docker compose up -d          # Container starten/neu starten
+#   docker compose down           # Container stoppen + entfernen
+#   docker compose logs -f        # Logs folgen
+
+services:
+  ai-provider:
+    build: .
+    image: localhost/ai-provider:latest
+    container_name: ai-provider
+    restart: always
+    ports:
+      - "127.0.0.1:8767:8767"
+    volumes:
+      - /opt/ai-provider-data:/app/data
+      - /opt/ai-provider-data/pricing_overrides.json:/app/pricing_overrides.json
+    env_file: /etc/ai-provider/ai-provider.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8767/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
