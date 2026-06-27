@@ -596,9 +596,10 @@ oracle-vm via Host-Crontab gegen den Docker-Container:
 
 ### Admin UI
 
-Open `https://<service>/admin/ui/login` in a browser and enter the
-`ADMIN_TOKEN` in the password form, or visit `/admin/ui?token=<ADMIN_TOKEN>`
-to bootstrap the session in one step.
+Open `https://<service>/admin/ui/login` in a browser and log in with
+**username** `ADMIN_USER_ID` (default: `harald`) and **password** `ADMIN_PASSWORD`
+from the environment, or use `ADMIN_TOKEN` via the token form or URL
+(`/admin/ui?token=<ADMIN_TOKEN>`).
 After login, the URL is `/admin/ui/users`.
 
 Shows per-user roster with configured providers, active grants, and

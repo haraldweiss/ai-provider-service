@@ -72,6 +72,13 @@ def test_admin_ui_login_post_invalid_token(client):
     assert b'Invalid' in r.data or b'invalid' in r.data
 
 
+def test_admin_ui_auto_auth_via_forwarded_user(client):
+    r = client.get('/admin/ui/users', headers={'X-Forwarded-User': 'harald'}, follow_redirects=False)
+    assert r.status_code == 200
+    with client.session_transaction() as sess:
+        assert sess.get('admin') is True
+
+
 def test_users_page_lists_known_users(client, app):
     from database import db
     from storage.models import ProviderConfig, ProviderGrant

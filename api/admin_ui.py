@@ -1,13 +1,11 @@
 """Admin UI — Jinja-rendered pages at /admin/ui.
 
 Auth flow:
-  1. GET /admin/ui/login → shows a form with username + password fields.
-  2. POST /admin/ui/login with ADMIN_USER_ID + ADMIN_PASSWORD → validates, sets session.
-  3. GET /admin/ui?token=<ADMIN_TOKEN>  → validates, sets session cookie, redirects.
+  1. Apache Basic Auth (ai-admin.wolfinisoftware.de) → X-Forwarded-User header → auto-auth.
+  2. GET /admin/ui?token=<ADMIN_TOKEN>  → validates, sets session cookie, redirects.
+  3. POST /admin/ui/login with username/password or token → validates, sets session.
   4. Subsequent navigation uses session['admin']=True.
   5. GET /admin/ui/logout → clears session.
-
-Single-admin scope. At least ADMIN_PASSWORD or ADMIN_TOKEN must be set.
 """
 
 from flask import (
@@ -54,6 +52,14 @@ def _require_admin_ui():
 @admin_ui_bp.before_request
 def _entry():
     if request.endpoint in ('admin_ui.login', 'admin_ui.logout'):
+        return None
+
+    # Auto-auth via Apache Basic Auth (X-Forwarded-User set by ai-admin vhost)
+    forwarded_user = request.headers.get('X-Forwarded-User')
+    if forwarded_user:
+        if not _is_authed():
+            session['admin'] = True
+            session['admin_csrf'] = secrets.token_urlsafe(32)
         return None
 
     token = request.args.get('token')
