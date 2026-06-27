@@ -120,7 +120,7 @@ Cross-project rule (canonical statement in `wolfini_de_web` AGENTS.md §5.1). Ev
 2. **AGENTS.md** — update whenever the change adds/modifies/invalidates a hard rule (§3), a deploy/verify procedure (§4-§6), or a follow-up the next session needs (§7). Includes *removing* stale entries in the same commit they go obsolete.
 3. **README** — update when the change affects setup, env vars, ports, the Quadlet, ownership/permission expectations, deploy steps, or known caveats. Create one if missing AND the change warrants it.
 
-If a sibling repo is touched in the same session (`wolfini_de_web`, `Claude-KI-Usage-Tracker`, `Bewerbungstracker`), the same three artifacts must be updated *there too* — link the sibling PR from the handoff entry.
+If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tracker`, `Bewerbungstracker`), the same three artifacts must be updated *there too* — link the sibling PR from the handoff entry.
 
 ---
 
@@ -269,7 +269,7 @@ Grant (`flask grants-bootstrap` / Admin-UI). Free-Tier ist bewusst owner-only.
 - 4 untracked Files `SUSPICIOUS_FEEDBACK_*` liegen noch在工作目录
 - **Verifiziert:** alle 5 Branches auf `origin/master`
 
-**Claude-KI-Usage-Tracker:**
+**KI-Usage-Tracker:**
 - `fix/quadlet-healthcmd-quoting` — gemergt
 - `claude/crazy-jang-63096d-test` (Workspace Discovery) — gemergt
 - Beide lokalen Kopien auf `origin/main` geupdated
@@ -338,11 +338,11 @@ runtime. A daily cron (06:00 UTC) keeps pricing up to date.
 See `pricing.py:_load_merged_pricing()` and `cli.py:fetch_opencode_pricing()`.
 
 **Claudetracker integration:** A `POST /api/local-usage/discover` endpoint
-was added to the claudetracker backend (repo `Claude-KI-Usage-Tracker`,
+was added to the ki-usage-tracker backend (repo `KI-Usage-Tracker`,
 commit `69c6403`). It calls the ai-provider-service `/admin/overview` API
 and imports all discovered users into the sync list. The frontend
 ProviderServiceSettings component has a green "User importieren" button.
-Available at `https://claudetracker.wolfinisoftware.de/` → Settings →
+Available at `https://ki-usage-tracker.wolfinisoftware.de/` → Settings →
 AI-Provider-Service.
 
 ### Serena MCP — setup verification
@@ -420,7 +420,7 @@ and `systemctl restart ai-provider.service`.
 
 **Sibling-Repos haben Memory-Doku-Sync** (2026-06-06, per §5.1):
 - Bewerbungstracker `master` commit [`728460f`](https://github.com/haraldweiss/Bewerbungstracker/commit/728460f) — §7 Eintrag mit Use-Case-Ideen (event_type=application_created)
-- Claude-KI-Usage-Tracker `main` commit [`58704d5`](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/commit/58704d5) — §7 Eintrag mit Use-Case-Ideen (workspace_discovered events, cost-alert notes)
+- KI-Usage-Tracker `main` commit [`58704d5`](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/commit/58704d5) — §7 Eintrag mit Use-Case-Ideen (workspace_discovered events, cost-alert notes)
 - Beide schreiben aktuell NICHT in Memory; die Doku ist informativ damit kommende Integrations-Sessions wissen dass das verfügbar ist.
 
 **Phase-1.6 follow-ups deployed** (2026-06-06):
