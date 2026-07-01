@@ -143,8 +143,10 @@ def chat_completions():
             'error': {'message': f'Unknown provider: {provider_id}', 'type': 'invalid_request'},
         }), 400
 
-    user_id = getattr(g, 'principal', None)
-    if not user_id or not isinstance(user_id, str):
+    principal = getattr(g, 'principal', None)
+    if principal and isinstance(principal, object) and hasattr(principal, 'user_id'):
+        user_id = principal.user_id
+    else:
         user_id = 'pi-agent'
 
     try:
