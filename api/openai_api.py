@@ -23,8 +23,14 @@ openai_bp = Blueprint('openai', __name__)
 # ─── known model lists per provider ────────────────────────────────────────
 
 ZAI_MODELS = [
-    'zai/glm-4-flash',
-    'zai/glm-4',
+    'zai/glm-4.5',
+    'zai/glm-4.5-air',
+    'zai/glm-4.6',
+    'zai/glm-4.7',
+    'zai/glm-5',
+    'zai/glm-5-turbo',
+    'zai/glm-5.1',
+    'zai/glm-5.2',
 ]
 
 CLAUDE_MODELS = [
@@ -53,8 +59,14 @@ WOLFINICHAT_MODELS = [
 ALL_MODELS = ZAI_MODELS + CLAUDE_MODELS + OLLAMA_MODELS + WOLFINICHAT_MODELS
 
 MODEL_META = {
-    'zai/glm-4-flash': {'provider': 'zai', 'context': 128000, 'reasoning': False},
-    'zai/glm-4': {'provider': 'zai', 'context': 128000, 'reasoning': True},
+    'zai/glm-4.5': {'provider': 'zai', 'context': 128000, 'reasoning': False},
+    'zai/glm-4.5-air': {'provider': 'zai', 'context': 128000, 'reasoning': False},
+    'zai/glm-4.6': {'provider': 'zai', 'context': 128000, 'reasoning': False},
+    'zai/glm-4.7': {'provider': 'zai', 'context': 128000, 'reasoning': False},
+    'zai/glm-5': {'provider': 'zai', 'context': 128000, 'reasoning': True},
+    'zai/glm-5-turbo': {'provider': 'zai', 'context': 128000, 'reasoning': False},
+    'zai/glm-5.1': {'provider': 'zai', 'context': 128000, 'reasoning': False},
+    'zai/glm-5.2': {'provider': 'zai', 'context': 128000, 'reasoning': False},
     'claude/claude-sonnet-4-6-20250514': {'provider': 'claude', 'context': 200000, 'reasoning': True},
     'claude/claude-sonnet-4-20250514': {'provider': 'claude', 'context': 200000, 'reasoning': True},
     'claude/claude-haiku-4-5-20251001': {'provider': 'claude', 'context': 200000, 'reasoning': False},
