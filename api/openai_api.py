@@ -146,6 +146,8 @@ def chat_completions():
     principal = getattr(g, 'principal', None)
     if principal and isinstance(principal, object) and hasattr(principal, 'user_id'):
         user_id = principal.user_id
+        if not user_id:  # Fall back to pi-agent if principal.user_id is empty
+            user_id = 'pi-agent'
     else:
         user_id = 'pi-agent'
 
