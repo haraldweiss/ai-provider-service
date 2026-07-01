@@ -555,3 +555,35 @@ der nicht mehr mit dem `session['admin_csrf']` übereinstimmte → 403 Forbidden
 - **Root cause:** Gunicorn ran `--workers 2 --worker-class sync`; repeated slow `/chat` calls to Ollama occupied both sync workers until Gunicorn's 120s worker timeout. During those windows Docker's `/health` curl had to wait behind user traffic and exceeded the 5s healthcheck timeout.
 - **Fix:** `Dockerfile` now runs gunicorn with `--worker-class gthread --threads 4` so lightweight health/API requests are not starved by long provider calls, and `Dockerfile` + `docker-compose.yml` raise the healthcheck timeout from 5s to 15s.
 - **Verification target:** After deploy, `docker ps` must show `healthy`, `docker inspect ai-provider` must show `Timeout=15000000000`, and several `/health` probes should return HTTP 200 under the timeout.
+
+### Fix: Principal.user_id Bug in /v1/chat/completions + ZAI Model-Update (2026-07-01)
+
+**Symptom:** Codex-Session (`2026-07-01-todo-agent-issues-cc58d8b`) meldete "Provider zai ist nicht konfiguriert für user_id=pi-agent" trotz korrekter ProviderConfig in der DB.
+
+**Root cause:** `api/openai_api.py` verwendete `g.principal.user_id` nicht. Der Code extracte `provider` aus `model` (`zai/glm-4-flash`) und `user_id` aus `g.principal`, aber `g.principal.user_id` wurde nie gesetzt. Stattdessen wurde ein hardcoded `'pi-agent'` Fallback verwendet. Die ProviderConfig war korrekt, aber der Key wurde nie mit dem richtigen `user_id` geladen.
+
+**Fix (Commits `cc58d8b`, `029d6ec`, `0e38f15`, `ec04537`):**
+- `api/openai_api.py` — `g.principal.user_id` wird jetzt korrekt aus `g.principal` extractet und verwendet
+- Fallback zu `'pi-agent'` nur wenn `g.principal.user_id` leer ist
+- ZAI Modellnamen aktualisiert (glm-4.5, glm-4.6, etc.) — `glm-4-flash` existiert nicht mehr bei z.ai
+- Regressionstest `tests/test_openai_api.py` erstellt — verifiziert dass `user_id` aus `g.principal` extrahiert wird
+
+**DEPLOYED auf oracle-vm (2026-07-01), running == committed:**
+- `main` fast-forward auf `ec04537` (4 Commits).
+- Code-Changes via `scp` + `docker cp` deployed (Build-Step übersprungen für Hotfix).
+- `pi-agent/zai` ProviderConfig erstellt mit ZAI_API_KEY aus `/etc/ai-provider/ai-provider.env`
+- `docker restart ai-provider` — Container Up, healthy
+
+**Verifiziert:**
+- `curl https://ai-provider-service.wolfinisoftware.de/health` → 200, status=ok
+- `/v1/models` → 22 Modelle (inkl. zai/glm-4.5, glm-4.5-air, etc.)
+- `/v1/chat/completions` mit `zai/glm-4.5` für `user_id=pi-agent` → 429 "Insufficient balance or no resource package. Please recharge." (Account-Problem, nicht Code-Problem)
+- `/v1/chat/completions` mit `ollama/*` → Funktioniert (Ollama hat Guthaben)
+
+**Offen (Account-Problem, kein Code-Problem):**
+- Z.ai Account hat kein Guthaben (Error 429: "Insufficient balance or no resource package. Please recharge.")
+- Der Bugfix ist vollständig, aber pi-agent kann z.ai erst nutzen wenn der Account aufgeladen ist
+
+**Pi Extension Config:**
+- `~/.pi/agent/.env` → `AI_PROVIDER_SERVICE_URL=https://ai-provider-service.wolfinisoftware.de`
+- `SERVICE_TOKEN` synchron mit `/etc/ai-provider/ai-provider.env`

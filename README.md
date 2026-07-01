@@ -419,24 +419,26 @@ Antwort queued (Ollama down + queue=on):
 GET /v1/models
   → Liste aller Modelle im OpenAI-Format
 
-POST /v1/chat/completions
-  Body (OpenAI-Format): {
-    "model": "zai/glm-4-flash",
-    "messages": [{"role": "user", "content": "..."}],
-    "stream": true,       // SSE streaming
-    "max_tokens": 4096
-  }
+ POST /v1/chat/completions
+   Body (OpenAI-Format): {
+     "model": "zai/glm-4.5",
+     "messages": [{"role": "user", "content": "..."}],
+     "stream": true,       // SSE streaming
+     "max_tokens": 4096
+   }
 ```
 
-Das Model-Format ist `provider/model_name`, z.B.:
+ Das Model-Format ist `provider/model_name`, z.B.:
 
-| Model-ID | Provider |
-|---|---|
-| `zai/glm-4-flash` | z.ai (GLM-4 Flash) |
-| `zai/glm-4` | z.ai (GLM-4) |
-| `ollama/qwen3.6:latest` | Lokales Ollama |
-| `ollama/dev-coder:latest` | Lokales Ollama |
-| `claude/claude-sonnet-4-6-20250514` | Claude (Server-Key) |
+ | Model-ID | Provider |
+ |---|---|
+ | `zai/glm-4.5` | z.ai (GLM-4.5) |
+ | `zai/glm-4.5-air` | z.ai (GLM-4.5 Air) |
+ | `zai/glm-4.6` | z.ai (GLM-4.6) |
+ | `zai/glm-4.7` | z.ai (GLM-4.7) |
+ | `ollama/qwen3.6:latest` | Lokales Ollama |
+ | `ollama/dev-coder:latest` | Lokales Ollama |
+ | `claude/claude-sonnet-4-6-20250514` | Claude (Server-Key) |
 
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
 Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
@@ -452,12 +454,12 @@ registriert den Service automatisch.
 
 Beispiel (non-streaming):
 ```bash
-curl -s https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4-flash","messages":[{"role":"user","content":"Hallo"}],"stream":false}'
+ curl -s https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4.5","messages":[{"role":"user","content":"Hallo"}],"stream":false}'
 ```
 
 Beispiel (streaming):
 ```bash
-curl -sN https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4-flash","messages":[{"role":"user","content":"Hallo"}],"stream":true}'
+ curl -sN https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4.5","messages":[{"role":"user","content":"Hallo"}],"stream":true}'
 ```
 
 ### Pi-Einrichtung
@@ -471,10 +473,11 @@ Damit Pi den Service als OpenAI-kompatiblen Provider nutzen kann:
    SERVICE_TOKEN=<gleicher Token wie im ai-provider-service .env>
    AI_PROVIDER_SERVICE_URL=http://localhost:8767  # oder https://service.domain.de/ai-provider
    ```
-3. **Modelle** sind dann als `ai-provider-service/...` in Pi wählbar:
-   - `--model ai-provider-service/zai/glm-4-flash` — GLM-4 Flash
-   - `--model ai-provider-service/ollama/qwen3.6:latest` — Lokales Ollama
-   - `--model ai-provider-service/claude/claude-sonnet-4-6-20250514` — Claude
+ 3. **Modelle** sind dann als `ai-provider-service/...` in Pi wählbar:
+    - `--model ai-provider-service/zai/glm-4.5` — GLM-4.5
+    - `--model ai-provider-service/zai/glm-4.5-air` — GLM-4.5 Air
+    - `--model ai-provider-service/ollama/qwen3.6:latest` — Lokales Ollama
+    - `--model ai-provider-service/claude/claude-sonnet-4-6-20250514` — Claude
 
 **Hinweis:** Der Service läuft auf dem **oracle-vm** hinter Apache Reverse-Proxy.
 Die URL ist `https://ai-provider-service.wolfinisoftware.de/`. Bei lokalem
