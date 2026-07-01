@@ -550,3 +550,8 @@ der nicht mehr mit dem `session['admin_csrf']` übereinstimmte → 403 Forbidden
 - **Files changed:** api/admin_ui.py, tests/test_admin_ui.py, ai-admin vhost config.
 - **Tests:** 274/274 pass (14 admin UI tests including forwarded-user auto-auth).
 
+### 2026-07-01 — ai-provider healthcheck flapping under Ollama load
+- **Trigger:** Docker showed `ai-provider` as `Up 3 days (unhealthy)` while the service later recovered to healthy without restart.
+- **Root cause:** Gunicorn ran `--workers 2 --worker-class sync`; repeated slow `/chat` calls to Ollama occupied both sync workers until Gunicorn's 120s worker timeout. During those windows Docker's `/health` curl had to wait behind user traffic and exceeded the 5s healthcheck timeout.
+- **Fix:** `Dockerfile` now runs gunicorn with `--worker-class gthread --threads 4` so lightweight health/API requests are not starved by long provider calls, and `Dockerfile` + `docker-compose.yml` raise the healthcheck timeout from 5s to 15s.
+- **Verification target:** After deploy, `docker ps` must show `healthy`, `docker inspect ai-provider` must show `Timeout=15000000000`, and several `/health` probes should return HTTP 200 under the timeout.

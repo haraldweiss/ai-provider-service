@@ -147,7 +147,16 @@ services:
     env_file: /etc/ai-provider/ai-provider.env
     extra_hosts:
       - host.docker.internal:host-gateway  # für Ollama-Tunnel-Zugriff
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8767/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
 ```
+
+Gunicorn läuft im Container mit `gthread` (`2` Worker, `4` Threads pro Worker),
+damit leichte Requests wie `/health` nicht hinter langsamen Ollama-Calls
+verhungern.
 
 **OLLAMA_URL:** Container-intern `http://host.docker.internal:11434` verwenden
 (löst über Docker-DNS zum Host-Loopback auf — überlebt Bridge-IP-Wechsel).
