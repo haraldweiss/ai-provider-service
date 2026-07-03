@@ -143,6 +143,32 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### OpenAI v1 500-Fehler: structured content + Provider-Unavailable (2026-07-03, Codex)
+
+**Root cause:** Pi/OpenAI-kompatible Clients senden `messages[].content`
+teilweise als OpenAI-Content-Part-Liste (`[{type,text}]`). `/v1/chat/completions`
+reichte diese Liste unverändert an Ollama `/api/chat` durch; Ollama erwartet
+String-Content und antwortet mit `400 json: cannot unmarshal array into ... content
+of type string`. Gleichzeitig wurden erwartbare Provider-Ausfälle ohne
+Fallback/Queue von `api/openai_api.py` pauschal als `500 server_error`
+zurückgegeben.
+
+**Fix:** Code-Commit `14e18c5` normalisiert OpenAI-Content-Parts vor dem
+Dispatch zu String-Content und mappt den bekannten
+`kein Fallback/Queue konfiguriert`-RuntimeError auf
+`503 service_unavailable`. Regressionstests decken beide Fälle in
+`tests/test_openai_api.py` ab.
+
+**Live-Diagnose vor Fix:** Container war healthy; die 5xx lagen auf Request-
+Ebene. In den letzten 24h dominierten `POST /v1/chat/completions` 500er:
+Ollama-400 durch structured content sowie z.ai-429
+`Insufficient balance or no resource package`. z.ai bleibt ein Account-/
+Guthabenproblem, nicht ein Code-Crash.
+
+**Verification before deploy:** `pytest tests/test_openai_api.py -q` → 6/6,
+`pytest -q` → 280/280 passed (1 existing SQLAlchemy `Query.get()` warning),
+`git diff --check` clean.
+
 ### Personal Provider API Keys (2026-06-22, Codex)
 
 **Status:** Merged via PR #24 and deployed to oracle-vm; running == committed

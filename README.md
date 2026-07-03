@@ -450,6 +450,19 @@ sie auf einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
 Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
 
+**OpenAI-Content-Parts:** `messages[].content` darf ein String oder eine
+OpenAI-kompatible Content-Part-Liste sein, z.B.
+`[{"type":"text","text":"Hallo"}]`. Der Gateway normalisiert diese Parts vor
+dem Provider-Dispatch zu String-Content, weil Ollama `/api/chat` sonst mit
+`400` auf Array-Content reagiert.
+
+**Provider-Ausfälle:** Wenn ein Provider beim Chat-Call nicht nutzbar ist und
+für den User weder Fallback noch Queue konfiguriert ist, antwortet
+`/v1/chat/completions` mit `503 service_unavailable` statt internem `500`.
+Beispiele sind ein leerer z.ai-Account (`429 Insufficient balance`) oder ein
+temporär nicht nutzbarer Ollama-Backend-Call. Das ist ein erwartbarer
+Upstream-/Konfigurationszustand, kein Flask-Crash.
+
 **Auth:** Gleicher Bearer-Token wie `/chat` (`@require_token`).  
 `@require_provider_access` ist **deaktiviert** — der Decorator sucht `provider` 
 im JSON-Body, nicht im Model-Namen (`zai/glm-4-flash`). Für OpenAI-kompatible 
