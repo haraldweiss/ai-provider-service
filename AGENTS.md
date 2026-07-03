@@ -129,12 +129,12 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 | What | How |
 |---|---|
 | SSH | `ssh oracle-vm` (Oracle Cloud, 92.5.18.29) |
-| Runtime | Docker container `ai-provider` (`restart=unless-stopped`, exposes `127.0.0.1:8767`). Fronted by systemd `ai-provider-bridge.service` (docker0 gw → host loopback :8767) + `openai-proxy.service`. Started via `docker run`, not compose/systemd. |
+| Runtime | Docker container `ai-provider` (`restart=always`, exposes `127.0.0.1:8767`). Current live container is managed from `/opt/ai-provider-service/docker-compose.yml` on network `ai-provider-service_default`; image still must be built with `build.sh` using a SHA tag before recreate. Fronted by host Apache. |
 | Config / env | `/etc/ai-provider/ai-provider.env` (root-owned) |
 | Logs | `docker logs ai-provider` (no `/var/log/ai-provider`; `journalctl -u ai-provider-bridge`/`openai-proxy` for the helpers) |
-| Restart | `docker restart ai-provider` — ⚠️ liest `--env-file` NICHT neu; nach Env-Änderungen voller `docker rm` + `docker run`-Recreate nötig (Netz `bewerbungen-net`, Mounts inkl. `pricing_overrides_zai.json`) |
+| Restart | `cd /opt/ai-provider-service && sudo docker compose up -d --force-recreate ai-provider` after building the SHA-tagged image. `sudo` is required because `/etc/ai-provider/ai-provider.env` is root-owned/600. Plain `docker restart ai-provider` does **not** reread env changes. |
 | DB | SQLite in Docker volume `bewerbungen_data` → `/app/data/storage.db`; host copy/backup at `/opt/ai-provider-data/storage.db` |
-| Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + `socat` bridge (see §3.3). Server check: `ss -tln \| grep 1143` and `curl 127.0.0.1:1143x/api/tags` |
+| Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + host/Compose bridge (see §3.3). Current container env uses `host.docker.internal` endpoints, including ports `11441`, `11434`, and `11440`. Server check: `ss -tln \| grep 1144\\|1143` and `curl 127.0.0.1:<port>/api/tags` |
 | Vault | `VAULT_PATH=/app/data/vault` (container env; `MEMORY_ENABLED=true`). Cache; regen via `flask vault-render --rebuild` inside the container. |
 | Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT). The old IONOS systemd timers (summary @02:30, vault-render /10min) are gone — any such jobs now run inside the container, not as host timers. |
 | Apache | Host `httpd` reverse-proxies `:8767` → `ai-admin.wolfinisoftware.de` and `ai-provider-service.wolfinisoftware.de/` (`/etc/httpd/conf.d/`) |
