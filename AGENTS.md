@@ -607,3 +607,40 @@ generiert und im Format `provider/model_name` zurückgegeben.
   Alias-Routing ab.
 - Verification before deploy: `pytest -q` → 278/278 passed (1 existing
   SQLAlchemy `Query.get()` warning).
+
+### Model health filtering + opencode free-only mode (2026-07-03, Pi)
+
+**Trigger:** `/v1/models` listete 80 Modelle (ollama 21, opencode 52, zai 8),
+aber die meisten funktionierten nicht:
+- opencode zeigte 52 Modelle, nur 5 waren mit dem System-Key nutzbar (Free-Modelle)
+- zai zeigte 8 Modelle, aber alle Chat-Calls scheiterten mit "Insufficient balance"
+- claude war komplett down (kein API-Key auf der VM)
+
+**Fix (2 Commits `b079040`, `ad0de7a`):**
+
+1. **`providers/opencode.py`** — `get_models()` filtert auf Free-Modelle wenn
+   `self._free_only=True` (System-Key ohne persönlichen API-Key).
+   Vorher/Nachher: **52 → 5 Modelle** in `/v1/models`.
+
+2. **`api/openai_api.py`** — `_available_model_rows()` checkt
+   `health_tracker.is_healthy()` vor `get_models()`. Unhealthy Provider (z.B.
+   claude ohne Key) werden übersprungen, nicht erst beim `get_models()`-Call
+   abgefangen.
+
+3. **`health_tracker.py`** — Neues `persistent`-Flag in `set_status()`:
+   Runtime-Failures (aus `_execute()` in `dispatcher.py`) markieren den Provider
+   als `persistent=True`. Der Background-Health-Worker (`worker.py`) kann
+   persistente Failures NICHT überschreiben — nur ein erfolgreicher Chat-Call
+   oder ein expliziter Reset hebt sie auf.
+
+4. **`dispatcher.py`** — `_execute()` setzt `persistent=True` bei Chat-Fehlern.
+
+**Grenzen:**
+- zai's `.health()` checkt nur `models.list()` (funktioniert auch ohne Guthaben).
+  Der wirkliche Fehler (Insufficient balance) zeigt sich erst beim Chat-Call.
+  Nach dem ersten Fehlschlag pro Gunicorn-Worker wird zai persistent ausgeblendet.
+- `health_tracker` ist In-Memory pro Gunicorn-Worker. Ein frischer Worker sieht
+  zai zuerst als optimistisch healthy, bis der erste Chat-Call fehlschlägt.
+
+**Verification:** pytest 278/278 passed, Container auf oracle-vm rebuilt + healthy.
+  Live: opencode 5 Modelle (vorher 52), zai nach 1. Fehlschlag persistent unhealthy.

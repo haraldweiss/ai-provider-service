@@ -13,6 +13,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 - **Per-User-Konfiguration** mit Fernet-verschlüsselten API-Keys
 - **Fallback-Provider**: bei Nicht-Erreichbarkeit automatisch auf z.B. Claude umschalten
 - **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist
+- **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider; opencode ohne persönlichen Key nur Free-Modelle
 - **Health-Monitoring**: Background-Worker pollt alle Provider regelmäßig
 - **CORS-Handling** zentral (für Browser-direkt-Aufrufe)
 - **Bearer-Token-Auth** für Konsumenten-Apps
@@ -430,8 +431,10 @@ GET /v1/models
 ```
 
 `/v1/models` fragt die für den authentifizierten User konfigurierten Provider
-per `get_models()` ab. Nicht konfigurierte oder nicht erreichbare Provider
-werden ausgelassen; lokale Ollama-Modelle erscheinen dadurch automatisch, sobald
+per `get_models()` ab. **Health-Filter:** Provider die laut `health_tracker`
+unhealthy sind (z.B. nach fehlgeschlagenem Chat-Call) werden ausgelassen.
+**opencode free-only:** Ohne persönlichen opencode-API-Key werden nur Free-Modelle
+gelistet (ca. 5 statt 52). Lokale Ollama-Modelle erscheinen automatisch, sobald
 sie auf einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).
 
  Das Model-Format ist `provider/model_name`, z.B.:
@@ -440,8 +443,9 @@ sie auf einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).
  |---|---|
  | `ollama/qwen3.6:latest` | Lokales Ollama |
  | `ollama/ornith:latest` | Lokales Ollama |
- | `zai/glm-4.5` | z.ai, wenn für den User konfiguriert und erreichbar |
- | `claude/claude-sonnet-4-6-20250514` | Claude, wenn für den User konfiguriert und erreichbar |
+ | `opencode/deepseek-v4-flash-free` | opencode Free-Modell (mit System-Key) |
+ | `zai/glm-4.5` | z.ai, wenn konfiguriert und Account gedeckt |
+ | `claude/claude-sonnet-4-6-20250514` | Claude, wenn konfiguriert und API-Key gesetzt |
 
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
 Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
