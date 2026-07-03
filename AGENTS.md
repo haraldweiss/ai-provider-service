@@ -587,3 +587,23 @@ der nicht mehr mit dem `session['admin_csrf']` übereinstimmte → 403 Forbidden
 **Pi Extension Config:**
 - `~/.pi/agent/.env` → `AI_PROVIDER_SERVICE_URL=https://ai-provider-service.wolfinisoftware.de`
 - `SERVICE_TOKEN` synchron mit `/etc/ai-provider/ai-provider.env`
+
+### Dynamic `/v1/models` discovery (2026-07-03, Codex)
+
+**Was:** `/v1/models` ist nicht mehr statisch in `api/openai_api.py`
+verdrahtet. Die OpenAI-kompatible Modellliste wird pro authentifiziertem
+Principal aus den aktuell konfigurierbaren Providern via `get_models()`
+generiert und im Format `provider/model_name` zurückgegeben.
+
+- Nicht konfigurierte oder nicht erreichbare Provider werden ausgelassen, statt
+  kaputte Modelle trotzdem anzubieten.
+- Ollama-Modelle kommen aus der Pool-Union aller Tunnel-Backends. Neue lokale
+  Modelle wie `ornith:latest` erscheinen daher automatisch als
+  `ollama/ornith:latest`, sobald ein Ollama-Backend sie meldet.
+- `wolfinichat/<model>` routet in `/v1/chat/completions` jetzt intern auf
+  Provider `ollama` und setzt `origin_app=chat.wolfinisoftware.de`, damit alte
+  Clients nicht mehr mit `Unknown provider: wolfinichat` scheitern.
+- Regression tests: `tests/test_openai_api.py` deckt dynamische Discovery und
+  Alias-Routing ab.
+- Verification before deploy: `pytest -q` → 278/278 passed (1 existing
+  SQLAlchemy `Query.get()` warning).
