@@ -135,7 +135,14 @@ class OpencodeClient(BaseClient):
 
     def get_models(self) -> list[str]:
         try:
-            return sorted(m.id for m in self.client.models.list().data)
+            all_models = sorted(m.id for m in self.client.models.list().data)
+            if self._free_only:
+                free_set = set(self.get_free_models())
+                filtered = [m for m in all_models if m in free_set]
+                logger.info('Opencode free-only mode: %d/%d models shown',
+                            len(filtered), len(all_models))
+                return filtered
+            return all_models
         except Exception as e:
             logger.warning(f'Opencode get_models failed: {e}')
             return []

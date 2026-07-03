@@ -15,6 +15,7 @@ from api.auth import require_token
 from dispatcher import dispatch, _extract_response_text, _load_config
 from providers import PROVIDER_REGISTRY, get_client
 from flask import g
+import health_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,9 @@ def _available_model_rows(user_id: str) -> list[dict]:
     for provider_id in PROVIDER_REGISTRY:
         cfg = _load_config(user_id, provider_id)
         if cfg is None:
+            continue
+        if not health_tracker.is_healthy(provider_id):
+            logger.info('Skipping unhealthy provider %s in /v1/models', provider_id)
             continue
         try:
             models = get_client(provider_id, cfg).get_models()
