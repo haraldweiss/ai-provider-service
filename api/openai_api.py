@@ -92,6 +92,40 @@ def _openai_stream_chunk(model: str, content: str, index: int = 0,
     }
 
 
+def _content_part_text(part) -> str:
+    if isinstance(part, str):
+        return part
+    if isinstance(part, dict):
+        text = part.get('text')
+        if isinstance(text, str):
+            return text
+    return ''
+
+
+def _normalize_message_content(content) -> str:
+    if isinstance(content, str):
+        return content
+    if content is None:
+        return ''
+    if isinstance(content, list):
+        return '\n'.join(
+            text for text in (_content_part_text(part) for part in content) if text
+        )
+    return str(content)
+
+
+def _normalize_messages(messages: list) -> list:
+    normalized = []
+    for message in messages:
+        if not isinstance(message, dict):
+            normalized.append(message)
+            continue
+        item = dict(message)
+        item['content'] = _normalize_message_content(item.get('content'))
+        normalized.append(item)
+    return normalized
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────
 
 
@@ -113,7 +147,7 @@ def chat_completions():
     """
     body = request.get_json(silent=True) or {}
     model = body.get('model', '')
-    messages = body.get('messages', [])
+    messages = _normalize_messages(body.get('messages', []))
     stream = body.get('stream', False)
     max_tokens = int(body.get('max_tokens', 4096))
 
@@ -140,6 +174,16 @@ def chat_completions():
             max_tokens=max_tokens,
             origin_app=origin_app,
         )
+    except RuntimeError as e:
+        if 'kein Fallback/Queue konfiguriert' in str(e):
+            logger.warning(f'v1/chat/completions provider unavailable: {e}')
+            return jsonify({
+                'error': {'message': str(e), 'type': 'service_unavailable'},
+            }), 503
+        logger.exception(f'v1/chat/completions dispatch failed: {e}')
+        return jsonify({
+            'error': {'message': str(e), 'type': 'server_error'},
+        }), 500
     except Exception as e:
         logger.exception(f'v1/chat/completions dispatch failed: {e}')
         return jsonify({

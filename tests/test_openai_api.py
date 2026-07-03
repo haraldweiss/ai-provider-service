@@ -143,3 +143,72 @@ def test_chat_completions_fallback_to_pi_agent_when_no_principal(app, client, mo
 
     # Should still work but might use pi-agent or empty string depending on implementation
     assert r.status_code in [200, 401]  # 401 if require_token blocks it
+
+
+def test_chat_completions_normalizes_structured_content_parts(app, client, monkeypatch):
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    captured_messages = None
+
+    def mock_dispatch(*args, **kwargs):
+        nonlocal captured_messages
+        captured_messages = kwargs.get('messages')
+        return {
+            'result': {
+                'content': [{'text': 'ok'}],
+                'usage': {'input_tokens': 1, 'output_tokens': 1},
+            },
+            'via': 'ollama',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': [{
+                'role': 'user',
+                'content': [
+                    {'type': 'text', 'text': 'ping'},
+                    {'type': 'input_text', 'text': 'pong'},
+                ],
+            }],
+            'stream': False,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 200
+    assert captured_messages == [{'role': 'user', 'content': 'ping\npong'}]
+
+
+def test_chat_completions_returns_503_for_provider_unavailable(app, client, monkeypatch):
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    def mock_dispatch(*args, **kwargs):
+        raise RuntimeError('Provider ollama nicht erreichbar, kein Fallback/Queue konfiguriert')
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': [{'role': 'user', 'content': 'ping'}],
+            'stream': False,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 503
+    assert r.json['error']['type'] == 'service_unavailable'
