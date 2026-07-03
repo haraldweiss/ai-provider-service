@@ -12,7 +12,7 @@ import uuid
 from flask import Blueprint, jsonify, request, Response, stream_with_context
 from api.auth import require_token
 # from api.gate import require_provider_access
-from dispatcher import dispatch, _extract_response_text, _load_config
+from dispatcher import dispatch, _extract_response_text, _load_config, ProviderUnavailableError
 from providers import PROVIDER_REGISTRY, get_client
 from flask import g
 import health_tracker
@@ -174,16 +174,11 @@ def chat_completions():
             max_tokens=max_tokens,
             origin_app=origin_app,
         )
-    except RuntimeError as e:
-        if 'kein Fallback/Queue konfiguriert' in str(e):
-            logger.warning(f'v1/chat/completions provider unavailable: {e}')
-            return jsonify({
-                'error': {'message': str(e), 'type': 'service_unavailable'},
-            }), 503
-        logger.exception(f'v1/chat/completions dispatch failed: {e}')
+    except ProviderUnavailableError as e:
+        logger.warning(f'v1/chat/completions provider unavailable: {e}')
         return jsonify({
-            'error': {'message': str(e), 'type': 'server_error'},
-        }), 500
+            'error': {'message': str(e), 'type': 'service_unavailable'},
+        }), 503
     except Exception as e:
         logger.exception(f'v1/chat/completions dispatch failed: {e}')
         return jsonify({

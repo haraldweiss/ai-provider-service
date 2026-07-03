@@ -196,7 +196,8 @@ def test_chat_completions_returns_503_for_provider_unavailable(app, client, monk
     Config.ADMIN_USER_ID = 'harald'
 
     def mock_dispatch(*args, **kwargs):
-        raise RuntimeError('Provider ollama nicht erreichbar, kein Fallback/Queue konfiguriert')
+        from dispatcher import ProviderUnavailableError
+        raise ProviderUnavailableError('Provider ollama nicht erreichbar, kein Fallback/Queue konfiguriert')
 
     monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
 

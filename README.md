@@ -595,6 +595,9 @@ auf bestimmte `user_id`s beschränkt ist:
 
 - **Claude** (`CLAUDE_SERVER_KEY_ALLOWED_USERS`) — leer = offen für alle
   (single-tenant Default).
+- **Claude models** (`CLAUDE_MODEL_LIST`) — Komma-separierte Modell-Liste,
+  überschreibt die statische `KNOWN_MODELS`-Liste aus `providers/claude.py`.
+  Ohne Setzung werden die Default-Modelle verwendet.
 - **z.ai** (`ZAI_SERVER_KEY_ALLOWED_USERS`) — leer = **nur `ADMIN_USER_ID`**
   darf den zentralen `ZAI_API_KEY` nutzen (Owner-only Default, inkl. der
   kostenlosen GLM-Flash-Modelle). Alle anderen User müssen einen eigenen

@@ -50,7 +50,12 @@ def _resolve_principal():
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Bearer '):
         return None
-    token = auth.split(' ', 1)[1].strip()
+    parts = auth.split(' ', 1)
+    if len(parts) < 2:
+        return None
+    token = parts[1].strip()
+    if not token:
+        return None
     if Config.ADMIN_TOKEN and hmac.compare_digest(token, Config.ADMIN_TOKEN):
         return Principal(user_id=Config.ADMIN_USER_ID, role='admin', credential='admin')
     if Config.SERVICE_TOKEN and hmac.compare_digest(token, Config.SERVICE_TOKEN):

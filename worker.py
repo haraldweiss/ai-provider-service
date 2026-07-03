@@ -92,21 +92,26 @@ def _run(app: Flask) -> None:
     qd_interval = Config.QUEUE_DRAIN_INTERVAL_SEC
     fm_interval = max(21600, hc_interval)  # free model refresh: min 6h
     sleep_sec = min(hc_interval, qd_interval)
+    # Guard against pathological config (e.g., zero intervals) where
+    # interval // sleep_sec would raise ZeroDivisionError.
+    hc_steps = max(1, hc_interval // sleep_sec) if sleep_sec > 0 else 1
+    qd_steps = max(1, qd_interval // sleep_sec) if sleep_sec > 0 else 1
+    fm_steps = max(1, fm_interval // sleep_sec) if sleep_sec > 0 else 1
     logger.info(f'Worker startet, health-check={hc_interval}s, drain={qd_interval}s, free-model={fm_interval}s, sleep={sleep_sec}s')
     tick = 0
     while not _stop_event.is_set():
         try:
-            if tick % (hc_interval // sleep_sec) == 0:
+            if tick % hc_steps == 0:
                 _tick(app)
         except Exception as e:
             logger.exception(f'tick crashed: {e}')
         try:
-            if tick % (qd_interval // sleep_sec) == 0:
+            if tick % qd_steps == 0:
                 _drain(app)
         except Exception as e:
             logger.exception(f'drain crashed: {e}')
         try:
-            if tick % (fm_interval // sleep_sec) == 0:
+            if tick % fm_steps == 0:
                 _refresh_free_models(app)
         except Exception as e:
             logger.exception(f'free-model refresh crashed: {e}')

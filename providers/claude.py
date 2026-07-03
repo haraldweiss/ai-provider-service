@@ -26,6 +26,10 @@ class ClaudeClient(BaseClient):
         self.client = Anthropic(api_key=api_key)
 
     def get_models(self) -> list[str]:
+        # Allow runtime override via env var (no code change needed for
+        # new model additions/releases by Anthropic).
+        if Config.CLAUDE_MODEL_LIST:
+            return [m.strip() for m in Config.CLAUDE_MODEL_LIST.split(',') if m.strip()]
         return list(KNOWN_MODELS)
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600,

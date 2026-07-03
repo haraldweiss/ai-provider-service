@@ -670,3 +670,39 @@ aber die meisten funktionierten nicht:
 
 **Verification:** pytest 278/278 passed, Container auf oracle-vm rebuilt + healthy.
   Live: opencode 5 Modelle (vorher 52), zai nach 1. Fehlschlag persistent unhealthy.
+
+### Code-Review Fixes (2026-07-03, Pi)
+
+**Was:** Sechs Fixes aus einem strukturierten Code-Review des gesamten Repository.
+
+1. **ProviderUnavailableError** — Eigene Exception-Klasse (`dispatcher.py`) statt
+   String-Matching auf `RuntimeError` in `api/openai_api.py`. Der `except RuntimeError`
+   mit `'kein Fallback/Queue konfiguriert' in str(e)` ist ein Code-Smell (fragil bei
+   Refactoring/Lokalisierung). `ProviderUnavailableError` erbt von `RuntimeError` und
+   wird direkt gecatcht. Test `test_chat_completions_returns_503_for_provider_unavailable`
+   aktualisiert.
+
+2. **Worker-Tests** — 10 neue Tests in `tests/test_worker.py`: `_check_provider` mit
+   Mocking (system healthy/unhealthy, non-system ohne Config, persistent failure nicht
+   überschreibbar, Exception geschluckt); `start()`/`stop()`-Idempotenz; `_run`-Loop
+   Scheduling und Crash-Safety.
+
+3. **Coverage in CI** — `pytest-cov` in `.github/workflows/ci.yml` integriert:
+   `--cov=. --cov-report=term-missing --cov-fail-under=80`. Schützt vor unbemerkten
+   Test-Lücken bei PRs.
+
+4. **Leerer-Token Schutz** in `api/auth.py` — `_resolve_principal()` prüft jetzt
+   explizit auf `len(parts) < 2` und `not token`, so dass `Authorization: Bearer `
+   (leerer Token) nicht zu `IndexError` oder falscher Auth führt.
+
+5. **Claude-Modell-Liste via Env-Var** — `CLAUDE_MODEL_LIST` in `config.py` und
+   `providers/claude.py`. Überschreibt die statische `KNOWN_MODELS`-Liste ohne
+   Code-Änderung bei neuen Anthropic-Modellen. In `.env.example` dokumentiert.
+
+6. **Division-by-Zero-Guard** in `worker.py` — Pre-computed `hc_steps/qd_steps/fm_steps`
+   mit `max(1, ...)` und `sleep_sec > 0` Guard, statt `tick % (interval // sleep_sec)`.
+   Verhindert `ZeroDivisionError` bei pathologischen Configs.
+
+**Files:** 9 geändert (8 modified + 1 new: `tests/test_worker.py`). 10 neue Tests.
+**Verifikation:** `pytest -q` → **300/300 passed** (290 bestehend + 10 Worker-Tests).
+  Coverage-CI-Integration auf Mac getestet (kein CI-Run auf oracle-vm nötig).

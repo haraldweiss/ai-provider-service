@@ -19,6 +19,10 @@ import health_tracker
 logger = logging.getLogger(__name__)
 
 
+class ProviderUnavailableError(RuntimeError):
+    """Raised when primary provider is unavailable and no fallback/queue is configured."""
+
+
 def _is_claude_server_key_allowed(user_id: str) -> bool:
     """Allowlist für den zentralen ANTHROPIC_API_KEY (Server-Key).
 
@@ -316,7 +320,7 @@ def dispatch(
         }
 
     # 4) Kein Fallback, kein Queueing → Fehler
-    raise RuntimeError(
+    raise ProviderUnavailableError(
         f"Provider {provider_id} nicht erreichbar, kein Fallback/Queue konfiguriert"
     )
 

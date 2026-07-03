@@ -26,9 +26,9 @@ jobs:
           python-version: '3.12'
           cache: pip
       - name: Install deps
-        run: pip install -r requirements.txt pytest
-      - name: pytest
-        run: pytest tests/ -q
+        run: pip install -r requirements.txt pytest pytest-cov
+      - name: pytest + coverage (target: 80%)
+        run: pytest tests/ -q --cov=. --cov-report=term-missing --cov-fail-under=80
 
   docker-smoke:
     runs-on: ubuntu-latest
