@@ -38,6 +38,11 @@ def _check_provider(provider_id: str) -> bool:
             return True
         cfg = pc.get_config()
 
+    # Persistent failure (z.B. Account ohne Guthaben) nicht überschreiben
+    current = health_tracker.get_status(provider_id)
+    if current.get('persistent'):
+        return current.get('healthy', False)
+
     try:
         client = get_client(provider_id, cfg)
         ok = client.health()

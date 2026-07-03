@@ -217,7 +217,7 @@ def _execute(
             logger.warning('memory audit write failed in _execute', exc_info=True)
         return result
     except Exception as e:
-        health_tracker.set_status(provider_id, False, reason=f"{type(e).__name__}: {e}")
+        health_tracker.set_status(provider_id, False, reason=f"{type(e).__name__}: {e}", persistent=True)
         _log_usage_event(
             user_id, provider_id, model, None, None,
             'error', error_message=f"{type(e).__name__}: {e}",

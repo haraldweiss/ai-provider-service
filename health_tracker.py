@@ -19,14 +19,23 @@ _status: Dict[str, dict] = {}
 _lock = threading.Lock()
 
 
-def set_status(provider_id: str, healthy: bool, reason: str = '') -> None:
+def set_status(provider_id: str, healthy: bool, reason: str = '',
+               persistent: bool = False) -> None:
     with _lock:
         prev = _status.get(provider_id, {}).get('healthy')
+        prev_persistent = _status.get(provider_id, {}).get('persistent', False)
+        # Ein persistenter Failure (z.B. Account ohne Guthaben) darf nicht
+        # durch einen Background-Health-Check überschrieben werden. Nur ein
+        # erfolgreicher Chat-Call (healthy=True, persistent=False) oder ein
+        # explizit persistenter Set kann ihn aufheben.
+        if prev_persistent and not persistent and not healthy:
+            return
         _status[provider_id] = {
             'healthy': healthy,
             'reason': reason,
             'updated_at': time.time(),
             'previous_healthy': prev,
+            'persistent': persistent,
         }
 
 
