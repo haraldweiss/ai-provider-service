@@ -417,7 +417,8 @@ Antwort queued (Ollama down + queue=on):
 
 ```
 GET /v1/models
-  → Liste aller Modelle im OpenAI-Format
+  → Dynamisch aus den aktuell verfügbaren Provider-Modellen generierte Liste
+    im OpenAI-Format
 
  POST /v1/chat/completions
    Body (OpenAI-Format): {
@@ -428,17 +429,19 @@ GET /v1/models
    }
 ```
 
+`/v1/models` fragt die für den authentifizierten User konfigurierten Provider
+per `get_models()` ab. Nicht konfigurierte oder nicht erreichbare Provider
+werden ausgelassen; lokale Ollama-Modelle erscheinen dadurch automatisch, sobald
+sie auf einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).
+
  Das Model-Format ist `provider/model_name`, z.B.:
 
  | Model-ID | Provider |
  |---|---|
- | `zai/glm-4.5` | z.ai (GLM-4.5) |
- | `zai/glm-4.5-air` | z.ai (GLM-4.5 Air) |
- | `zai/glm-4.6` | z.ai (GLM-4.6) |
- | `zai/glm-4.7` | z.ai (GLM-4.7) |
  | `ollama/qwen3.6:latest` | Lokales Ollama |
- | `ollama/dev-coder:latest` | Lokales Ollama |
- | `claude/claude-sonnet-4-6-20250514` | Claude (Server-Key) |
+ | `ollama/ornith:latest` | Lokales Ollama |
+ | `zai/glm-4.5` | z.ai, wenn für den User konfiguriert und erreichbar |
+ | `claude/claude-sonnet-4-6-20250514` | Claude, wenn für den User konfiguriert und erreichbar |
 
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
 Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.

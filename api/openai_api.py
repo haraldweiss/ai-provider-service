@@ -12,85 +12,64 @@ import uuid
 from flask import Blueprint, jsonify, request, Response, stream_with_context
 from api.auth import require_token
 # from api.gate import require_provider_access
-from dispatcher import dispatch, _extract_response_text
-from providers import PROVIDER_REGISTRY
+from dispatcher import dispatch, _extract_response_text, _load_config
+from providers import PROVIDER_REGISTRY, get_client
 from flask import g
 
 logger = logging.getLogger(__name__)
 
 openai_bp = Blueprint('openai', __name__)
 
-# ─── known model lists per provider ────────────────────────────────────────
-
-ZAI_MODELS = [
-    'zai/glm-4.5',
-    'zai/glm-4.5-air',
-    'zai/glm-4.6',
-    'zai/glm-4.7',
-    'zai/glm-5',
-    'zai/glm-5-turbo',
-    'zai/glm-5.1',
-    'zai/glm-5.2',
-]
-
-CLAUDE_MODELS = [
-    'claude/claude-sonnet-4-6-20250514',
-    'claude/claude-sonnet-4-20250514',
-    'claude/claude-haiku-4-5-20251001',
-    'claude/claude-opus-4-6-20250514',
-]
-
-OLLAMA_MODELS = [
-    'ollama/qwen3.6:latest',
-    'ollama/dev-coder:latest',
-    'ollama/soc-analyst:latest',
-    'ollama/soc-detect:latest',
-    'ollama/qwen3-coder:latest',
-    'ollama/qwen3-coder-cc:latest',
-    'ollama/mistral-nemo-cc:latest',
-    'ollama/glm-4.7-flash:latest',
-]
-
-WOLFINICHAT_MODELS = [
-    'wolfinichat/qwen3.6:latest',
-    'wolfinichat/dev-coder:latest',
-]
-
-ALL_MODELS = ZAI_MODELS + CLAUDE_MODELS + OLLAMA_MODELS + WOLFINICHAT_MODELS
-
-MODEL_META = {
-    'zai/glm-4.5': {'provider': 'zai', 'context': 128000, 'reasoning': False},
-    'zai/glm-4.5-air': {'provider': 'zai', 'context': 128000, 'reasoning': False},
-    'zai/glm-4.6': {'provider': 'zai', 'context': 128000, 'reasoning': False},
-    'zai/glm-4.7': {'provider': 'zai', 'context': 128000, 'reasoning': False},
-    'zai/glm-5': {'provider': 'zai', 'context': 128000, 'reasoning': True},
-    'zai/glm-5-turbo': {'provider': 'zai', 'context': 128000, 'reasoning': False},
-    'zai/glm-5.1': {'provider': 'zai', 'context': 128000, 'reasoning': False},
-    'zai/glm-5.2': {'provider': 'zai', 'context': 128000, 'reasoning': False},
-    'claude/claude-sonnet-4-6-20250514': {'provider': 'claude', 'context': 200000, 'reasoning': True},
-    'claude/claude-sonnet-4-20250514': {'provider': 'claude', 'context': 200000, 'reasoning': True},
-    'claude/claude-haiku-4-5-20251001': {'provider': 'claude', 'context': 200000, 'reasoning': False},
-    'claude/claude-opus-4-6-20250514': {'provider': 'claude', 'context': 200000, 'reasoning': True},
-    'ollama/qwen3.6:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'ollama/dev-coder:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'ollama/soc-analyst:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'ollama/soc-detect:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'ollama/qwen3-coder:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'ollama/qwen3-coder-cc:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'ollama/mistral-nemo-cc:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'ollama/glm-4.7-flash:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'wolfinichat/qwen3.6:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-    'wolfinichat/dev-coder:latest': {'provider': 'ollama', 'context': 32000, 'reasoning': False},
-}
-
 
 def _parse_model(model: str) -> tuple[str, str, str | None]:
     """Split 'zai/glm-4-flash' → ('zai', 'glm-4-flash', origin_app)."""
     if '/' in model:
         prefix, name = model.split('/', 1)
-        origin = 'chat.wolfinisoftware.de' if prefix == 'wolfinichat' else None
-        return prefix, name, origin
+        if prefix == 'wolfinichat':
+            return 'ollama', name, 'chat.wolfinisoftware.de'
+        return prefix, name, None
     return 'claude', model, None
+
+
+def _principal_user_id(default: str = 'pi-agent') -> str:
+    principal = getattr(g, 'principal', None)
+    if principal and isinstance(principal, object) and hasattr(principal, 'user_id'):
+        return principal.user_id or default
+    return default
+
+
+def _model_id(provider_id: str, model_name: str) -> str:
+    return f'{provider_id}/{model_name}'
+
+
+def _available_model_rows(user_id: str) -> list[dict]:
+    now = int(time.time())
+    rows = []
+    seen = set()
+    for provider_id in PROVIDER_REGISTRY:
+        cfg = _load_config(user_id, provider_id)
+        if cfg is None:
+            continue
+        try:
+            models = get_client(provider_id, cfg).get_models()
+        except Exception as e:
+            logger.info('Skipping unavailable provider %s in /v1/models: %s',
+                        provider_id, type(e).__name__)
+            continue
+        for model_name in models:
+            if not model_name:
+                continue
+            mid = _model_id(provider_id, str(model_name))
+            if mid in seen:
+                continue
+            seen.add(mid)
+            rows.append({
+                'id': mid,
+                'object': 'model',
+                'created': now,
+                'owned_by': provider_id,
+            })
+    return rows
 
 
 def _openai_stream_chunk(model: str, content: str, index: int = 0,
@@ -116,16 +95,7 @@ def _openai_stream_chunk(model: str, content: str, index: int = 0,
 @require_token
 def list_models():
     """Return list of available models in OpenAI format."""
-    data = []
-    for mid in ALL_MODELS:
-        meta = MODEL_META.get(mid, {})
-        data.append({
-            'id': mid,
-            'object': 'model',
-            'created': int(time.time()),
-            'owned_by': meta.get('provider', 'ai-provider-service'),
-        })
-    return jsonify({'object': 'list', 'data': data})
+    return jsonify({'object': 'list', 'data': _available_model_rows(_principal_user_id())})
 
 
 @openai_bp.post('/v1/chat/completions')
@@ -155,13 +125,7 @@ def chat_completions():
             'error': {'message': f'Unknown provider: {provider_id}', 'type': 'invalid_request'},
         }), 400
 
-    principal = getattr(g, 'principal', None)
-    if principal and isinstance(principal, object) and hasattr(principal, 'user_id'):
-        user_id = principal.user_id
-        if not user_id:  # Fall back to pi-agent if principal.user_id is empty
-            user_id = 'pi-agent'
-    else:
-        user_id = 'pi-agent'
+    user_id = _principal_user_id()
 
     try:
         result = dispatch(

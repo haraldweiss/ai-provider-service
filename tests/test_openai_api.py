@@ -1,12 +1,68 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Tests for OpenAI API endpoint /v1/chat/completions."""
 
-import pytest
-from flask import g
-from api.auth import Principal
+def test_list_models_is_generated_from_available_provider_models(app, client, monkeypatch):
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    monkeypatch.setattr(openai_api, 'PROVIDER_REGISTRY', {
+        'ollama': {
+            'name': 'Ollama (lokal)',
+            'system': True,
+            'requires': [],
+            'optional': [],
+        },
+        'claude': {
+            'name': 'Claude (Anthropic)',
+            'system': True,
+            'requires': [],
+            'optional': [],
+        },
+        'zai': {
+            'name': 'z.ai (GLM)',
+            'system': True,
+            'requires': [],
+            'optional': [],
+        },
+    })
+
+    def fake_load_config(user_id, provider_id):
+        assert user_id == 'harald'
+        return {} if provider_id == 'ollama' else None
+
+    class FakeOllamaClient:
+        def get_models(self):
+            return ['ornith:latest', 'qwen3.6:latest']
+
+    def fake_get_client(provider_id, cfg):
+        assert provider_id == 'ollama'
+        assert cfg == {}
+        return FakeOllamaClient()
+
+    monkeypatch.setattr(openai_api, '_load_config', fake_load_config, raising=False)
+    monkeypatch.setattr(openai_api, 'get_client', fake_get_client, raising=False)
+
+    r = client.get('/v1/models', headers={'Authorization': 'Bearer admin-test-token'})
+
+    assert r.status_code == 200
+    model_ids = [m['id'] for m in r.json['data']]
+    assert model_ids == ['ollama/ornith:latest', 'ollama/qwen3.6:latest']
 
 
-def test_chat_completions_uses_principal_user_id(app, client):
+def test_parse_wolfinichat_model_routes_to_ollama_with_origin():
+    from api.openai_api import _parse_model
+
+    provider_id, model_name, origin_app = _parse_model('wolfinichat/qwen3.6:latest')
+
+    assert provider_id == 'ollama'
+    assert model_name == 'qwen3.6:latest'
+    assert origin_app == 'chat.wolfinisoftware.de'
+
+
+def test_chat_completions_uses_principal_user_id(app, client, monkeypatch):
     """Regression test: /v1/chat/completions must use g.principal.user_id.
     
     Previously, the endpoint would lose the real Principal.user_id and
@@ -20,9 +76,8 @@ def test_chat_completions_uses_principal_user_id(app, client):
     Config.ADMIN_TOKEN = 'admin-test-token'
     Config.ADMIN_USER_ID = 'harald'
     
-    # Mock the dispatcher to capture the user_id it receives
-    import dispatcher
-    original_dispatch = dispatcher.dispatch
+    # Mock the imported dispatcher function to capture the user_id it receives.
+    import api.openai_api as openai_api
     
     captured_user_id = None
     
@@ -41,8 +96,8 @@ def test_chat_completions_uses_principal_user_id(app, client):
     
     # Test with admin token (should use ADMIN_USER_ID)
     with app.app_context():
-        dispatcher.dispatch = mock_dispatch
-        
+        monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
         r = client.post('/v1/chat/completions',
                        json={
                            'model': 'ollama/test-model',
@@ -50,17 +105,14 @@ def test_chat_completions_uses_principal_user_id(app, client):
                            'stream': False
                        },
                        headers={'Authorization': 'Bearer admin-test-token'})
-    
-    dispatcher.dispatch = original_dispatch
-    
+
     assert r.status_code == 200
     assert captured_user_id == 'harald', f"Expected 'harald', got '{captured_user_id}'"
 
 
-def test_chat_completions_fallback_to_pi_agent_when_no_principal(app, client):
+def test_chat_completions_fallback_to_pi_agent_when_no_principal(app, client, monkeypatch):
     """Test that /v1/chat/completions falls back to 'pi-agent' when no principal."""
-    import dispatcher
-    original_dispatch = dispatcher.dispatch
+    import api.openai_api as openai_api
     
     captured_user_id = None
     
@@ -77,7 +129,7 @@ def test_chat_completions_fallback_to_pi_agent_when_no_principal(app, client):
         }
     
     with app.app_context():
-        dispatcher.dispatch = mock_dispatch
+        monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
         
         # Call without setting a principal (bypass require_token for this test)
         with app.test_client() as c:
@@ -86,10 +138,8 @@ def test_chat_completions_fallback_to_pi_agent_when_no_principal(app, client):
                           'model': 'ollama/test-model',
                           'messages': [{'role': 'user', 'content': 'test'}],
                           'stream': False
-                      },
-                      headers={'Authorization': 'Bearer test-token'})
-    
-    dispatcher.dispatch = original_dispatch
-    
+                          },
+                          headers={'Authorization': 'Bearer test-token'})
+
     # Should still work but might use pi-agent or empty string depending on implementation
     assert r.status_code in [200, 401]  # 401 if require_token blocks it
