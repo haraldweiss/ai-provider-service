@@ -761,13 +761,12 @@ Failover schlug fehl.
 | test-user | ollama | opencode | deepseek-v4-flash-free | ✅ |
 | wolfini_de_web | ollama | opencode | deepseek-v4-flash-free | ✅ |
 | lisa | ollama | opencode | deepseek-v4-flash-free | ✅ |
-| wolfinichat | ollama | claude | (primary model) | ✅ |
+| wolfinichat | ollama | opencode | deepseek-v4-flash-free | ✅ |
+| wolfinichat | opencode | ollama | (primary model) | ✅ |
 | pi-agent | ollama | opencode | deepseek-v4-flash-free | ✅ |
 | pi-agent | zai | opencode | deepseek-v4-flash-free | ✅ |
 
 **Noch offen:**
-- wolfinichat hat fallback=claude (kein claude-key auf VM → claude immer down).
-  Sollte ggf. auf opencode umgestellt werden.
 - z.ai-Guthaben aufladen (Account-Problem, kein Code-Fix)
 
 **Verifikation:** `pytest -q` → 290/290 passed.
