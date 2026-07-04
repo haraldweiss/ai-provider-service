@@ -21,7 +21,7 @@ RUN mkdir -p /app/data
 
 EXPOSE 8767
 
-HEALTHCHECK --interval=30s --timeout=15s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=20s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8767/health || exit 1
 
-CMD ["gunicorn", "--workers", "2", "--worker-class", "gthread", "--threads", "4", "--bind", "0.0.0.0:8767", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:create_app()"]
+CMD ["gunicorn", "--workers", "2", "--worker-class", "gthread", "--threads", "4", "--bind", "0.0.0.0:8767", "--timeout", "180", "--access-logfile", "-", "--error-logfile", "-", "app:create_app()"]

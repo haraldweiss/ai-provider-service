@@ -706,3 +706,30 @@ aber die meisten funktionierten nicht:
 **Files:** 9 geändert (8 modified + 1 new: `tests/test_worker.py`). 10 neue Tests.
 **Verifikation:** `pytest -q` → **300/300 passed** (290 bestehend + 10 Worker-Tests).
   Coverage-CI-Integration auf Mac getestet (kein CI-Run auf oracle-vm nötig).
+
+### Timeout-Mismatch: Gunicorn 120s vs Ollama 180s → 503er vermeiden (2026-07-03, Pi)
+
+**Symptom:** `/v1/chat/completions` lieferte sporadisch 503 `service_unavailable`
+obwohl Ollama erreichbar war.
+
+**Root cause:** Timeout-Mismatch — Ollama wartete bis zu 180s, Gunicorn killte
+den Worker bereits nach 120s. Bei längeren Ollama-Calls (große Kontexte,
+Cold-Start) starb der Worker mit 502/503, bevor Ollama ein Ergebnis liefern
+oder einen eigenen Fehler zurückgeben konnte. Der saubere Error-Handling-Pfad
+(Fallback/Queue) wurde nie erreicht.
+
+**Fix (Commit `<SHA>`):**
+1. `Dockerfile`: Gunicorn `--timeout 120→180s` — erlaubt langsame Ollama-Calls
+2. `Dockerfile`: Healthcheck `timeout 15→20s`, `start-period 15→20s` — Puffer bei Last
+3. `providers/ollama.py`: `timeout 180→120s` — Ollama bricht **vor** Gunicorn ab,
+   Fehler wird sauber returned → Health-Tracker updated → Fallback/Queue aktiv
+4. `providers/ollama.py`: `num_ctx = min(num_ctx, 65536)` — cap verhindert extreme
+   Kontexte (131k+) die auf M3 Max 36GB in Swap/Thrashing gehen → garantierter Timeout
+
+**Offen (DB-Konfiguration, kein Code):**
+- Fallback-Provider in ProviderConfig setzen (z.B. `fallback_provider=opencode`)
+- Queue aktivieren (`queue_when_unavailable=True`)
+- z.ai-Guthaben aufladen (Account-Problem, kein Code-Fix)
+
+**Verifikation:** `pytest -q` → 290/290 passed, keine neuen Warnungen.
+  Bild: `localhost/ai-provider:<SHA>` auf oracle-vm deployed.

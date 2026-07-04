@@ -45,7 +45,9 @@ def _resolve_endpoints(config: dict | None) -> List[str]:
 
 
 class OllamaClient(BaseClient):
-    timeout = 180  # lokale Models können sehr lange brauchen (Cold-Start, große Modelle)
+    timeout = 120  # Max-Wartezeit pro Ollama-Call. Muss < Gunicorn --timeout (180s)
+                  # sein, sonst killt Gunicorn den Worker bevor Ollama den Fehler
+                  # zurückgibt.
 
     # Class-level per-gunicorn-worker model map for predictive routing.
     # Filled lazily on first request and refreshed every _MODEL_MAP_TTL_SEC.
@@ -166,10 +168,13 @@ class OllamaClient(BaseClient):
             char_count = 0
         # 1 Token ≈ 4 Chars (deutsch) → +max_tokens für die Antwort + Puffer
         needed = max(8192, int(char_count / 3) + max_tokens + 1024)
-        # Auf nächste Power-of-2 runden
+        # Auf nächste Power-of-2 runden, gedeckelt auf 65536.
+        # Extrem große Kontexte (>65k) sind auf lokalen Macs selten nötig
+        # und zwingen Ollama in den Swap (OOM/Thrashing) → Timeout.
         num_ctx = 1
         while num_ctx < needed:
             num_ctx *= 2
+        num_ctx = min(num_ctx, 65536)
 
         payload = {
             'model': model,
