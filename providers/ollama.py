@@ -23,6 +23,16 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
+def _response_excerpt(response: requests.Response | None, limit: int = 500) -> str:
+    if response is None:
+        return ''
+    text = response.text or ''
+    text = ' '.join(text.split())
+    if len(text) > limit:
+        return text[:limit] + '...'
+    return text
+
+
 def _resolve_endpoints(config: dict | None) -> List[str]:
     """Endpoint priority: config['api_endpoints'] (list) > config['api_endpoint']
     (single) > Config.OLLAMA_URLS (comma-separated env) > Config.OLLAMA_URL (single).
@@ -218,6 +228,7 @@ class OllamaClient(BaseClient):
                         'input_tokens': data.get('prompt_eval_count', 0),
                         'output_tokens': out_tokens,
                     },
+                    'stop_reason': data.get('done_reason') or 'stop',
                 }
             except (requests.ConnectionError, requests.Timeout) as e:
                 last_exc = e
@@ -229,8 +240,11 @@ class OllamaClient(BaseClient):
                 # case for per-model failover when machines in the pool host
                 # different subsets of models (e.g. Mini has dev-coder but
                 # not qwen3.6:latest, Macbook has both). Retry on 404 too.
-                # Other 4xx (400, 401, 403) are deterministic bugs — give up.
+                # 400 can be endpoint-specific in pool mode (model/load/options
+                # mismatch on one Mac), so try the rest before giving up.
+                # Auth-style 4xx are deterministic and should fail immediately.
                 status = getattr(e.response, 'status_code', 0)
+                body = _response_excerpt(e.response)
                 if status == 404:
                     # Update our model-map: this endpoint definitely does NOT
                     # have this model. Saves us re-trying it on subsequent calls
@@ -238,10 +252,17 @@ class OllamaClient(BaseClient):
                     # Lock protects against concurrent _refresh_model_map replacement.
                     with OllamaClient._model_map_lock:
                         OllamaClient._endpoint_models.setdefault(url, set()).discard(model)
-                if (500 <= status < 600 or status == 404) and len(order) > 1:
+                if (500 <= status < 600 or status in (400, 404)) and len(order) > 1:
                     last_exc = e
-                    logger.warning(f'Ollama endpoint {url} returned {status}; trying next')
+                    logger.warning(
+                        'Ollama endpoint %s returned %s for model=%s; trying next: %s',
+                        url, status, model, body,
+                    )
                     continue
+                logger.warning(
+                    'Ollama endpoint %s returned %s for model=%s: %s',
+                    url, status, model, body,
+                )
                 raise
 
         # All endpoints exhausted

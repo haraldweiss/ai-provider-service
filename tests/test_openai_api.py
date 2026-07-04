@@ -44,6 +44,7 @@ def test_list_models_is_generated_from_available_provider_models(app, client, mo
 
     monkeypatch.setattr(openai_api, '_load_config', fake_load_config, raising=False)
     monkeypatch.setattr(openai_api, 'get_client', fake_get_client, raising=False)
+    monkeypatch.setattr(openai_api.health_tracker, 'is_healthy', lambda provider_id: True)
 
     r = client.get('/v1/models', headers={'Authorization': 'Bearer admin-test-token'})
 
@@ -213,3 +214,37 @@ def test_chat_completions_returns_503_for_provider_unavailable(app, client, monk
 
     assert r.status_code == 503
     assert r.json['error']['type'] == 'service_unavailable'
+
+
+def test_chat_completions_maps_provider_length_stop_reason(app, client, monkeypatch):
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    def mock_dispatch(*args, **kwargs):
+        return {
+            'result': {
+                'content': [{'text': 'partial answer'}],
+                'usage': {'input_tokens': 10, 'output_tokens': 4096},
+                'stop_reason': 'length',
+            },
+            'via': 'ollama',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': [{'role': 'user', 'content': 'ping'}],
+            'stream': False,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 200
+    assert r.json['choices'][0]['finish_reason'] == 'length'

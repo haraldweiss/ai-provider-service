@@ -92,6 +92,17 @@ def _openai_stream_chunk(model: str, content: str, index: int = 0,
     }
 
 
+def _openai_finish_reason(result_data: dict) -> str:
+    reason = result_data.get('stop_reason') or result_data.get('done_reason')
+    if reason in ('length', 'max_tokens'):
+        return 'length'
+    if reason in ('tool_use', 'tool_calls'):
+        return 'tool_calls'
+    if reason == 'content_filter':
+        return 'content_filter'
+    return 'stop'
+
+
 def _content_part_text(part) -> str:
     if isinstance(part, str):
         return part
@@ -187,6 +198,7 @@ def chat_completions():
 
     result_data = result.get('result', {})
     text = _extract_response_text(result_data)
+    finish_reason = _openai_finish_reason(result_data)
 
     usage = result_data.get('usage', {})
     openai_usage = {
@@ -206,7 +218,7 @@ def chat_completions():
             yield f'data: {json.dumps(content_chunk)}\n\n'
 
             # Final chunk with usage
-            finish = _openai_stream_chunk(model, '', finish_reason='stop')
+            finish = _openai_stream_chunk(model, '', finish_reason=finish_reason)
             finish['usage'] = openai_usage
             yield f'data: {json.dumps(finish)}\n\n'
 
@@ -230,7 +242,7 @@ def chat_completions():
         'choices': [{
             'index': 0,
             'message': {'role': 'assistant', 'content': text},
-            'finish_reason': 'stop',
+            'finish_reason': finish_reason,
         }],
         'usage': openai_usage,
     })

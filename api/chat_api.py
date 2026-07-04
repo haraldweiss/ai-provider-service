@@ -4,7 +4,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from api.auth import require_token
 from api.gate import require_provider_access, is_allowed
-from dispatcher import dispatch
+from dispatcher import ProviderUnavailableError, dispatch
 from flask import g
 from providers import PROVIDER_REGISTRY
 
@@ -74,6 +74,9 @@ def chat():
         return jsonify(result)
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+    except ProviderUnavailableError as e:
+        logger.warning(f'/chat provider unavailable: {e}')
+        return jsonify({'error': str(e)}), 503
     except Exception as e:
         logger.exception(f'/chat dispatch failed: {e}')
         return jsonify({'error': str(e)}), 500
