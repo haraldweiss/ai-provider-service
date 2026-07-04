@@ -732,4 +732,8 @@ oder einen eigenen Fehler zurückgeben konnte. Der saubere Error-Handling-Pfad
 - z.ai-Guthaben aufladen (Account-Problem, kein Code-Fix)
 
 **Verifikation:** `pytest -q` → 290/290 passed, keine neuen Warnungen.
-  Bild: `localhost/ai-provider:<SHA>` auf oracle-vm deployed.
+  Image: `localhost/ai-provider:ebbf3bd` auf oracle-vm gebaut + deployed.
+  Live-Smoke: /health 200 (ollama/opencode/zai healthy), /v1/models 36 Modelle,
+  /v1/chat/completions ollama/mistral-nemo-cc → "2" in 1s.
+  docker-compose.yml healthcheck timeout 15s→20s, start_period 15s→20s per
+  592ba84 nachgereicht (git pull + rsync auf oracle-vm, kein Image-Neubau nötig).
