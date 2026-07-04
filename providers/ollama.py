@@ -12,6 +12,7 @@ from __future__ import annotations
 import itertools
 import json
 import logging
+import re
 import threading
 import time
 from typing import List, Optional, Set
@@ -48,14 +49,27 @@ def _tool_input(arguments):
     return {}
 
 
-def _normalize_tool_calls(message: dict) -> list[dict]:
+def _allowed_tool_names(tools: list[dict] | None) -> set[str]:
+    names = set()
+    for tool in tools or []:
+        if not isinstance(tool, dict):
+            continue
+        fn = tool.get('function') if isinstance(tool.get('function'), dict) else {}
+        name = fn.get('name') or tool.get('name')
+        if name:
+            names.add(str(name))
+    return names
+
+
+def _normalize_tool_calls(message: dict, tools: list[dict] | None = None) -> list[dict]:
+    allowed = _allowed_tool_names(tools)
     calls = []
     for idx, call in enumerate(message.get('tool_calls') or []):
         if not isinstance(call, dict):
             continue
         fn = call.get('function') if isinstance(call.get('function'), dict) else {}
         name = fn.get('name') or call.get('name') or ''
-        if not name:
+        if not name or (allowed and name not in allowed):
             continue
         arguments = fn.get('arguments', call.get('arguments', call.get('input', {})))
         calls.append({
@@ -64,6 +78,65 @@ def _normalize_tool_calls(message: dict) -> list[dict]:
             'input': _tool_input(arguments),
         })
     return calls
+
+
+_DSML_TOOL_CALLS_RE = re.compile(
+    r'<\s*｜｜DSML｜｜tool_calls\s*>(?P<body>.*?)'
+    r'</\s*｜｜DSML｜｜tool_calls\s*>',
+    re.DOTALL,
+)
+_DSML_INVOKE_RE = re.compile(
+    r'<\s*｜｜DSML｜｜invoke\s+name="(?P<name>[^"]+)"\s*>'
+    r'(?P<body>.*?)</\s*｜｜DSML｜｜invoke\s*>',
+    re.DOTALL,
+)
+_DSML_PARAMETER_RE = re.compile(
+    r'<\s*｜｜DSML｜｜parameter\s+name="(?P<name>[^"]+)"'
+    r'(?:\s+string="(?P<string>[^"]+)")?\s*>'
+    r'(?P<value>.*?)</\s*｜｜DSML｜｜parameter\s*>',
+    re.DOTALL,
+)
+
+
+def _dsml_param_value(raw: str, string_flag: str | None):
+    value = raw.strip()
+    if string_flag == 'false':
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+def _extract_dsml_tool_calls(
+    text: str, tools: list[dict] | None = None,
+) -> tuple[str, list[dict]]:
+    allowed = _allowed_tool_names(tools)
+    calls: list[dict] = []
+
+    def replace_block(match: re.Match) -> str:
+        before = len(calls)
+        block = match.group('body')
+        for invoke in _DSML_INVOKE_RE.finditer(block):
+            name = invoke.group('name').strip()
+            if not name or (allowed and name not in allowed):
+                continue
+            params = {}
+            for param in _DSML_PARAMETER_RE.finditer(invoke.group('body')):
+                params[param.group('name')] = _dsml_param_value(
+                    param.group('value'), param.group('string'),
+                )
+            calls.append({
+                'id': f'call_{len(calls)}',
+                'name': name,
+                'input': params,
+            })
+        return '' if len(calls) > before else match.group(0)
+
+    if not allowed:
+        return text, []
+    cleaned = _DSML_TOOL_CALLS_RE.sub(replace_block, text).strip()
+    return cleaned, calls
 
 
 def _resolve_endpoints(config: dict | None) -> List[str]:
@@ -249,7 +322,9 @@ class OllamaClient(BaseClient):
                 # damit man später debuggen kann (length, stop, load, etc.).
                 message = data.get('message', {}) or {}
                 text = message.get('content', '')
-                tool_calls = _normalize_tool_calls(message)
+                tool_calls = _normalize_tool_calls(message, tools=tools)
+                if not tool_calls and text:
+                    text, tool_calls = _extract_dsml_tool_calls(text, tools=tools)
                 out_tokens = data.get('eval_count', 0)
                 if (out_tokens == 0 or not text) and not tool_calls:
                     logger.warning(

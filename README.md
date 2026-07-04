@@ -464,9 +464,12 @@ Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
 **Tool calls:** OpenAI-kompatible `tools` werden an Provider mit Tool-Support
 durchgereicht. Lokales `ollama` erhält sie über `/api/chat` und echte
 Ollama-Toolcalls werden als OpenAI-`message.tool_calls` bzw. Streaming-
-`delta.tool_calls` zurückgegeben. Modelle ohne sauberen Toolcall-Support können
-weiterhin Tool-Syntax als Text halluzinieren; Clients sollten nur strukturierte
-`tool_calls` als ausführbare Aktionen behandeln.
+`delta.tool_calls` zurückgegeben. Einige lokale Modelle geben stattdessen
+DeepSeek/DSML-Toolcall-Markup im Text aus; der Gateway konvertiert dieses
+Markup nur dann in strukturierte Toolcalls, wenn der Client das jeweilige Tool
+explizit in `tools` angeboten hat. Modelle ohne sauberen Toolcall-Support können
+weiterhin andere Tool-Syntax als Text halluzinieren; Clients sollten nur
+strukturierte `tool_calls` als ausführbare Aktionen behandeln.
 
 **OpenAI-Content-Parts:** `messages[].content` darf ein String oder eine
 OpenAI-kompatible Content-Part-Liste sein, z.B.
