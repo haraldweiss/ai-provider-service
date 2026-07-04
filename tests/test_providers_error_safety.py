@@ -8,6 +8,8 @@ class BrokenClient:
 
 def test_models_error_does_not_echo_provider_exception(client, monkeypatch):
     Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ANTHROPIC_API_KEY = 'server-test-key'
+    monkeypatch.delenv('CLAUDE_SERVER_KEY_ALLOWED_USERS', raising=False)
     monkeypatch.setattr('api.providers_api.get_client', lambda *_: BrokenClient())
     response = client.get(
         '/providers/claude/models?user_id=harald',
@@ -20,6 +22,8 @@ def test_models_error_does_not_echo_provider_exception(client, monkeypatch):
 
 def test_provider_test_error_does_not_echo_provider_exception(client, monkeypatch):
     Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ANTHROPIC_API_KEY = 'server-test-key'
+    monkeypatch.delenv('CLAUDE_SERVER_KEY_ALLOWED_USERS', raising=False)
     monkeypatch.setattr('api.providers_api.get_client', lambda *_: BrokenClient())
     response = client.post(
         '/providers/claude/test', json={'user_id': 'harald'},

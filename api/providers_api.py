@@ -4,9 +4,13 @@ import logging
 from flask import Blueprint, jsonify, request
 from api.auth import require_token
 from api.gate import require_provider_access, is_allowed
-from providers import get_client, PROVIDER_REGISTRY, list_provider_ids
+from api.provider_visibility import (
+    availability_hint,
+    hidden_key_provider_rows,
+    provider_requires_user_key,
+)
+from providers import get_client, PROVIDER_REGISTRY
 from flask import g
-from config import Config
 from storage.models import ProviderConfig
 import health_tracker
 
@@ -19,12 +23,16 @@ providers_bp = Blueprint('providers', __name__, url_prefix='/providers')
 @require_token
 def list_providers():
     """Liste aller bekannten Provider mit Status pro user_id (optional via query)."""
-    from dispatcher import _is_claude_server_key_allowed
+    from dispatcher import _is_claude_server_key_allowed, _load_config
 
-    user_id = request.args.get('user_id')
+    user_id = request.args.get('user_id') or getattr(g.principal, 'user_id', '')
 
     out = []
+    hidden = hidden_key_provider_rows(user_id)
     for pid, meta in PROVIDER_REGISTRY.items():
+        if provider_requires_user_key(user_id, pid):
+            continue
+
         configured = False
         if user_id:
             pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=pid).first()
@@ -38,6 +46,8 @@ def list_providers():
                 pass
             else:
                 configured = True
+        if meta.get('personal_api_key') and _load_config(user_id, pid) is not None:
+            configured = True
 
         allowed = is_allowed(g.principal, pid)
         health = health_tracker.get_status(pid)
@@ -52,7 +62,11 @@ def list_providers():
             'healthy': health.get('healthy'),
             'last_check': health.get('updated_at'),
         })
-    return jsonify({'providers': out})
+    return jsonify({
+        'providers': out,
+        'hidden_providers': hidden,
+        'availability_hint': availability_hint(hidden),
+    })
 
 
 @providers_bp.get('/<provider_id>/models')
@@ -65,6 +79,12 @@ def get_models(provider_id):
     user_id = request.args.get('user_id')
     cfg = {}
     if user_id:
+        if provider_requires_user_key(user_id, provider_id):
+            return jsonify({
+                'error': 'provider_requires_api_key',
+                'configured': False,
+                'message': 'Add a personal API key to enable this provider.',
+            }), 400
         pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
         if pc:
             cfg = pc.get_config()
@@ -108,6 +128,12 @@ def test_provider(provider_id):
 
     cfg = {}
     if user_id:
+        if provider_requires_user_key(user_id, provider_id):
+            return jsonify({
+                'status': 'error',
+                'error': 'provider_requires_api_key',
+                'message': 'Add a personal API key to enable this provider.',
+            }), 400
         pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
         if pc:
             cfg = pc.get_config()

@@ -316,7 +316,7 @@ User-Token. Ein User-Token ist fest an genau eine `user_id` gebunden.
 
 ```
 GET /providers?user_id=<id>
-  → Liste aller Provider mit configured/healthy/last_check
+  → Liste nutzbarer Provider mit configured/healthy/last_check
 GET /providers/<id>/models?user_id=<id>
   → Live-Models vom Provider
 POST /providers/<id>/test  { "user_id": "..." }
@@ -324,6 +324,13 @@ POST /providers/<id>/test  { "user_id": "..." }
 GET /providers/<id>/health
   → aktueller Health-Status (gecacht)
 ```
+
+Key-pflichtige Provider, für die der angefragte User weder einen persönlichen
+API-Key noch einen erlaubten Server-Key hat, werden aus `providers` ausgelassen.
+Lokales `ollama` bleibt immer sichtbar. Die Response enthält zusätzlich
+`hidden_providers` mit neutralen Provider-Namen und `availability_hint`, damit
+Clients einen Hinweis wie "mehr Provider nach Hinterlegen eines API-Keys"
+anzeigen können, ohne Keys oder interne Fehlerdetails offenzulegen.
 
 ### Configs
 
@@ -433,6 +440,10 @@ GET /v1/models
 `/v1/models` fragt die für den authentifizierten User konfigurierten Provider
 per `get_models()` ab. **Health-Filter:** Provider die laut `health_tracker`
 unhealthy sind (z.B. nach fehlgeschlagenem Chat-Call) werden ausgelassen.
+Key-pflichtige Provider ohne persönlichen oder erlaubten Server-Key werden
+ebenfalls ausgelassen; `hidden_providers` + `availability_hint` geben Clients
+einen neutralen Hinweis, dass nach Hinterlegen eines passenden API-Keys mehr
+Modelle verfügbar sind.
 **opencode free-only:** Ohne persönlichen opencode-API-Key werden nur Free-Modelle
 gelistet (ca. 5 statt 52). Lokale Ollama-Modelle erscheinen automatisch, sobald
 sie auf einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).

@@ -12,6 +12,7 @@ import uuid
 from flask import Blueprint, jsonify, request, Response, stream_with_context
 from api.auth import require_token
 # from api.gate import require_provider_access
+from api.provider_visibility import availability_hint, hidden_key_provider_rows
 from dispatcher import dispatch, _extract_response_text, _load_config, ProviderUnavailableError
 from providers import PROVIDER_REGISTRY, get_client
 from flask import g
@@ -144,7 +145,14 @@ def _normalize_messages(messages: list) -> list:
 @require_token
 def list_models():
     """Return list of available models in OpenAI format."""
-    return jsonify({'object': 'list', 'data': _available_model_rows(_principal_user_id())})
+    user_id = _principal_user_id()
+    hidden = hidden_key_provider_rows(user_id)
+    return jsonify({
+        'object': 'list',
+        'data': _available_model_rows(user_id),
+        'hidden_providers': hidden,
+        'availability_hint': availability_hint(hidden),
+    })
 
 
 @openai_bp.post('/v1/chat/completions')
