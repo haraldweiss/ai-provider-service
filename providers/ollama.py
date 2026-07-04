@@ -139,6 +139,45 @@ def _extract_dsml_tool_calls(
     return cleaned, calls
 
 
+def _is_tool_grammar_error(status: int, body: str) -> bool:
+    if status != 400:
+        return False
+    lowered = body.replace("\\'", "'").lower()
+    return (
+        'value looks like object' in lowered
+        and "can't find closing" in lowered
+    )
+
+
+def _result_from_ollama_data(
+    data: dict, url: str, num_ctx: int, model: str, tools: list[dict] | None,
+) -> dict:
+    message = data.get('message', {}) or {}
+    text = message.get('content', '')
+    tool_calls = _normalize_tool_calls(message, tools=tools)
+    if not tool_calls and text:
+        text, tool_calls = _extract_dsml_tool_calls(text, tools=tools)
+    out_tokens = data.get('eval_count', 0)
+    if (out_tokens == 0 or not text) and not tool_calls:
+        logger.warning(
+            f'Ollama returned empty output ({url}): done_reason={data.get("done_reason")}, '
+            f'eval_count={out_tokens}, prompt_eval_count={data.get("prompt_eval_count")}, '
+            f'num_ctx={num_ctx}, model={model}'
+        )
+    stop_reason = data.get('done_reason') or 'stop'
+    if tool_calls and stop_reason == 'stop':
+        stop_reason = 'tool_use'
+    return {
+        'content': [{'text': text}],
+        'tool_calls': tool_calls,
+        'usage': {
+            'input_tokens': data.get('prompt_eval_count', 0),
+            'output_tokens': out_tokens,
+        },
+        'stop_reason': stop_reason,
+    }
+
+
 def _resolve_endpoints(config: dict | None) -> List[str]:
     """Endpoint priority: config['api_endpoints'] (list) > config['api_endpoint']
     (single) > Config.OLLAMA_URLS (comma-separated env) > Config.OLLAMA_URL (single).
@@ -317,35 +356,9 @@ class OllamaClient(BaseClient):
                 r = requests.post(f'{url}/api/chat', json=payload, timeout=self.timeout)
                 r.raise_for_status()
                 data = r.json()
-                # eval_count = output tokens, prompt_eval_count = input tokens (wenn verfügbar).
-                # Wenn das Modell nichts generiert hat (eval_count=0), loggen wir die done_reason
-                # damit man später debuggen kann (length, stop, load, etc.).
-                message = data.get('message', {}) or {}
-                text = message.get('content', '')
-                tool_calls = _normalize_tool_calls(message, tools=tools)
-                if not tool_calls and text:
-                    text, tool_calls = _extract_dsml_tool_calls(text, tools=tools)
-                out_tokens = data.get('eval_count', 0)
-                if (out_tokens == 0 or not text) and not tool_calls:
-                    logger.warning(
-                        f'Ollama returned empty output ({url}): done_reason={data.get("done_reason")}, '
-                        f'eval_count={out_tokens}, prompt_eval_count={data.get("prompt_eval_count")}, '
-                        f'num_ctx={num_ctx}, model={model}'
-                    )
                 if len(self.endpoints) > 1 and idx > 0:
                     logger.info(f'Ollama call recovered on fallback endpoint #{idx}: {url}')
-                stop_reason = data.get('done_reason') or 'stop'
-                if tool_calls and stop_reason == 'stop':
-                    stop_reason = 'tool_use'
-                return {
-                    'content': [{'text': text}],
-                    'tool_calls': tool_calls,
-                    'usage': {
-                        'input_tokens': data.get('prompt_eval_count', 0),
-                        'output_tokens': out_tokens,
-                    },
-                    'stop_reason': stop_reason,
-                }
+                return _result_from_ollama_data(data, url, num_ctx, model, tools)
             except (requests.ConnectionError, requests.Timeout) as e:
                 last_exc = e
                 logger.warning(f'Ollama endpoint {url} unreachable ({type(e).__name__}); trying next')
@@ -361,6 +374,36 @@ class OllamaClient(BaseClient):
                 # Auth-style 4xx are deterministic and should fail immediately.
                 status = getattr(e.response, 'status_code', 0)
                 body = _response_excerpt(e.response)
+                if tools and _is_tool_grammar_error(status, body):
+                    retry_payload = dict(payload)
+                    retry_payload.pop('tools', None)
+                    logger.warning(
+                        'Ollama native tool call failed for model=%s on %s; '
+                        'retrying without native tools so DSML text can be parsed: %s',
+                        model, url, body,
+                    )
+                    try:
+                        retry = requests.post(
+                            f'{url}/api/chat', json=retry_payload, timeout=self.timeout,
+                        )
+                        retry.raise_for_status()
+                        data = retry.json()
+                        if len(self.endpoints) > 1 and idx > 0:
+                            logger.info(
+                                f'Ollama call recovered on fallback endpoint #{idx}: {url}'
+                            )
+                        return _result_from_ollama_data(data, url, num_ctx, model, tools)
+                    except (requests.ConnectionError, requests.Timeout) as retry_exc:
+                        last_exc = retry_exc
+                        logger.warning(
+                            'Ollama endpoint %s retry without native tools unreachable (%s); trying next',
+                            url, type(retry_exc).__name__,
+                        )
+                        continue
+                    except requests.HTTPError as retry_exc:
+                        e = retry_exc
+                        status = getattr(e.response, 'status_code', 0)
+                        body = _response_excerpt(e.response)
                 if status == 404:
                     # Update our model-map: this endpoint definitely does NOT
                     # have this model. Saves us re-trying it on subsequent calls

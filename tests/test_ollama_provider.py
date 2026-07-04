@@ -1,6 +1,7 @@
 """Tests for local Ollama provider response mapping."""
 
 from unittest.mock import Mock
+import requests
 
 
 def test_create_message_exposes_length_done_reason(monkeypatch):
@@ -158,3 +159,61 @@ def test_create_message_leaves_dsml_text_when_tool_was_not_offered(monkeypatch):
     assert result['content'] == [{'text': dsml}]
     assert result['tool_calls'] == []
     assert result['stop_reason'] == 'stop'
+
+
+def test_create_message_retries_without_native_tools_after_ollama_tool_grammar_error(
+    monkeypatch,
+):
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    tools = [{
+        'type': 'function',
+        'function': {
+            'name': 'ctx_execute',
+            'parameters': {'type': 'object'},
+        },
+    }]
+    failed = Mock()
+    failed.status_code = 400
+    failed.text = '{"error":"Value looks like object, but can\\\'t find closing \\\'}\\\' symbol"}'
+    failed_error = requests.HTTPError(response=failed)
+
+    first = Mock()
+    first.raise_for_status.side_effect = failed_error
+
+    dsml = (
+        '<｜｜DSML｜｜tool_calls>'
+        '<｜｜DSML｜｜invoke name="ctx_execute">'
+        '<｜｜DSML｜｜parameter name="cmd" string="true">git status'
+        '</｜｜DSML｜｜parameter>'
+        '</｜｜DSML｜｜invoke>'
+        '</｜｜DSML｜｜tool_calls>'
+    )
+    second = Mock()
+    second.raise_for_status.return_value = None
+    second.json.return_value = {
+        'message': {'content': dsml},
+        'prompt_eval_count': 12,
+        'eval_count': 4,
+        'done_reason': 'stop',
+    }
+    post = Mock(side_effect=[first, second])
+    monkeypatch.setattr('providers.ollama.requests.post', post)
+
+    result = client.create_message(
+        'ornith:latest',
+        [{'role': 'user', 'content': 'status'}],
+        max_tokens=123,
+        tools=tools,
+    )
+
+    assert post.call_count == 2
+    assert post.call_args_list[0].kwargs['json']['tools'] == tools
+    assert 'tools' not in post.call_args_list[1].kwargs['json']
+    assert result['tool_calls'] == [{
+        'id': 'call_0',
+        'name': 'ctx_execute',
+        'input': {'cmd': 'git status'},
+    }]
+    assert result['stop_reason'] == 'tool_use'

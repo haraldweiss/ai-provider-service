@@ -469,7 +469,10 @@ DeepSeek/DSML-Toolcall-Markup im Text aus; der Gateway konvertiert dieses
 Markup nur dann in strukturierte Toolcalls, wenn der Client das jeweilige Tool
 explizit in `tools` angeboten hat. Modelle ohne sauberen Toolcall-Support können
 weiterhin andere Tool-Syntax als Text halluzinieren; Clients sollten nur
-strukturierte `tool_calls` als ausführbare Aktionen behandeln.
+strukturierte `tool_calls` als ausführbare Aktionen behandeln. Wenn Ollama im
+nativen Toolmodus mit einem lokalen Modell einen Grammar-400 wie `Value looks
+like object, but can't find closing '}'` zurückgibt, retryt der Gateway den
+gleichen Ollama-Call ohne native `tools` und lässt die DSML-Konvertierung greifen.
 
 **OpenAI-Content-Parts:** `messages[].content` darf ein String oder eine
 OpenAI-kompatible Content-Part-Liste sein, z.B.
