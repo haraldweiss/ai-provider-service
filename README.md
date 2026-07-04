@@ -461,6 +461,13 @@ sie auf einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
 Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
 
+**Tool calls:** OpenAI-kompatible `tools` werden an Provider mit Tool-Support
+durchgereicht. Lokales `ollama` erhält sie über `/api/chat` und echte
+Ollama-Toolcalls werden als OpenAI-`message.tool_calls` bzw. Streaming-
+`delta.tool_calls` zurückgegeben. Modelle ohne sauberen Toolcall-Support können
+weiterhin Tool-Syntax als Text halluzinieren; Clients sollten nur strukturierte
+`tool_calls` als ausführbare Aktionen behandeln.
+
 **OpenAI-Content-Parts:** `messages[].content` darf ein String oder eine
 OpenAI-kompatible Content-Part-Liste sein, z.B.
 `[{"type":"text","text":"Hallo"}]`. Der Gateway normalisiert diese Parts vor

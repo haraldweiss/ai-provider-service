@@ -77,10 +77,14 @@ def _available_model_rows(user_id: str) -> list[dict]:
     return rows
 
 
-def _openai_stream_chunk(model: str, content: str, index: int = 0,
-                         finish_reason: str | None = None):
+def _openai_stream_chunk(
+    model: str, content: str = '', index: int = 0,
+    finish_reason: str | None = None, tool_calls: list[dict] | None = None,
+):
     """Build an OpenAI-style SSE chunk."""
     delta = {'role': 'assistant', 'content': content} if content else {}
+    if tool_calls:
+        delta['tool_calls'] = tool_calls
     choice: dict = {'index': index, 'delta': delta}
     if finish_reason:
         choice['finish_reason'] = finish_reason
@@ -102,6 +106,40 @@ def _openai_finish_reason(result_data: dict) -> str:
     if reason == 'content_filter':
         return 'content_filter'
     return 'stop'
+
+
+def _tool_arguments(value) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value or {})
+
+
+def _openai_tool_calls(result_data: dict) -> list[dict]:
+    calls = []
+    for call in result_data.get('tool_calls') or []:
+        if not isinstance(call, dict):
+            continue
+        name = call.get('name') or ''
+        if not name:
+            continue
+        calls.append({
+            'id': call.get('id') or f'call_{len(calls)}',
+            'type': 'function',
+            'function': {
+                'name': name,
+                'arguments': _tool_arguments(call.get('input', {})),
+            },
+        })
+    return calls
+
+
+def _openai_tool_call_deltas(tool_calls: list[dict]) -> list[dict]:
+    deltas = []
+    for index, call in enumerate(tool_calls):
+        item = dict(call)
+        item['index'] = index
+        deltas.append(item)
+    return deltas
 
 
 def _content_part_text(part) -> str:
@@ -169,6 +207,7 @@ def chat_completions():
     messages = _normalize_messages(body.get('messages', []))
     stream = body.get('stream', False)
     max_tokens = int(body.get('max_tokens', 4096))
+    tools = body.get('tools') if isinstance(body.get('tools'), list) else None
 
     if not model:
         return jsonify({'error': {'message': 'model is required', 'type': 'invalid_request'}}), 400
@@ -192,6 +231,7 @@ def chat_completions():
             messages=messages,
             max_tokens=max_tokens,
             origin_app=origin_app,
+            tools=tools,
         )
     except ProviderUnavailableError as e:
         logger.warning(f'v1/chat/completions provider unavailable: {e}')
@@ -207,6 +247,7 @@ def chat_completions():
     result_data = result.get('result', {})
     text = _extract_response_text(result_data)
     finish_reason = _openai_finish_reason(result_data)
+    tool_calls = _openai_tool_calls(result_data)
 
     usage = result_data.get('usage', {})
     openai_usage = {
@@ -221,9 +262,15 @@ def chat_completions():
             chunk = _openai_stream_chunk(model, '')
             yield f'data: {json.dumps(chunk)}\n\n'
 
-            # Content chunk (full response — backend is sync)
-            content_chunk = _openai_stream_chunk(model, text)
-            yield f'data: {json.dumps(content_chunk)}\n\n'
+            # Content/tool chunk (full response — backend is sync)
+            if text:
+                content_chunk = _openai_stream_chunk(model, text)
+                yield f'data: {json.dumps(content_chunk)}\n\n'
+            if tool_calls:
+                tool_chunk = _openai_stream_chunk(
+                    model, tool_calls=_openai_tool_call_deltas(tool_calls),
+                )
+                yield f'data: {json.dumps(tool_chunk)}\n\n'
 
             # Final chunk with usage
             finish = _openai_stream_chunk(model, '', finish_reason=finish_reason)
@@ -241,6 +288,10 @@ def chat_completions():
             },
         )
 
+    message = {'role': 'assistant', 'content': text}
+    if tool_calls:
+        message['tool_calls'] = tool_calls
+
     # Non-streaming response
     return jsonify({
         'id': f'chatcmpl-{uuid.uuid4().hex[:12]}',
@@ -249,7 +300,7 @@ def chat_completions():
         'model': model,
         'choices': [{
             'index': 0,
-            'message': {'role': 'assistant', 'content': text},
+            'message': message,
             'finish_reason': finish_reason,
         }],
         'usage': openai_usage,

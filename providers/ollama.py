@@ -10,6 +10,7 @@ endpoint mode is preserved for backward compatibility.
 
 from __future__ import annotations
 import itertools
+import json
 import logging
 import threading
 import time
@@ -31,6 +32,38 @@ def _response_excerpt(response: requests.Response | None, limit: int = 500) -> s
     if len(text) > limit:
         return text[:limit] + '...'
     return text
+
+
+def _tool_input(arguments):
+    if isinstance(arguments, dict):
+        return arguments
+    if isinstance(arguments, str):
+        try:
+            decoded = json.loads(arguments)
+            if isinstance(decoded, dict):
+                return decoded
+        except json.JSONDecodeError:
+            pass
+        return {'arguments': arguments}
+    return {}
+
+
+def _normalize_tool_calls(message: dict) -> list[dict]:
+    calls = []
+    for idx, call in enumerate(message.get('tool_calls') or []):
+        if not isinstance(call, dict):
+            continue
+        fn = call.get('function') if isinstance(call.get('function'), dict) else {}
+        name = fn.get('name') or call.get('name') or ''
+        if not name:
+            continue
+        arguments = fn.get('arguments', call.get('arguments', call.get('input', {})))
+        calls.append({
+            'id': call.get('id') or f'call_{idx}',
+            'name': name,
+            'input': _tool_input(arguments),
+        })
+    return calls
 
 
 def _resolve_endpoints(config: dict | None) -> List[str]:
@@ -195,6 +228,8 @@ class OllamaClient(BaseClient):
                 'num_ctx': num_ctx,
             },
         }
+        if tools:
+            payload['tools'] = tools
 
         # Try each endpoint in RR order. Endpoints that the model-map says
         # host this model are preferred; the rest go in as last-resort
@@ -212,9 +247,11 @@ class OllamaClient(BaseClient):
                 # eval_count = output tokens, prompt_eval_count = input tokens (wenn verfügbar).
                 # Wenn das Modell nichts generiert hat (eval_count=0), loggen wir die done_reason
                 # damit man später debuggen kann (length, stop, load, etc.).
-                text = data.get('message', {}).get('content', '')
+                message = data.get('message', {}) or {}
+                text = message.get('content', '')
+                tool_calls = _normalize_tool_calls(message)
                 out_tokens = data.get('eval_count', 0)
-                if out_tokens == 0 or not text:
+                if (out_tokens == 0 or not text) and not tool_calls:
                     logger.warning(
                         f'Ollama returned empty output ({url}): done_reason={data.get("done_reason")}, '
                         f'eval_count={out_tokens}, prompt_eval_count={data.get("prompt_eval_count")}, '
@@ -222,13 +259,17 @@ class OllamaClient(BaseClient):
                     )
                 if len(self.endpoints) > 1 and idx > 0:
                     logger.info(f'Ollama call recovered on fallback endpoint #{idx}: {url}')
+                stop_reason = data.get('done_reason') or 'stop'
+                if tool_calls and stop_reason == 'stop':
+                    stop_reason = 'tool_use'
                 return {
                     'content': [{'text': text}],
+                    'tool_calls': tool_calls,
                     'usage': {
                         'input_tokens': data.get('prompt_eval_count', 0),
                         'output_tokens': out_tokens,
                     },
-                    'stop_reason': data.get('done_reason') or 'stop',
+                    'stop_reason': stop_reason,
                 }
             except (requests.ConnectionError, requests.Timeout) as e:
                 last_exc = e

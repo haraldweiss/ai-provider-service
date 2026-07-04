@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Tests for OpenAI API endpoint /v1/chat/completions."""
 
+import json
+
 def test_list_models_is_generated_from_available_provider_models(app, client, monkeypatch):
     from config import Config
     import api.openai_api as openai_api
@@ -248,3 +250,146 @@ def test_chat_completions_maps_provider_length_stop_reason(app, client, monkeypa
 
     assert r.status_code == 200
     assert r.json['choices'][0]['finish_reason'] == 'length'
+
+
+def test_chat_completions_forwards_openai_tools_to_dispatch(app, client, monkeypatch):
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    tools = [{
+        'type': 'function',
+        'function': {
+            'name': 'read_file',
+            'description': 'Read a file',
+            'parameters': {
+                'type': 'object',
+                'properties': {'path': {'type': 'string'}},
+                'required': ['path'],
+            },
+        },
+    }]
+    captured_tools = None
+
+    def mock_dispatch(*args, **kwargs):
+        nonlocal captured_tools
+        captured_tools = kwargs.get('tools')
+        return {
+            'result': {
+                'content': [{'text': 'ok'}],
+                'usage': {'input_tokens': 1, 'output_tokens': 1},
+            },
+            'via': 'ollama',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': [{'role': 'user', 'content': 'read it'}],
+            'tools': tools,
+            'stream': False,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 200
+    assert captured_tools == tools
+
+
+def test_chat_completions_maps_provider_tool_calls_to_openai_response(
+    app, client, monkeypatch,
+):
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    def mock_dispatch(*args, **kwargs):
+        return {
+            'result': {
+                'content': [{'text': ''}],
+                'tool_calls': [{
+                    'id': 'tool_abc',
+                    'name': 'read_file',
+                    'input': {'path': '/tmp/example.txt'},
+                }],
+                'stop_reason': 'tool_use',
+                'usage': {'input_tokens': 10, 'output_tokens': 5},
+            },
+            'via': 'ollama',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': [{'role': 'user', 'content': 'read it'}],
+            'tools': [{'type': 'function', 'function': {'name': 'read_file'}}],
+            'stream': False,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 200
+    choice = r.json['choices'][0]
+    assert choice['finish_reason'] == 'tool_calls'
+    assert choice['message']['tool_calls'] == [{
+        'id': 'tool_abc',
+        'type': 'function',
+        'function': {
+            'name': 'read_file',
+            'arguments': json.dumps({'path': '/tmp/example.txt'}),
+        },
+    }]
+
+
+def test_streaming_chat_completions_emits_tool_call_delta(app, client, monkeypatch):
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    def mock_dispatch(*args, **kwargs):
+        return {
+            'result': {
+                'content': [{'text': ''}],
+                'tool_calls': [{
+                    'id': 'tool_abc',
+                    'name': 'read_file',
+                    'input': {'path': '/tmp/example.txt'},
+                }],
+                'stop_reason': 'tool_use',
+                'usage': {'input_tokens': 10, 'output_tokens': 5},
+            },
+            'via': 'ollama',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': [{'role': 'user', 'content': 'read it'}],
+            'tools': [{'type': 'function', 'function': {'name': 'read_file'}}],
+            'stream': True,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 200
+    body = r.data.decode()
+    assert '"tool_calls"' in body
+    assert '"finish_reason": "tool_calls"' in body
