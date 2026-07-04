@@ -726,14 +726,50 @@ oder einen eigenen Fehler zurückgeben konnte. Der saubere Error-Handling-Pfad
 4. `providers/ollama.py`: `num_ctx = min(num_ctx, 65536)` — cap verhindert extreme
    Kontexte (131k+) die auf M3 Max 36GB in Swap/Thrashing gehen → garantierter Timeout
 
-**Offen (DB-Konfiguration, kein Code):**
-- Fallback-Provider in ProviderConfig setzen (z.B. `fallback_provider=opencode`)
-- Queue aktivieren (`queue_when_unavailable=True`)
-- z.ai-Guthaben aufladen (Account-Problem, kein Code-Fix)
-
 **Verifikation:** `pytest -q` → 290/290 passed, keine neuen Warnungen.
   Image: `localhost/ai-provider:ebbf3bd` auf oracle-vm gebaut + deployed.
-  Live-Smoke: /health 200 (ollama/opencode/zai healthy), /v1/models 36 Modelle,
-  /v1/chat/completions ollama/mistral-nemo-cc → "2" in 1s.
+  Live-Smoke: /health 200, /v1/models 36 Modelle, chat ollama → OK.
   docker-compose.yml healthcheck timeout 15s→20s, start_period 15s→20s per
   592ba84 nachgereicht (git pull + rsync auf oracle-vm, kein Image-Neubau nötig).
+
+### Fallback-Model + Queue + Opencode-Failover konfiguriert (2026-07-04, Pi)
+
+**Was:** Queue und Fallback-Provider für alle Hauptnutzer aktiviert, neues
+`fallback_model`-Feld in ProviderConfig.
+
+**Problem:** ProviderConfig hatte nur `fallback_provider` aber kein
+`fallback_model`. Bei Ollama→opencode-Failover bekam opencode den
+Ollama-Modellnamen (z.B. `mistral-nemo-cc:latest`) → nie matchbar →
+Failover schlug fehl.
+
+**Fix (Commit `4341ee8`):**
+- `storage/models.py`: neues `fallback_model`-Feld (String(64), nullable)
+- `dispatcher.py`: `dispatch()` verwendet `pc.fallback_model` wenn gesetzt,
+  sonst Primary-Modellname (bisheriges Verhalten)
+
+**DB-Konfiguration (oracle-vm):**
+- `ALTER TABLE provider_configs ADD COLUMN fallback_model VARCHAR(64)`
+- Alle ollama-Configs: `fallback_provider=opencode`,
+  `fallback_model=deepseek-v4-flash-free`, `queue_when_unavailable=True`
+- pi-agent/zai: queue + fallback aktiviert
+- pi-agent/ollama: neu angelegt mit fallback + queue
+
+**Aktuelle Configs (10 rows):**
+
+| User | Provider | Fallback | Fallback-Model | Queue |
+|---|---|---|---|---|
+| test-user | ollama | opencode | deepseek-v4-flash-free | ✅ |
+| wolfini_de_web | ollama | opencode | deepseek-v4-flash-free | ✅ |
+| lisa | ollama | opencode | deepseek-v4-flash-free | ✅ |
+| wolfinichat | ollama | claude | (primary model) | ✅ |
+| pi-agent | ollama | opencode | deepseek-v4-flash-free | ✅ |
+| pi-agent | zai | opencode | deepseek-v4-flash-free | ✅ |
+
+**Noch offen:**
+- wolfinichat hat fallback=claude (kein claude-key auf VM → claude immer down).
+  Sollte ggf. auf opencode umgestellt werden.
+- z.ai-Guthaben aufladen (Account-Problem, kein Code-Fix)
+
+**Verifikation:** `pytest -q` → 290/290 passed.
+  Image: `localhost/ai-provider:4341ee8` auf oracle-vm deployed.
+  Live-Smoke: /health 200, /v1/chat/completions ollama/llama3.2:3b → "2" ✅
