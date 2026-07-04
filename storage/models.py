@@ -53,6 +53,7 @@ class ProviderConfig(db.Model):
     provider_id = db.Column(db.String(32), nullable=False)
     config_encrypted = db.Column(db.Text, nullable=False)
     fallback_provider = db.Column(db.String(32), nullable=True)
+    fallback_model = db.Column(db.String(64), nullable=True)
     queue_when_unavailable = db.Column(db.Boolean, default=True, nullable=False)
     queue_ttl_hours = db.Column(db.Integer, default=24, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
@@ -75,6 +76,7 @@ class ProviderConfig(db.Model):
             'provider_id': self.provider_id,
             'configured': True,
             'fallback_provider': self.fallback_provider,
+            'fallback_model': self.fallback_model,
             'queue_when_unavailable': self.queue_when_unavailable,
             'queue_ttl_hours': self.queue_ttl_hours,
             'has_api_key': bool(cfg.get('api_key')),

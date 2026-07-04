@@ -266,7 +266,7 @@ def dispatch(
         fallback_cfg = fallback_config_override  # None → _load_config aus DB
     else:
         fallback = pc.fallback_provider if pc else None
-        fallback_model = model
+        fallback_model = pc.fallback_model if pc and pc.fallback_model else model
         fallback_cfg = None
 
     primary_healthy = health_tracker.is_healthy(provider_id)
