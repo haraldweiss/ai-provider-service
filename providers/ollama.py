@@ -40,13 +40,19 @@ def _tool_input(arguments):
         return arguments
     if isinstance(arguments, str):
         try:
-            decoded = json.loads(arguments)
+            decoded = json.loads(_strip_code_fence(arguments))
             if isinstance(decoded, dict):
                 return decoded
         except json.JSONDecodeError:
             pass
         return {'arguments': arguments}
     return {}
+
+
+def _strip_code_fence(value: str) -> str:
+    text = value.strip()
+    match = re.fullmatch(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL | re.IGNORECASE)
+    return match.group(1).strip() if match else text
 
 
 def _allowed_tool_names(tools: list[dict] | None) -> set[str]:
@@ -80,32 +86,52 @@ def _normalize_tool_calls(message: dict, tools: list[dict] | None = None) -> lis
     return calls
 
 
+_DSML = r'(?:｜｜DSML｜｜|\|\|DSML\|\|)'
 _DSML_TOOL_CALLS_RE = re.compile(
-    r'<\s*｜｜DSML｜｜tool_calls\s*>(?P<body>.*?)'
-    r'</\s*｜｜DSML｜｜tool_calls\s*>',
+    rf'<\s*{_DSML}\s*tool_calls\s*>(?P<body>.*?)'
+    rf'</\s*{_DSML}\s*tool_calls\s*>',
     re.DOTALL,
 )
 _DSML_INVOKE_RE = re.compile(
-    r'<\s*｜｜DSML｜｜invoke\s+name="(?P<name>[^"]+)"\s*>'
-    r'(?P<body>.*?)</\s*｜｜DSML｜｜invoke\s*>',
+    rf'<\s*{_DSML}\s*invoke\s+name="(?P<name>[^"]+)"\s*>'
+    rf'(?P<body>.*?)</\s*{_DSML}\s*invoke\s*>',
     re.DOTALL,
 )
 _DSML_PARAMETER_RE = re.compile(
-    r'<\s*｜｜DSML｜｜parameter\s+name="(?P<name>[^"]+)"'
+    rf'<\s*{_DSML}\s*parameter\s+name="(?P<name>[^"]+)"'
     r'(?:\s+string="(?P<string>[^"]+)")?\s*>'
-    r'(?P<value>.*?)</\s*｜｜DSML｜｜parameter\s*>',
+    rf'(?P<value>.*?)</\s*{_DSML}\s*parameter\s*>',
     re.DOTALL,
 )
 
 
 def _dsml_param_value(raw: str, string_flag: str | None):
-    value = raw.strip()
+    value = _strip_code_fence(raw)
     if string_flag == 'false':
         try:
             return json.loads(value)
         except json.JSONDecodeError:
             return value
     return value
+
+
+def _append_dsml_invokes(block: str, allowed: set[str], calls: list[dict]) -> int:
+    before = len(calls)
+    for invoke in _DSML_INVOKE_RE.finditer(block):
+        name = invoke.group('name').strip()
+        if not name or (allowed and name not in allowed):
+            continue
+        params = {}
+        for param in _DSML_PARAMETER_RE.finditer(invoke.group('body')):
+            params[param.group('name')] = _dsml_param_value(
+                param.group('value'), param.group('string'),
+            )
+        calls.append({
+            'id': f'call_{len(calls)}',
+            'name': name,
+            'input': params,
+        })
+    return len(calls) - before
 
 
 def _extract_dsml_tool_calls(
@@ -117,26 +143,54 @@ def _extract_dsml_tool_calls(
     def replace_block(match: re.Match) -> str:
         before = len(calls)
         block = match.group('body')
-        for invoke in _DSML_INVOKE_RE.finditer(block):
-            name = invoke.group('name').strip()
-            if not name or (allowed and name not in allowed):
-                continue
-            params = {}
-            for param in _DSML_PARAMETER_RE.finditer(invoke.group('body')):
-                params[param.group('name')] = _dsml_param_value(
-                    param.group('value'), param.group('string'),
-                )
-            calls.append({
-                'id': f'call_{len(calls)}',
-                'name': name,
-                'input': params,
-            })
+        _append_dsml_invokes(block, allowed, calls)
         return '' if len(calls) > before else match.group(0)
 
     if not allowed:
         return text, []
-    cleaned = _DSML_TOOL_CALLS_RE.sub(replace_block, text).strip()
+    cleaned = _DSML_TOOL_CALLS_RE.sub(replace_block, text)
+
+    def replace_bare_invoke(match: re.Match) -> str:
+        before = len(calls)
+        _append_dsml_invokes(match.group(0), allowed, calls)
+        return '' if len(calls) > before else match.group(0)
+
+    cleaned = _DSML_INVOKE_RE.sub(replace_bare_invoke, cleaned).strip()
     return cleaned, calls
+
+
+def _extract_json_text_tool_calls(
+    text: str, tools: list[dict] | None = None,
+) -> tuple[str, list[dict]]:
+    allowed = _allowed_tool_names(tools)
+    if not allowed:
+        return text, []
+    candidate = _strip_code_fence(text)
+    try:
+        decoded = json.loads(candidate)
+    except json.JSONDecodeError:
+        return text, []
+    if not isinstance(decoded, dict):
+        return text, []
+
+    if isinstance(decoded.get('tool_calls'), list):
+        calls = _normalize_tool_calls(decoded, tools=tools)
+        return ('', calls) if calls else (text, [])
+
+    fn = decoded.get('function') if isinstance(decoded.get('function'), dict) else {}
+    name = fn.get('name') or decoded.get('name') or decoded.get('tool_name') or ''
+    if not name or name not in allowed:
+        return text, []
+    arguments = (
+        fn.get('arguments')
+        if 'arguments' in fn
+        else decoded.get('arguments', decoded.get('input', decoded.get('parameters', {})))
+    )
+    return '', [{
+        'id': decoded.get('id') or 'call_0',
+        'name': name,
+        'input': _tool_input(arguments),
+    }]
 
 
 def _is_tool_grammar_error(status: int, body: str) -> bool:
@@ -157,6 +211,8 @@ def _result_from_ollama_data(
     tool_calls = _normalize_tool_calls(message, tools=tools)
     if not tool_calls and text:
         text, tool_calls = _extract_dsml_tool_calls(text, tools=tools)
+    if not tool_calls and text:
+        text, tool_calls = _extract_json_text_tool_calls(text, tools=tools)
     out_tokens = data.get('eval_count', 0)
     if (out_tokens == 0 or not text) and not tool_calls:
         logger.warning(
