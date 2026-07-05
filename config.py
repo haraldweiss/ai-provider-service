@@ -51,6 +51,10 @@ class Config:
     ZAI_API_KEY = os.getenv('ZAI_API_KEY', '')
     ZAI_SERVER_KEY_ALLOWED_USERS = os.getenv('ZAI_SERVER_KEY_ALLOWED_USERS', '')
 
+    # openrouter.ai provider — OpenAI-compatible endpoint
+    OPENROUTER_BASE_URL = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+
     # Claude model list (comma-separated, overrides static KNOWN_MODELS)
     CLAUDE_MODEL_LIST = os.getenv('CLAUDE_MODEL_LIST', '')
 

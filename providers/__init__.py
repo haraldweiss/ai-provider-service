@@ -62,6 +62,13 @@ PROVIDER_REGISTRY = {
         'optional': ['api_endpoint'],
         'personal_api_key': True,
     },
+    'openrouter': {
+        'name': 'OpenRouter',
+        'system': True,
+        'requires': [],
+        'optional': ['api_key', 'api_endpoint'],
+        'personal_api_key': True,
+    },
 }
 
 
@@ -101,6 +108,9 @@ def get_client(provider_id: str, config: Optional[dict] = None) -> BaseClient:
     if provider_id == 'ollama_cloud':
         from providers.ollama_cloud import OllamaCloudClient
         return OllamaCloudClient(config)
+    if provider_id == 'openrouter':
+        from providers.openrouter import OpenRouterClient
+        return OpenRouterClient(config)
 
     raise ValueError(f"Unbekannter Provider: {provider_id}")
 
