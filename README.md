@@ -467,12 +467,19 @@ Ollama-Toolcalls werden als OpenAI-`message.tool_calls` bzw. Streaming-
 `delta.tool_calls` zurückgegeben. Einige lokale Modelle geben stattdessen
 DeepSeek/DSML-Toolcall-Markup im Text aus; der Gateway konvertiert dieses
 Markup nur dann in strukturierte Toolcalls, wenn der Client das jeweilige Tool
-explizit in `tools` angeboten hat. Modelle ohne sauberen Toolcall-Support können
-weiterhin andere Tool-Syntax als Text halluzinieren; Clients sollten nur
-strukturierte `tool_calls` als ausführbare Aktionen behandeln. Wenn Ollama im
-nativen Toolmodus mit einem lokalen Modell einen Grammar-400 wie `Value looks
-like object, but can't find closing '}'` zurückgibt, retryt der Gateway den
-gleichen Ollama-Call ohne native `tools` und lässt die DSML-Konvertierung greifen.
+explizit in `tools` angeboten hat. Der gleiche Guard gilt für lokale Modelle,
+die statt DSML ein einzelnes JSON-Objekt wie
+`{"name":"get_weather","arguments":{"city":"Berlin"}}` als normalen Text
+zurückgeben: nur angebotene Toolnamen werden in strukturierte Toolcalls
+umgewandelt, unbekannte Tools bleiben Text. DSML wird tolerant geparst
+(Wrapper optional, JSON-Codefences in Parametern erlaubt, ASCII-DSML-Tagvariante
+akzeptiert), aber ebenfalls nur für angebotene Tools. Modelle ohne sauberen
+Toolcall-Support können weiterhin andere Tool-Syntax als Text halluzinieren;
+Clients sollten nur strukturierte `tool_calls` als ausführbare Aktionen
+behandeln. Wenn Ollama im nativen Toolmodus mit einem lokalen Modell einen
+Grammar-400 wie `Value looks like object, but can't find closing '}'`
+zurückgibt, retryt der Gateway den gleichen Ollama-Call ohne native `tools` und
+lässt die DSML/JSON-Text-Konvertierung greifen.
 
 **OpenAI-Content-Parts:** `messages[].content` darf ein String oder eine
 OpenAI-kompatible Content-Part-Liste sein, z.B.

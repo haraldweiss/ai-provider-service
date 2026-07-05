@@ -143,6 +143,24 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Ollama Toolcall Text Parsing (2026-07-05, Codex)
+
+**Scope:** Improved local Ollama toolcall recovery for OpenAI-compatible
+`/v1/chat/completions` clients. Some local models return tool requests as plain
+assistant text instead of native Ollama `tool_calls`.
+
+**Behavior:** `providers/ollama.py` now converts a single JSON text object such
+as `{"name":"get_weather","arguments":{"city":"Berlin"}}` into a structured
+provider `tool_calls` entry, but only when the client offered that exact tool in
+the OpenAI `tools` array. Unknown/unoffered tools remain normal text. DSML
+parsing also accepts bare `<...invoke>` blocks without an outer `tool_calls`
+wrapper, JSON code fences inside parameter values, and an ASCII DSML marker
+variant. The offered-tool allowlist remains the hard safety boundary.
+
+**Verification:** RED first: `pytest tests/test_ollama_provider.py -q` → 2
+failed, 6 passed for the JSON-text and bare-DSML reproducers. GREEN:
+`pytest tests/test_ollama_provider.py tests/test_openai_api.py -q` → 18 passed.
+
 ### OpenAI v1 500-Fehler: structured content + Provider-Unavailable (2026-07-03, Codex)
 
 **Root cause:** Pi/OpenAI-kompatible Clients senden `messages[].content`
