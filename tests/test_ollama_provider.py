@@ -161,6 +161,121 @@ def test_create_message_leaves_dsml_text_when_tool_was_not_offered(monkeypatch):
     assert result['stop_reason'] == 'stop'
 
 
+def test_create_message_maps_json_text_tool_call_when_tool_was_offered(monkeypatch):
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    tools = [{
+        'type': 'function',
+        'function': {
+            'name': 'get_weather',
+            'parameters': {'type': 'object'},
+        },
+    }]
+
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        'message': {
+            'content': '{"name":"get_weather","arguments":{"city":"Berlin"}}',
+        },
+        'prompt_eval_count': 12,
+        'eval_count': 8,
+        'done_reason': 'stop',
+    }
+    monkeypatch.setattr('providers.ollama.requests.post', Mock(return_value=response))
+
+    result = client.create_message(
+        'dev-coder:latest',
+        [{'role': 'user', 'content': 'use weather'}],
+        max_tokens=123,
+        tools=tools,
+    )
+
+    assert result['content'] == [{'text': ''}]
+    assert result['tool_calls'] == [{
+        'id': 'call_0',
+        'name': 'get_weather',
+        'input': {'city': 'Berlin'},
+    }]
+    assert result['stop_reason'] == 'tool_use'
+
+
+def test_create_message_leaves_json_text_when_tool_was_not_offered(monkeypatch):
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    text = '{"name":"delete_file","arguments":{"path":"/tmp/a"}}'
+
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        'message': {'content': text},
+        'prompt_eval_count': 12,
+        'eval_count': 8,
+        'done_reason': 'stop',
+    }
+    monkeypatch.setattr('providers.ollama.requests.post', Mock(return_value=response))
+
+    result = client.create_message(
+        'dev-coder:latest',
+        [{'role': 'user', 'content': 'show json'}],
+        max_tokens=123,
+        tools=[{'type': 'function', 'function': {'name': 'get_weather'}}],
+    )
+
+    assert result['content'] == [{'text': text}]
+    assert result['tool_calls'] == []
+    assert result['stop_reason'] == 'stop'
+
+
+def test_create_message_maps_bare_dsml_invoke_with_codefence_param(monkeypatch):
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    tools = [{
+        'type': 'function',
+        'function': {
+            'name': 'ctx_batch_execute',
+            'parameters': {'type': 'object'},
+        },
+    }]
+    dsml = (
+        '<｜｜DSML｜｜invoke name="ctx_batch_execute">\n'
+        '<｜｜DSML｜｜parameter name="cmds" string="false">\n'
+        '```json\n'
+        '[{"cmd": "git status"}]\n'
+        '```\n'
+        '</｜｜DSML｜｜parameter>\n'
+        '</｜｜DSML｜｜invoke>'
+    )
+
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        'message': {'content': dsml},
+        'prompt_eval_count': 12,
+        'eval_count': 8,
+        'done_reason': 'stop',
+    }
+    monkeypatch.setattr('providers.ollama.requests.post', Mock(return_value=response))
+
+    result = client.create_message(
+        'ornith:latest',
+        [{'role': 'user', 'content': 'status'}],
+        max_tokens=123,
+        tools=tools,
+    )
+
+    assert result['content'] == [{'text': ''}]
+    assert result['tool_calls'] == [{
+        'id': 'call_0',
+        'name': 'ctx_batch_execute',
+        'input': {'cmds': [{'cmd': 'git status'}]},
+    }]
+    assert result['stop_reason'] == 'tool_use'
+
+
 def test_create_message_retries_without_native_tools_after_ollama_tool_grammar_error(
     monkeypatch,
 ):
