@@ -1,5 +1,7 @@
 """Tests for OpenRouterClient + factory registration."""
 
+import json
+import time
 from unittest.mock import MagicMock, patch
 import pytest
 from providers import get_client, PROVIDER_REGISTRY
@@ -82,6 +84,42 @@ def test_free_only_filters_models(mock_openai):
         models = c.get_models()
 
     assert models == ['free-model-a']
+
+
+def test_expired_free_model_cache_falls_back_when_refresh_fails(tmp_path, monkeypatch):
+    from providers import openrouter
+
+    cache_file = tmp_path / 'openrouter_free_models.json'
+    cache_file.write_text(json.dumps({
+        'ts': time.time() - openrouter._FREE_CACHE_TTL - 60,
+        'models': ['stale-free-model'],
+    }))
+    monkeypatch.setattr(openrouter, '_FREE_CACHE_FILE', str(cache_file))
+
+    client = MagicMock()
+    client.models.list.side_effect = Exception('API down')
+
+    assert openrouter._get_cached_free_models(client) == ['stale-free-model']
+
+
+@patch('providers.openrouter.OpenAI')
+def test_try_refresh_free_models_uses_default_openrouter_config(mock_openai):
+    from providers.openrouter import OpenRouterClient
+
+    mock_client_instance = MagicMock()
+    model = MagicMock()
+    model.id = 'free-model-a'
+    model.pricing = {'prompt': '0', 'completion': '0'}
+    mock_client_instance.models.list.return_value.data = [model]
+    mock_openai.return_value = mock_client_instance
+
+    with patch('providers.openrouter.Config.OPENROUTER_API_KEY', 'sk-openrouter'):
+        free = OpenRouterClient.try_refresh_free_models()
+
+    _, kwargs = mock_openai.call_args
+    assert kwargs['api_key'] == 'sk-openrouter'
+    assert kwargs['base_url'] == 'https://openrouter.ai/api/v1'
+    assert free == ['free-model-a']
 
 
 @patch('providers.openrouter.OpenAI')

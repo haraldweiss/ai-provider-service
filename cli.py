@@ -398,12 +398,22 @@ def vault_backup_command(output, db_only):
 
 @click.command('refresh-free-models')
 def refresh_free_models_command():
-    """Proactively refresh the opencode free model cache from the API."""
+    """Proactively refresh hosted free model caches from provider APIs."""
     from providers.opencode import OpencodeClient
-    click.echo('Refreshing opencode free models ...')
-    free = OpencodeClient.try_refresh_free_models()
-    if free:
-        click.echo(f'{len(free)} free models cached: {", ".join(free)}')
-    else:
-        click.echo('No free models found (check config)', err=True)
+    from providers.openrouter import OpenRouterClient
+
+    refreshed = []
+    for name, client_cls in (
+        ('opencode', OpencodeClient),
+        ('openrouter', OpenRouterClient),
+    ):
+        click.echo(f'Refreshing {name} free models ...')
+        free = client_cls.try_refresh_free_models()
+        if free:
+            click.echo(f'{name}: {len(free)} free models cached: {", ".join(free)}')
+            refreshed.append(name)
+        else:
+            click.echo(f'{name}: no free models found (check config)', err=True)
+
+    if not refreshed:
         raise click.Abort()

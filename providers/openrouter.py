@@ -36,28 +36,34 @@ def _is_free_model(api_model) -> bool:
 def _get_cached_free_models(client: OpenAI) -> list[str]:
     """Fetch free models from cache or API."""
     now = time.time()
+    stale_models: list[str] = []
     try:
         if os.path.exists(_FREE_CACHE_FILE):
             with open(_FREE_CACHE_FILE) as f:
                 cached = json.load(f)
+            stale_models = cached.get('models', [])
             if now - cached.get('ts', 0) < _FREE_CACHE_TTL:
-                return cached['models']
+                return stale_models
     except Exception:
         pass
 
-    return _refresh_free_models(client)
+    return _refresh_free_models(client, fallback=stale_models)
 
 
-def _refresh_free_models(client: OpenAI) -> list[str]:
+def _iter_model_entries(raw) -> list:
+    return list(getattr(raw, 'data', raw))
+
+
+def _refresh_free_models(client: OpenAI, fallback: list[str] | None = None) -> list[str]:
     """Fetch current free models from OpenRouter API, update cache."""
     try:
         raw = client.models.list()
         free_models = sorted(
-            m.id for m in raw if _is_free_model(m)
+            m.id for m in _iter_model_entries(raw) if _is_free_model(m)
         )
     except Exception as e:
         logger.warning('OpenRouter free model discovery failed: %s', e)
-        return []
+        return fallback or []
 
     try:
         os.makedirs(os.path.dirname(_FREE_CACHE_FILE) or '.', exist_ok=True)
@@ -97,6 +103,16 @@ class OpenRouterClient(BaseClient):
         if self._free_models is None:
             self._free_models = _get_cached_free_models(self.client)
         return self._free_models
+
+    @classmethod
+    def try_refresh_free_models(cls) -> list[str]:
+        """Proactive refresh using optional OPENROUTER_API_KEY."""
+        client = OpenAI(
+            api_key=Config.OPENROUTER_API_KEY or None,
+            base_url=Config.OPENROUTER_BASE_URL,
+            _enforce_credentials=False,
+        )
+        return _refresh_free_models(client)
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600,
                        *, tools: list[dict] | None = None) -> dict:

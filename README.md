@@ -444,9 +444,13 @@ Key-pflichtige Provider ohne persönlichen oder erlaubten Server-Key werden
 ebenfalls ausgelassen; `hidden_providers` + `availability_hint` geben Clients
 einen neutralen Hinweis, dass nach Hinterlegen eines passenden API-Keys mehr
 Modelle verfügbar sind.
-**opencode free-only:** Ohne persönlichen opencode-API-Key werden nur Free-Modelle
-gelistet (ca. 5 statt 52). Lokale Ollama-Modelle erscheinen automatisch, sobald
-sie auf einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).
+**Free-only Provider:** Ohne persönlichen opencode-API-Key werden bei opencode
+nur Free-Modelle gelistet (ca. 5 statt 52). OpenRouter ist ohne persönlichen Key
+ebenfalls sichtbar, listet dann aber nur dynamisch erkannte Free-Modelle.
+`flask refresh-free-models` aktualisiert beide Free-Modell-Caches; OpenRouter
+fällt bei einem Refresh-Fehler auf den letzten Cache zurück. Lokale
+Ollama-Modelle erscheinen automatisch, sobald sie auf einem Tunnel-Backend
+verfügbar sind (z.B. `ollama/ornith:latest`).
 
  Das Model-Format ist `provider/model_name`, z.B.:
 

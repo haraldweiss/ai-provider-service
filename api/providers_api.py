@@ -79,16 +79,16 @@ def get_models(provider_id):
     user_id = request.args.get('user_id')
     cfg = {}
     if user_id:
+        from dispatcher import _load_config
+
         if provider_requires_user_key(user_id, provider_id):
             return jsonify({
                 'error': 'provider_requires_api_key',
                 'configured': False,
                 'message': 'Add a personal API key to enable this provider.',
             }), 400
-        pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
-        if pc:
-            cfg = pc.get_config()
-        elif not PROVIDER_REGISTRY[provider_id]['system']:
+        cfg = _load_config(user_id, provider_id)
+        if cfg is None:
             return jsonify({'error': 'Provider nicht konfiguriert', 'configured': False}), 400
 
     try:

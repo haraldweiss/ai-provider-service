@@ -14,6 +14,8 @@ def _server_key_available_for_user(user_id: str, provider_id: str) -> bool:
         return bool(Config.ANTHROPIC_API_KEY) and _is_claude_server_key_allowed(user_id)
     if provider_id == 'opencode':
         return bool(Config.OPENCODE_API_KEY)
+    if provider_id == 'openrouter':
+        return True
     if provider_id == 'zai':
         return bool(Config.ZAI_API_KEY) and _is_zai_server_key_allowed(user_id)
     return False
