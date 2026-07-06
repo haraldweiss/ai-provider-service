@@ -143,6 +143,46 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### OpenRouter Free-Model Discovery + Deploy (2026-07-06, Codex)
+
+**Scope:** OpenRouter is now a first-class free-capable provider for users
+without a personal API key. `/v1/models` and `/providers/openrouter/models`
+use dispatcher free-only config (`_free_only=True`) for unkeyed users; personal
+OpenRouter keys still unlock the full model list.
+
+**Behavior:** `providers/openrouter.py` discovers free models dynamically from
+OpenRouter `/models` by checking zero prompt/completion pricing, caches the
+result in `/tmp/openrouter_free_models.json` for 24h, and falls back to the
+last stale cache when refresh fails instead of returning an empty list. `flask
+refresh-free-models` now refreshes both opencode and OpenRouter free-model
+caches. README documents the free-only provider behavior.
+
+**Deploy:** Commit `4cf648c` pushed to `origin/main` and deployed on
+oracle-vm. `/opt/ai-provider-service` is at
+`4cf648c34afd2c0ae7f0f1c34d576ff2da6e13b9`; image
+`localhost/ai-provider:4cf648c` was built via `./build.sh 4cf648c`, and the
+container was recreated with `sudo docker compose up -d --force-recreate
+ai-provider`. Docker reports `health=healthy`; `/health` returns `status=ok`
+with OpenRouter healthy.
+
+**Live smoke:** Authenticated `/providers?user_id=lisa` showed
+`openrouter_visible=True` and `openrouter_hidden=False`. Authenticated
+`/providers/openrouter/models?user_id=lisa` returned `count=27`,
+`free_count=27`; logs showed `OpenRouter free-only mode: 27/342 models shown`.
+
+**Operational note:** Before deploy, `/opt/ai-provider-service` had older dirty
+OpenRouter drift (`providers/openrouter.py`, tests, and related config files).
+It was stashed on the server as
+`stash@{0}: On main: deploy-pre-4cf648c-openrouter-drift` before fast-forwarding
+to `origin/main`.
+
+**Verification:** RED first:
+`pytest tests/test_openrouter_provider.py tests/test_provider_visibility.py
+tests/test_refresh_free_models_cli.py -q` → 6 failed, 12 passed for the three
+caveats. GREEN: same focused command → 18 passed. Full suite: `pytest -q` →
+321 passed, 1 existing SQLAlchemy `Query.get()` warning. `git diff --check`
+clean.
+
 ### Ollama Toolcall Text Parsing (2026-07-05, Codex)
 
 **Scope:** Improved local Ollama toolcall recovery for OpenAI-compatible
