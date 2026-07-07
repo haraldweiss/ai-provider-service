@@ -82,12 +82,12 @@ def _openai_stream_chunk(
     finish_reason: str | None = None, tool_calls: list[dict] | None = None,
 ):
     """Build an OpenAI-style SSE chunk."""
-    delta = {'role': 'assistant', 'content': content} if content else {}
+    delta = {}
+    if content or (finish_reason is None and not tool_calls):
+        delta = {'role': 'assistant', 'content': content}
     if tool_calls:
         delta['tool_calls'] = tool_calls
-    choice: dict = {'index': index, 'delta': delta}
-    if finish_reason:
-        choice['finish_reason'] = finish_reason
+    choice: dict = {'index': index, 'delta': delta, 'finish_reason': finish_reason}
     return {
         'id': f'chatcmpl-{uuid.uuid4().hex[:12]}',
         'object': 'chat.completion.chunk',

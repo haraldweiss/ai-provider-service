@@ -153,6 +153,31 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### OpenAI-Compatible SSE Finish Reason Compatibility (2026-07-07, Codex)
+
+**Scope:** Fixed Pi/OpenAI-compatible streaming failures for requests such as
+`model=opencode/hy3-free` that surfaced client-side as
+`Error: Stream ended without finish_reason` / retry failed after 3 attempts.
+
+**Root cause:** The gateway generated a final SSE chunk with
+`finish_reason="stop"`, but interim chunks omitted the `finish_reason` key
+entirely and the initial role chunk had an empty `delta`. Public HTTPS
+reproduction for `opencode/hy3-free` showed HTTP 200 from opencode and a final
+finish chunk, so the provider was not failing; the stream shape was too loose
+for stricter OpenAI-compatible parsers.
+
+**Behavior:** `api/openai_api.py` now includes `finish_reason: null` on interim
+stream chunks and emits an initial assistant role chunk with
+`{"role":"assistant","content":""}`. The final chunk still carries the concrete
+finish reason (`stop`, `tool_calls`, etc.) and usage.
+
+**Verification before deploy:** RED first:
+`pytest tests/test_openai_api.py::test_streaming_chat_completions_emits_finish_reason_on_every_choice -q`
+failed on the empty initial delta. GREEN: same focused test → 1 passed;
+`pytest tests/test_openai_api.py tests/test_dispatcher_tools_kwarg.py -q` →
+17 passed; full suite `pytest -q` → 324 passed, 1 existing SQLAlchemy
+`Query.get()` warning; `git diff --check` clean.
+
 ### Ollama XML Toolcall Text Parsing + Deploy (2026-07-07, Codex)
 
 **Scope:** Local Ollama models can now recover Claude-style XML tool requests

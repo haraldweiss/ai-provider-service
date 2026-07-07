@@ -393,3 +393,55 @@ def test_streaming_chat_completions_emits_tool_call_delta(app, client, monkeypat
     body = r.data.decode()
     assert '"tool_calls"' in body
     assert '"finish_reason": "tool_calls"' in body
+
+
+def test_streaming_chat_completions_emits_finish_reason_on_every_choice(
+    app, client, monkeypatch,
+):
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    def mock_dispatch(*args, **kwargs):
+        return {
+            'result': {
+                'content': [{'text': 'Hallo'}],
+                'stop_reason': 'stop',
+                'usage': {'input_tokens': 10, 'output_tokens': 5},
+            },
+            'via': 'opencode',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'opencode/hy3-free',
+            'messages': [{'role': 'user', 'content': 'Hallo'}],
+            'stream': True,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 200
+    events = []
+    for block in r.data.decode().split('\n\n'):
+        line = block.strip()
+        if not line or line == 'data: [DONE]':
+            continue
+        assert line.startswith('data: ')
+        events.append(json.loads(line[len('data: '):]))
+
+    assert events[0]['choices'][0]['delta'] == {
+        'role': 'assistant',
+        'content': '',
+    }
+    assert [event['choices'][0]['finish_reason'] for event in events] == [
+        None,
+        None,
+        'stop',
+    ]

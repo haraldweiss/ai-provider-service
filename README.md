@@ -464,6 +464,11 @@ verfügbar sind (z.B. `ollama/ornith:latest`).
 
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
 Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
+Jedes `choices[]`-Element enthält ein `finish_reason`-Feld; Zwischenchunks
+setzen es auf `null`, der Abschlusschunk auf z.B. `"stop"` oder
+`"tool_calls"`. Der erste Chunk enthält außerdem `delta.role="assistant"` und
+`delta.content=""`, damit strengere OpenAI-kompatible Stream-Parser den Stream
+nicht als "ended without finish_reason" verwerfen.
 
 **Tool calls:** OpenAI-kompatible `tools` werden an Provider mit Tool-Support
 durchgereicht. Lokales `ollama` erhält sie über `/api/chat` und echte
