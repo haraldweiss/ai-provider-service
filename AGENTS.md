@@ -865,3 +865,71 @@ Failover schlug fehl.
 **Verifikation:** `pytest -q` → 290/290 passed.
   Image: `localhost/ai-provider:4341ee8` auf oracle-vm deployed.
   Live-Smoke: /health 200, /v1/chat/completions ollama/llama3.2:3b → "2" ✅
+
+### Local Queue Proxy + Ollama launchd + Pi Extension Safety Net (2026-07-07, Pi)
+
+**Scope:** ISP-Ausfall-Resilienz für den lokalen Mac. Der ai-provider-service läuft auf oracle-vm und ist bei ISP-Ausfall vom Mac aus nicht erreichbar. Drei neue Komponenten auf dem MacBook puffern den Ausfall lokal:
+
+**Komponente 1: `~/bin/ai-provider-local-proxy.py`** — Flask-Proxy auf Port 8766, managed via launchd (`com.haraldweiss.ai-provider-proxy`):
+- Normal: transparentes Forwarding aller Requests an das Gateway (https://ai-provider-service.wolfinisoftware.de)
+- ISP down + lokales Ollama läuft: `ollama/*`-Modelle werden direkt an localhost:11434 geroutet
+- ISP down + Ollama aus: alle Requests in SQLite-Queue (~/.ai-provider-proxy/queue.db, 24h TTL)
+- ISP down + Cloud-Only-Modelle (claude/*, zai/*, opencode/*): ebenfalls in Queue
+- Recovery: Background-Health-Checker (alle 30s) erkennt Gateway-Wiederkehr und drain die Queue
+- /v1/models: cached (24h TTL) + merged mit lokalen Ollama-Modellen bei Ausfall
+- /health: zeigt gateway_healthy + local_ollama_healthy Status
+
+**Komponente 2: `~/bin/ollama-launchd-wrapper.sh`** — launchd-Wrapper für Ollama, da `~/.ollama` ein Symlink auf externe SSD ist (`/Volumes/externeSSD/ollama-data`):
+- Wrapper wartet bis zu 30s auf den SSD-Mount, startet dann `ollama serve`
+- Ohne SSD: terminiert sauber, launchd wiederholt nach 30s ThrottleInterval
+- launchd-Agent: `com.haraldweiss.ollama` (ersetzt `homebrew.mxcl.ollama`, das war disabled)
+
+**Komponente 3: Pi Extension (`~/.pi/agent/extensions/ai-provider-service.ts`)** — Safety Net:
+- Wenn der Proxy/Gateway nicht erreichbar ist (`/v1/models` fetch failed), wird `usedFallback=true` gesetzt
+- Dann wird versucht, lokales Ollama direkt via `http://localhost:11434/api/tags` zu erreichen
+- Bei Erfolg: Registrierung eines zweiten Pi-Providers `ollama-local` mit `baseUrl=http://localhost:11434/v1`
+- Kein SERVICE_TOKEN nötig (lokaler Zugriff)
+- In Pi via Ctrl+L als separater Provider sichtbar
+
+**Konfigurationsänderung:**
+- `~/.pi/agent/.env`: `AI_PROVIDER_SERVICE_URL=http://localhost:8766` (vorher: `https://ai-provider-service.wolfinisoftware.de`)
+
+**Kein Deploy auf oracle-vm nötig** — alle Komponenten sind lokal auf dem MacBook.
+
+**Live-Smoke getestet:**
+- Proxy /health → 200 (gateway_healthy=true, local_ollama_healthy=false)
+- Proxy /v1/models → 41 Modelle (durchgereicht)
+- Proxy /v1/chat/completions → ollama/qwen3.6 Antwort via Gateway ✅
+- Proxy läuft via launchd (threaded=True für Concurrent Access)
+- Queue-DB initialisiert (0 rows)
+- Ollama-Wrapper: loggt "Mount point not available" wenn SSD nicht connected, terminiert sauber
+
+**Betrieb:**
+```bash
+# Proxy-Logs
+tail -f ~/Library/Logs/ai-provider-proxy.err
+
+# Ollama-Wrapper-Logs
+tail -f /opt/homebrew/var/log/ollama-wrapper.log
+
+# Queue-Status
+curl http://localhost:8766/v1/queue/QUEUE_ID
+
+# Proxy neustarten (nach Code-Änderung)
+launchctl kickstart -k gui/$(id -u)/com.haraldweiss.ai-provider-proxy
+
+# Ollama neustarten
+launchctl kickstart -k gui/$(id -u)/com.haraldweiss.ollama
+
+# Direkter Zugriff auf den Proxy (für Tests ohne Pi)
+curl http://localhost:8766/health
+curl http://localhost:8766/v1/models
+```
+
+**Nach ISP-Recovery:** Queue wird automatisch drained (max 10 Requests/Cycle, alle 30s). Fertig verarbeitete Items bleiben als 'done' in der Queue-DB (für Debugging).
+
+**Offen/Beachte:**
+- Pi muss einmal neugestartet werden, um neue .env-URL + Extension zu laden
+- Lokales Ollama läuft nur wenn die externe SSD angeschlossen ist (dann automatisch via launchd)
+- Proxy verwendet Flask-Dev-Server (für Single-User-Betrieb ausreichend)
+- Queue läuft nur, während der Proxy-Prozess lebt (keine persistente Queue bei Reboot — die Items gehen dann verloren, da nur in Memory-Queue)
