@@ -16,6 +16,7 @@ import re
 import threading
 import time
 from typing import List, Optional, Set
+from xml.etree import ElementTree
 
 import requests
 
@@ -103,6 +104,7 @@ _DSML_PARAMETER_RE = re.compile(
     rf'(?P<value>.*?)</\s*{_DSML}\s*parameter\s*>',
     re.DOTALL,
 )
+_XML_TOOL_NAME_RE = re.compile(r'^[A-Za-z_][\w.-]*$')
 
 
 def _dsml_param_value(raw: str, string_flag: str | None):
@@ -193,6 +195,62 @@ def _extract_json_text_tool_calls(
     }]
 
 
+def _xml_element_input(element: ElementTree.Element) -> dict:
+    params = {
+        name: value
+        for name, value in element.attrib.items()
+        if _XML_TOOL_NAME_RE.fullmatch(name)
+    }
+    for child in list(element):
+        tag = child.tag if isinstance(child.tag, str) else ''
+        if not _XML_TOOL_NAME_RE.fullmatch(tag):
+            continue
+        value = ''.join(child.itertext()).strip()
+        params[tag] = _dsml_param_value(value, child.attrib.get('string'))
+    if params:
+        return params
+    return _tool_input(''.join(element.itertext()).strip())
+
+
+def _extract_xml_text_tool_calls(
+    text: str, tools: list[dict] | None = None,
+) -> tuple[str, list[dict]]:
+    allowed = _allowed_tool_names(tools)
+    names = sorted(
+        (name for name in allowed if _XML_TOOL_NAME_RE.fullmatch(name)),
+        key=len,
+        reverse=True,
+    )
+    if not names:
+        return text, []
+
+    tag_names = '|'.join(re.escape(name) for name in names)
+    xml_tool_re = re.compile(
+        rf'<(?P<name>{tag_names})(?:\s[^>]*)?>(?P<body>.*?)</(?P=name)>',
+        re.DOTALL,
+    )
+    calls: list[dict] = []
+
+    def replace_tool(match: re.Match) -> str:
+        raw = match.group(0)
+        try:
+            element = ElementTree.fromstring(raw)
+        except ElementTree.ParseError:
+            return raw
+        name = element.tag if isinstance(element.tag, str) else ''
+        if name not in allowed:
+            return raw
+        calls.append({
+            'id': f'call_{len(calls)}',
+            'name': name,
+            'input': _xml_element_input(element),
+        })
+        return ''
+
+    cleaned = xml_tool_re.sub(replace_tool, text).strip()
+    return cleaned, calls
+
+
 def _is_tool_grammar_error(status: int, body: str) -> bool:
     if status != 400:
         return False
@@ -211,6 +269,8 @@ def _result_from_ollama_data(
     tool_calls = _normalize_tool_calls(message, tools=tools)
     if not tool_calls and text:
         text, tool_calls = _extract_dsml_tool_calls(text, tools=tools)
+    if not tool_calls and text:
+        text, tool_calls = _extract_xml_text_tool_calls(text, tools=tools)
     if not tool_calls and text:
         text, tool_calls = _extract_json_text_tool_calls(text, tools=tools)
     out_tokens = data.get('eval_count', 0)

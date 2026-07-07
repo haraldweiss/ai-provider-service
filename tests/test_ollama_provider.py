@@ -201,6 +201,80 @@ def test_create_message_maps_json_text_tool_call_when_tool_was_offered(monkeypat
     assert result['stop_reason'] == 'tool_use'
 
 
+def test_create_message_maps_xml_text_tool_call_when_tool_was_offered(monkeypatch):
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    tools = [{
+        'type': 'function',
+        'function': {
+            'name': 'read',
+            'parameters': {'type': 'object'},
+        },
+    }]
+    text = (
+        'Let me read the file.\n\n'
+        '<read>\n'
+        '<path>/Users/haraldweiss/projects/ai-provider-service/dispatcher.py</path>\n'
+        '</read>'
+    )
+
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        'message': {'content': text},
+        'prompt_eval_count': 12,
+        'eval_count': 8,
+        'done_reason': 'stop',
+    }
+    monkeypatch.setattr('providers.ollama.requests.post', Mock(return_value=response))
+
+    result = client.create_message(
+        'dev-coder:latest',
+        [{'role': 'user', 'content': 'inspect dispatcher'}],
+        max_tokens=123,
+        tools=tools,
+    )
+
+    assert result['content'] == [{'text': 'Let me read the file.'}]
+    assert result['tool_calls'] == [{
+        'id': 'call_0',
+        'name': 'read',
+        'input': {
+            'path': '/Users/haraldweiss/projects/ai-provider-service/dispatcher.py',
+        },
+    }]
+    assert result['stop_reason'] == 'tool_use'
+
+
+def test_create_message_leaves_xml_text_when_tool_was_not_offered(monkeypatch):
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    text = '<read><path>/tmp/secret.txt</path></read>'
+
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        'message': {'content': text},
+        'prompt_eval_count': 12,
+        'eval_count': 8,
+        'done_reason': 'stop',
+    }
+    monkeypatch.setattr('providers.ollama.requests.post', Mock(return_value=response))
+
+    result = client.create_message(
+        'dev-coder:latest',
+        [{'role': 'user', 'content': 'show xml'}],
+        max_tokens=123,
+        tools=[{'type': 'function', 'function': {'name': 'get_weather'}}],
+    )
+
+    assert result['content'] == [{'text': text}]
+    assert result['tool_calls'] == []
+    assert result['stop_reason'] == 'stop'
+
+
 def test_create_message_leaves_json_text_when_tool_was_not_offered(monkeypatch):
     from providers.ollama import OllamaClient
 
