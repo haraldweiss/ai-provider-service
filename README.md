@@ -474,10 +474,13 @@ Markup nur dann in strukturierte Toolcalls, wenn der Client das jeweilige Tool
 explizit in `tools` angeboten hat. Der gleiche Guard gilt für lokale Modelle,
 die statt DSML ein einzelnes JSON-Objekt wie
 `{"name":"get_weather","arguments":{"city":"Berlin"}}` als normalen Text
-zurückgeben: nur angebotene Toolnamen werden in strukturierte Toolcalls
-umgewandelt, unbekannte Tools bleiben Text. DSML wird tolerant geparst
-(Wrapper optional, JSON-Codefences in Parametern erlaubt, ASCII-DSML-Tagvariante
-akzeptiert), aber ebenfalls nur für angebotene Tools. Modelle ohne sauberen
+zurückgeben, oder Claude-artige XML-Tags wie
+`<read><path>/tmp/example.txt</path></read>` ausgeben: nur angebotene
+Toolnamen werden in strukturierte Toolcalls umgewandelt, unbekannte Tools
+bleiben Text. DSML wird tolerant geparst (Wrapper optional, JSON-Codefences in
+Parametern erlaubt, ASCII-DSML-Tagvariante akzeptiert), aber ebenfalls nur für
+angebotene Tools. XML-Text-Toolcalls muessen wohlgeformt sein; Attribute und
+direkte Child-Tags werden als Argumente uebernommen. Modelle ohne sauberen
 Toolcall-Support können weiterhin andere Tool-Syntax als Text halluzinieren;
 Clients sollten nur strukturierte `tool_calls` als ausführbare Aktionen
 behandeln. Wenn Ollama im nativen Toolmodus mit einem lokalen Modell einen

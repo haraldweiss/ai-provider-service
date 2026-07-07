@@ -84,6 +84,16 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - User tokens must reject a different asserted path/query/body `user_id`. Token rotation or revocation must invalidate existing settings sessions.
 
 ---
+### 3.9 Project and global skills must be used when they provide an advantage
+
+Before modifying configuration, deploying code, or performing any operational task:
+1. Run `skill_manage view` to list all available skills (global + project-scoped).
+2. If an existing skill covers the task — **use it**. Skills contain tested workflows and prevent known errors.
+3. Do not skip a skill because "this is slightly different" — adapt, don't re-invent.
+
+This rule applies to **every AI agent** working in this repo. When a skill exists for a task and the agent does not use it, that is a violation.
+
+---
 
 ## 4. Verification standards
 
@@ -142,6 +152,31 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 ---
 
 ## 7. Handoff zone
+
+### Ollama XML Toolcall Text Parsing + Deploy (2026-07-07, Codex)
+
+**Scope:** Local Ollama models can now recover Claude-style XML tool requests
+that are emitted as assistant text instead of native Ollama `tool_calls`.
+Observed symptom was literal output such as
+`<read><path>/Users/.../dispatcher.py</path></read>`, causing clients to see a
+claim that a tool was used without receiving a structured tool call.
+
+**Behavior:** `providers/ollama.py` now converts well-formed XML text blocks
+whose root tag exactly matches an offered OpenAI `tools[].function.name` into a
+structured provider `tool_calls` entry. Direct child tags and safe attributes
+become tool input arguments, e.g. `<read><path>...</path></read>` maps to
+`{"name":"read","input":{"path":"..."}}`. Unknown or unoffered tools remain
+plain assistant text; malformed XML remains text. This extends the existing
+DSML/JSON text recovery while keeping the offered-tool allowlist as the hard
+safety boundary.
+
+**Verification before deploy:** RED first:
+`pytest tests/test_ollama_provider.py::test_create_message_maps_xml_text_tool_call_when_tool_was_offered -q`
+failed before the fix. GREEN: same focused test → 1 passed;
+`pytest tests/test_ollama_provider.py -q` → 10 passed;
+`pytest tests/test_openai_api.py tests/test_dispatcher_tools_kwarg.py -q` →
+16 passed; full suite `pytest -q` → 323 passed, 1 existing SQLAlchemy
+`Query.get()` warning; `git diff --check` clean.
 
 ### OpenRouter Free-Model Discovery + Deploy (2026-07-06, Codex)
 
