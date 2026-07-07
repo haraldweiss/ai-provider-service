@@ -990,3 +990,20 @@ curl http://localhost:8766/v1/models
 - Launchd list clean — only `com.ollama.ollama` runs `ollama serve`
 
 **Kein Deploy auf oracle-vm nötig** — alles lokal auf dem MacBook.
+
+### Mac Mini Proxy Setup (2026-07-07, opencode)
+
+**Scope:** Gleicher Proxy + Pi-Config auch auf dem Mac Mini installiert, damit Pi dort
+ebenfalls lokal-first für Ollama routet (statt übers Gateway via reverse-SSH-Tunnel).
+
+**Installiert:**
+- `~/bin/ai-provider-local-proxy.py` (via scp from MacBook)
+- `~/.ai-provider-proxy-venv/` (venv mit flask + requests)
+- `~/Library/LaunchAgents/com.haraldweiss.ai-provider-proxy.plist` (launchd, Python aus venv)
+- `~/.pi/agent/.env`: `AI_PROVIDER_SERVICE_URL=http://localhost:8766` (vorher: direktes Gateway)
+
+**Verifiziert:**
+- Proxy /health → 200 (gateway_healthy=true, local_ollama_healthy=true)
+- 59 Models via Proxy
+- `ollama/ornith:latest` → lokal (1. Request lädt Modell, danach <1s)
+- `opencode/deepseek-v4-flash-free` → Gateway (~1.7s)
