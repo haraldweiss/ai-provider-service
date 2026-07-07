@@ -968,3 +968,25 @@ curl http://localhost:8766/v1/models
 - Lokales Ollama läuft nur wenn die externe SSD angeschlossen ist (dann automatisch via launchd)
 - Proxy verwendet Flask-Dev-Server (für Single-User-Betrieb ausreichend)
 - Queue läuft nur, während der Proxy-Prozess lebt (keine persistente Queue bei Reboot — die Items gehen dann verloren, da nur in Memory-Queue)
+
+### Local Proxy: Local-First Ollama Routing + Launchd Cleanup (2026-07-07, opencode)
+
+**Scope:** Pi requests (`ollama/ornith:latest`) timed out because the proxy tried the remote gateway first (30s), then local Ollama (36s model loading) — total ~66s+.
+
+**Fix (`~/bin/ai-provider-local-proxy.py`):**
+- `ollama/*` models now route to **local Ollama first**, bypassing gateway latency
+- Gateway timeout reduced from 30s → 10s (for non-ollama models that need the gateway)
+- Local Ollama timeout kept at 120s (covers model loading from external SSD)
+- After model is loaded: response in ~1s
+
+**Launchd cleanup:**
+- `ollama-launchd-wrapper.sh`: fixed leading space bug (` waited=0` → `waited=0`) causing infinite loop
+- `com.haraldweiss.ollama` + `homebrew.mxcl.ollama` both unloaded — they competed with `com.ollama.ollama` (Ollama.app) for port 11434, flooding `ollama.err` with "bind: address already in use"
+
+**Verification:**
+- First request via proxy: 48s (model load from SSD), second: 1s (cached)
+- Non-ollama (opencode) via gateway: 1.5s
+- No errors in proxy log
+- Launchd list clean — only `com.ollama.ollama` runs `ollama serve`
+
+**Kein Deploy auf oracle-vm nötig** — alles lokal auf dem MacBook.
