@@ -178,6 +178,16 @@ failed on the empty initial delta. GREEN: same focused test → 1 passed;
 17 passed; full suite `pytest -q` → 324 passed, 1 existing SQLAlchemy
 `Query.get()` warning; `git diff --check` clean.
 
+**Deploy:** Code commit `79c70ea` was pushed to `origin/main`, built on
+oracle-vm via `./build.sh 79c70ea`, and the `ai-provider` container was
+recreated with `sudo docker compose up -d --force-recreate ai-provider`.
+Docker reported `health=healthy`; public
+`https://ai-provider-service.wolfinisoftware.de/health` returned `status=ok`.
+Live HTTPS smoke against `/v1/chat/completions` with `model=opencode/hy3-free`
+and `stream=true` returned interim chunks with `finish_reason: null`, an
+opening assistant role/content delta, and a final chunk with
+`finish_reason: "stop"` followed by `[DONE]`.
+
 ### Ollama XML Toolcall Text Parsing + Deploy (2026-07-07, Codex)
 
 **Scope:** Local Ollama models can now recover Claude-style XML tool requests
