@@ -1007,3 +1007,53 @@ ebenfalls lokal-first für Ollama routet (statt übers Gateway via reverse-SSH-T
 - 59 Models via Proxy
 - `ollama/ornith:latest` → lokal (1. Request lädt Modell, danach <1s)
 - `opencode/deepseek-v4-flash-free` → Gateway (~1.7s)
+
+### Local Proxy SSE Streaming Fix + Ollama Cold-Start (2026-07-07, opencode)
+
+**Symptom:** Pi (openai npm v6.26.0) loaded the ai-provider-service extension, registered
+models, then hung on the first chat request with "Stream ended without finish_reason".
+The error appeared only when routing through the local proxy (`localhost:8766`);
+direct gateway access worked fine.
+
+**Root cause:** `_stream_response()` in `~/bin/ai-provider-local-proxy.py` iterated over
+`resp.iter_lines()` and applied `if chunk:` to skip empty lines. In SSE, the empty line
+is the `\n` event delimiter — `data: {...}\n\n` is two events separated by a blank line.
+Skipping it meant each SSE event was emitted with a single `\n` instead of `\n\n`.
+Pi's SSE parser in openai v6.26.0 split on `\n\n` and never found a `finish_reason`.
+
+**Fix:** Removed the `if chunk:` guard — now every line from `iter_lines()` is yielded
+with `+ "\n"`, preserving the original `\n\n` SSE event boundary.
+
+**Verified:** `pi` with default model (`openrouter/cohere/north-mini-code:free`)
+returned "Hallo! Wie kann ich Ihnen heute helfen?" ✅. `pi` with
+`opencode/deepseek-v4-flash-free` returned a full response ✅. `curl` streaming
+output shows proper `\n\n` between `data:` events.
+
+**Files changed:** `~/bin/ai-provider-local-proxy.py` on MacBook + Mac Mini.
+
+**Ollama cold-start fix (same session):**
+- **Problem:** `ollama/*` models first request can take >30s to load from external SSD.
+  Previously, the 120s local timeout would expire → fall through to gateway (10s) → queue
+  (202 non-streaming). Pi expects streaming → hang.
+- **Fix:** (1) `timeout=300s` for streaming ollama requests (up from 120), (2) return
+  503 error when local Ollama fails in stream mode instead of falling through to gateway
+  or queue (both unusable for Pi streaming), (3) removed `_local_ollama_healthy` guard
+  — always try local Ollama for `ollama/*` models, even if background health check is stale.
+- **New constant:** `LOCAL_OLLAMA_STREAM_TIMEOUT = 300` in the proxy.
+
+**Verification before deploy:** `launchctl kickstart -k` on both Macs; proxies
+healthy. Pi returns responses for non-ollama models as before.
+
+**Kein Deploy auf oracle-vm nötig** — alles lokal auf MacBook + Mac Mini.
+
+### Local Proxy: 404 Gateway-Fallback für lokal nicht vorhandene Ollama-Modelle (2026-07-08, opencode)
+
+**Symptom:** Pi zeigte Modelle aus `/v1/models` (vom Gateway gecached) an, aber Chat-Requests scheiterten. `ollama/oracle-deepseek-r1-qwen:7b` → 404 "model not found", `ollama/glm-4.7-flash:latest` → 503 "No connectivity to local Ollama or gateway". Modelle existieren auf den Gateway-Ollama-Backends (oracle-vm), aber nicht auf dem lokalen Mac.
+
+**Root cause:** Der Proxy routet `ollama/*`-Modelle zuerst zu lokalem Ollama. Fiel lokales Ollama mit 404 (model not found), wurde der Fehler direkt an Pi zurückgegeben — ohne Gateway-Fallback. Der `except (ConnectionError, Timeout)`-Pfad fing nur Verbindungsfehler, nicht HTTP-Fehler.
+
+**Fix:** `~/bin/ai-provider-local-proxy.py:399` prüft jetzt `ol_resp.status_code < 400` und fällt bei 4xx/5xx aufs Gateway zurück. Logger warnt mit `"Local Ollama returned %d for %s — trying gateway fallback"`.
+
+**Verifiziert:** Code-Review + Syntax-Check. Proxy-Restart via launchd nötig.
+
+**Kein Deploy auf oracle-vm nötig** — alles lokal auf MacBook (+ Mac Mini wenn dort auch aktualisiert).
