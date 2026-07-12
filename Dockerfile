@@ -7,7 +7,7 @@
 
 FROM docker.io/library/python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+RUN apt-get update && apt-get install -y --no-install-recommends curl gosu && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -23,8 +23,6 @@ RUN mkdir -p /app/data && \
 
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
-
-USER appuser
 
 EXPOSE 8767
 
