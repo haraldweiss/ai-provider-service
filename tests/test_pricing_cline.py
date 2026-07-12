@@ -12,9 +12,22 @@ import pricing
 from pricing import calc_cost_usd
 
 
-def test_cline_unknown_model_returns_none_without_override():
-    # No override configured yet -> unknown model -> None (no crash).
+def test_cline_unknown_model_returns_none_without_override(tmp_path, monkeypatch):
+    # With an empty override and no static snapshot entry, an unknown model
+    # returns None (no crash).
+    override = tmp_path / 'pricing_overrides_cline.json'
+    override.write_text(json.dumps({}))
+    monkeypatch.setattr(pricing, '_CLINE_OVERRIDE_PATH', override)
     assert calc_cost_usd('cline', 'anthropic/claude-sonnet-4-6', 100, 100) is None
+
+
+def test_cline_real_catalog_override_loads_rates():
+    # The committed pricing_overrides_cline.json (sourced from Cline's OSS
+    # model catalog, USD per 1M tokens) is loaded by default.
+    assert calc_cost_usd('cline', 'anthropic/claude-sonnet-4.6', 1_000_000, 1_000_000) == 18.0
+    assert calc_cost_usd('cline', 'openai/gpt-4o', 1_000_000, 1_000_000) == 12.5
+    # Unknown model still yields None.
+    assert calc_cost_usd('cline', 'cline/does-not-exist', 100, 100) is None
 
 
 def test_cline_override_file_is_merged(tmp_path, monkeypatch):

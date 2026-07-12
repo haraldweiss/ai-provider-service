@@ -1086,18 +1086,26 @@ Cline nutzen will (ProviderConfig + ggf. Pricing-Override, sofern Cline-Preise
 bekannt; `calc_cost_usd` liefert aktuell `None` für unbekannte Cline-Modelle,
 was Usage-Events nicht crashen lässt).
 
-**Pricing (2026-07-12, Pi):** Cline veröffentlicht **keine** statische
-Per-Token-Rate-Card — die echten Preise liegen hinter dem auth-walled Dashboard
-(`https://app.cline.bot/dashboard/usage`, JS-SPA, nicht scrapebar; ebenso
-`/dashboard/subscription`). Daher KEIN Erraten von Preisen. Stattdessen
-Drop-in-Override analog zu z.ai: `pricing.py` mergt jetzt
-`pricing_overrides_cline.json` (`_CLINE_OVERRIDE_PATH`), Key-Form
-`cline::<provider/model>` (Modell-Slash bleibt erhalten, z.B.
-`cline::anthropic/claude-sonnet-4-6`). `calc_cost_usd` wird pro Call frisch
-geladen → Override-Änderung braucht keinen Restart. `Dockerfile` nutzt
-`COPY . .`, daher ist die (leere) `pricing_overrides_cline.json` im Image
-enthalten und überlebt Rebuilds. Tests: `tests/test_pricing_cline.py` (4 passed).
-User hat **Cline Pass yearly** — offen, ob Inference damit kostenlos inkludiert
-ist oder weiter per-Token berechnet wird. Sobald der User die Rate-Card (oder
-"gratis inkludiert") liefert, Einträge in `pricing_overrides_cline.json`
-eintragen (Format siehe Datei-Header in `pricing.py`).
+**Pricing (2026-07-12, Pi) — recherchiert:** Cline veröffentlicht KEINE
+statische Rate-Card auf der Website, und `GET /api/v1/pricing` liefert **401**
+(auth-walled). Aber Cline's OSS-Repo enthält den generierten Modell-Katalog
+`sdk/packages/llms/src/catalog/catalog.generated.ts`, der pro Modell
+`pricing: { input, output, cacheRead, cacheWrite }` in **USD pro 1M Tokens**
+embedded — exakt Cline's "Inference at Cost"-Listenpreise (Beleg:
+`anthropic/claude-sonnet-4.6` = $3/$15, `openai/gpt-4o` = $2.5/$10, matcht
+upstream List-Preise). Daraus wurde `pricing_overrides_cline.json` mit **513
+Modellen** extrahiert (Key-Form `cline::<provider/model>`, Modell-Slash
+erhalten) und committet. `pricing.py` mergt die Datei (`_CLINE_OVERRIDE_PATH`);
+`calc_cost_usd` lädt sie pro Call frisch → keine Rates sind sofort wirksam ohne
+Restart. `Dockerfile` (`COPY . .`) backt die Datei ins Image → überlebt Rebuilds.
+Getestet: `tests/test_pricing_cline.py` (5 passed, inkl. Real-Catalog-Test).
+**Cline Pass yearly (User hat ihn):** OSS bestätigt ein Credit/Pass-System
+(`apps/cli/src/utils/cline-pass-errors.ts`, `CreditsHistoryTable`,
+`CreditBalance`, `ClineOrgIndividualInferenceSubscription`,
+"Cline Pass limit"-Errors), gibt aber NICHT preis, was der Pass abdeckt
+(gratis Inference vs. Credit-Kontingent vs. Rabatt). Wahrscheinlich: Pass =
+monatliches Credit-Kontingent, das zu diesen Per-Token-Raten verbraucht wird →
+Override trackt den Verbrauch korrekt (wie gelistet). User sollte im Dashboard
+prüfen, ob der Pass die effektiven Per-Token-Kosten ändert; falls ja,
+entsprechende Einträge auf 0 / Rabatt anpassen. Die Dashboard-Werte sind die
+einzige live-Quelle für account-spezifische Raten.
