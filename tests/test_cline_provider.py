@@ -92,9 +92,42 @@ def test_get_models_returns_sorted_ids_with_slashes(mock_openai):
 
 
 @patch('providers.cline.OpenAI')
+def test_get_models_falls_back_to_override_on_404(mock_openai):
+    """When Cline's API returns 404 (NotFoundError), fall back to the
+    pricing_overrides_cline.json to extract model IDs."""
+    from openai import NotFoundError
+    from providers.cline import ClineClient
+    mock_openai.return_value.models.list.side_effect = NotFoundError(
+        '404 Not Found',
+        response=MagicMock(status_code=404),
+        body={'error': 'Not Found'},
+    )
+    c = ClineClient({'api_key': 'sk-test'})
+    models = c.get_models()
+    assert len(models) > 100  # catalog has 513 models
+    assert 'cline-pass/qwen3.7-plus' in models
+    assert 'anthropic/claude-sonnet-4-6' in models
+    assert 'openai/gpt-4o' in models
+
+
+@patch('providers.cline.OpenAI')
 def test_health_returns_true_on_success(mock_openai):
     from providers.cline import ClineClient
     mock_openai.return_value.models.list.return_value = MagicMock()
+    assert ClineClient({'api_key': 'sk-test'}).health() is True
+
+
+@patch('providers.cline.OpenAI')
+def test_health_returns_true_on_404(mock_openai):
+    """Cline's API returns 404 for /models — that's not a connectivity
+    problem, the server is alive."""
+    from openai import NotFoundError
+    from providers.cline import ClineClient
+    mock_openai.return_value.models.list.side_effect = NotFoundError(
+        '404 Not Found',
+        response=MagicMock(status_code=404),
+        body={'error': 'Not Found'},
+    )
     assert ClineClient({'api_key': 'sk-test'}).health() is True
 
 
