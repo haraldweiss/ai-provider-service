@@ -1086,26 +1086,29 @@ Cline nutzen will (ProviderConfig + ggf. Pricing-Override, sofern Cline-Preise
 bekannt; `calc_cost_usd` liefert aktuell `None` für unbekannte Cline-Modelle,
 was Usage-Events nicht crashen lässt).
 
-**Pricing (2026-07-12, Pi) — recherchiert:** Cline veröffentlicht KEINE
-statische Rate-Card auf der Website, und `GET /api/v1/pricing` liefert **401**
-(auth-walled). Aber Cline's OSS-Repo enthält den generierten Modell-Katalog
-`sdk/packages/llms/src/catalog/catalog.generated.ts`, der pro Modell
-`pricing: { input, output, cacheRead, cacheWrite }` in **USD pro 1M Tokens**
-embedded — exakt Cline's "Inference at Cost"-Listenpreise (Beleg:
-`anthropic/claude-sonnet-4.6` = $3/$15, `openai/gpt-4o` = $2.5/$10, matcht
-upstream List-Preise). Daraus wurde `pricing_overrides_cline.json` mit **513
-Modellen** extrahiert (Key-Form `cline::<provider/model>`, Modell-Slash
-erhalten) und committet. `pricing.py` mergt die Datei (`_CLINE_OVERRIDE_PATH`);
-`calc_cost_usd` lädt sie pro Call frisch → keine Rates sind sofort wirksam ohne
-Restart. `Dockerfile` (`COPY . .`) backt die Datei ins Image → überlebt Rebuilds.
-Getestet: `tests/test_pricing_cline.py` (5 passed, inkl. Real-Catalog-Test).
-**Cline Pass yearly (User hat ihn):** OSS bestätigt ein Credit/Pass-System
-(`apps/cli/src/utils/cline-pass-errors.ts`, `CreditsHistoryTable`,
-`CreditBalance`, `ClineOrgIndividualInferenceSubscription`,
-"Cline Pass limit"-Errors), gibt aber NICHT preis, was der Pass abdeckt
-(gratis Inference vs. Credit-Kontingent vs. Rabatt). Wahrscheinlich: Pass =
-monatliches Credit-Kontingent, das zu diesen Per-Token-Raten verbraucht wird →
-Override trackt den Verbrauch korrekt (wie gelistet). User sollte im Dashboard
-prüfen, ob der Pass die effektiven Per-Token-Kosten ändert; falls ja,
-entsprechende Einträge auf 0 / Rabatt anpassen. Die Dashboard-Werte sind die
-einzige live-Quelle für account-spezifische Raten.
+**Pricing (2026-07-12, Pi) — recherchiert + ClinePass-Erkenntnis:** Cline
+veröffentlicht KEINE statische Rate-Card auf der Website, `GET /api/v1/pricing`
+liefert **401** (auth-walled). Cline's OSS-Repo enthält aber den generierten
+Modell-Katalog `sdk/packages/llms/src/catalog/catalog.generated.ts` mit pro
+Modell `pricing:{input,output}` in **USD pro 1M Tokens** — Cline's
+"Inference at Cost"-Listenpreise (Beleg: `anthropic/claude-sonnet-4.6`=$3/$15,
+`openai/gpt-4o`=$2.5/$10, matcht upstream). Daraus wurde
+`pricing_overrides_cline.json` (513 Modelle, Key `cline::<provider/model>`)
+extrahiert + committet; `pricing.py` mergt sie (`_CLINE_OVERRIDE_PATH`),
+`calc_cost_usd` lädt pro Call frisch → wirksam ohne Restart, via `COPY . .`
+im Image (überlebt Rebuild). Tests: `tests/test_pricing_cline.py` (6 passed).
+
+**ClinePass (User hat "Cline Pass (Annual)", $79.92/Jahr, renew 2027-07-12):**
+Der Subscription-Screen besagt: ClinePass gilt für **open-weight models** ("Select
+ClinePass as the provider"), Frontier-Modelle (Claude/GPT/Gemini) sind NICHT
+inkludiert. Im OSS-Katalog sind genau diese open-weight Modelle unter dem
+Provider-Präfix **`cline-pass/`** gelistet (z.B. `cline-pass/qwen3.7-plus`,
+`cline-pass/deepseek-v4-pro`). Daher im Override: **`cline::cline-pass/*` →
+$0** (vom Pass gedeckt), alle übrigen (`anthropic/*`, `openai/*`, `google/*`,
+sowie pay-as-you-go `qwen/*`/`deepseek/*`) → Katalog-Listenpreise. Natively
+kostenlose Modelle (`:free`, Catalog-`pricing:0`) sind ohnehin $0. Frontier
+bleiben zum Katalog-Preis — falls der User sie trotz Pass nutzt, wären das
+Separat-Kosten. Annahme: ClinePass deckt nur das kuratierte `cline-pass/*`-Set;
+falls ClinePass laut Dashboard auch andere Open-Weight-Modelle abdeckt,
+betroffene Einträge auf $0 setzen. Dashboard ist die live-Quelle für
+account-spezifische Raten.

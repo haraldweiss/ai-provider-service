@@ -484,44 +484,44 @@
     "out": 2.0
   },
   "cline::cline-pass/deepseek-v4-flash": {
-    "in": 0.09,
-    "out": 0.18
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/deepseek-v4-pro": {
-    "in": 0.435,
-    "out": 0.87
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/glm-5.2": {
-    "in": 0.9,
-    "out": 3.08
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/kimi-k2.6": {
-    "in": 0.65,
-    "out": 3.41
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/kimi-k2.7-code": {
-    "in": 0.74,
-    "out": 3.5
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/mimo-v2.5": {
-    "in": 0.105,
-    "out": 0.28
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/mimo-v2.5-pro": {
-    "in": 0.435,
-    "out": 0.87
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/minimax-m3": {
-    "in": 0.3,
-    "out": 1.2
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/qwen3.7-max": {
-    "in": 1.25,
-    "out": 3.75
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cline-pass/qwen3.7-plus": {
-    "in": 0.32,
-    "out": 1.28
+    "in": 0.0,
+    "out": 0.0
   },
   "cline::cohere/command-a": {
     "in": 2.5,

@@ -26,6 +26,9 @@ def test_cline_real_catalog_override_loads_rates():
     # model catalog, USD per 1M tokens) is loaded by default.
     assert calc_cost_usd('cline', 'anthropic/claude-sonnet-4.6', 1_000_000, 1_000_000) == 18.0
     assert calc_cost_usd('cline', 'openai/gpt-4o', 1_000_000, 1_000_000) == 12.5
+    # ClinePass (open-weight) models are covered by the subscription -> $0.
+    assert calc_cost_usd('cline', 'cline-pass/qwen3.7-plus', 1_000_000, 1_000_000) == 0.0
+    assert calc_cost_usd('cline', 'cline-pass/deepseek-v4-pro', 1_000_000, 1_000_000) == 0.0
     # Unknown model still yields None.
     assert calc_cost_usd('cline', 'cline/does-not-exist', 100, 100) is None
 
