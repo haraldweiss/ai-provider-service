@@ -34,16 +34,23 @@ def _parse_model(model: str) -> tuple[str, str, str | None]:
 
 
 def _principal_user_id() -> str:
-    """Extract user_id from g.principal. Never silently default to a real user.
+    """Extract user_id from g.principal.
 
-    Raises ValueError if principal or user_id is missing — the caller must
-    return 401, not attribute the request to a hardcoded identity.
+    For SERVICE_TOKEN (credential='service'), a missing user_id defaults to
+    ADMIN_USER_ID — the server's own token sees all providers. This is needed
+    for GET requests like /v1/models where no body user_id can be asserted.
+
+    For user tokens (credential='user_token'), a missing user_id is a real
+    error and raises ValueError -> 401.
     """
     principal = getattr(g, 'principal', None)
     if principal and isinstance(principal, object) and hasattr(principal, 'user_id'):
         uid = principal.user_id
         if uid:
             return uid
+        if getattr(principal, 'credential', '') == 'service':
+            from config import Config
+            return Config.ADMIN_USER_ID
     raise ValueError('principal user_id is missing')
 
 
