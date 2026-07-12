@@ -76,12 +76,24 @@ def _refresh_free_models(client: OpenAI, fallback: list[str] | None = None) -> l
     return free_models
 
 
+def _make_openai_client(api_key: str | None, base_url: str) -> OpenAI:
+    """Create an OpenAI client that works across SDK versions.
+
+    OpenRouter allows anonymous access for free models, but the OpenAI SDK
+    requires an api_key to be set. Use a placeholder when none is configured
+    so the client can be instantiated for anonymous/free-model use.
+    """
+    if not api_key:
+        api_key = 'sk-anonymous'
+    return OpenAI(api_key=api_key, base_url=base_url)
+
+
 class OpenRouterClient(BaseClient):
     def __init__(self, config: dict):
         self._free_only = config.get('_free_only', False)
         api_key = config.get('api_key') or Config.OPENROUTER_API_KEY or None
         base_url = config.get('api_endpoint') or Config.OPENROUTER_BASE_URL
-        self.client = OpenAI(api_key=api_key, base_url=base_url, _enforce_credentials=False)
+        self.client = _make_openai_client(api_key, base_url)
         self._free_models: list[str] | None = None
         self._base_url = base_url
 
@@ -107,10 +119,9 @@ class OpenRouterClient(BaseClient):
     @classmethod
     def try_refresh_free_models(cls) -> list[str]:
         """Proactive refresh using optional OPENROUTER_API_KEY."""
-        client = OpenAI(
-            api_key=Config.OPENROUTER_API_KEY or None,
-            base_url=Config.OPENROUTER_BASE_URL,
-            _enforce_credentials=False,
+        client = _make_openai_client(
+            Config.OPENROUTER_API_KEY or None,
+            Config.OPENROUTER_BASE_URL,
         )
         return _refresh_free_models(client)
 
