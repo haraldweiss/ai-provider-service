@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -104,23 +105,57 @@ _CLINE_OVERRIDE_PATH = Path(os.path.dirname(__file__)) / 'pricing_overrides_clin
 
 
 def _merge_override_file(pricing: dict, path: Path) -> None:
-    """Mergt eine `{provider::model: {in,out}}`-Override-Datei in-place."""
+    """Mergt eine `{provider::model: {in,out}}`-Override-Datei in-place.
+
+    Catches only JSON/IO errors — unexpected exceptions propagate.
+    """
     try:
         if path.exists():
             raw = json.loads(path.read_text())
             for key, rates in raw.items():
+                if '::' not in key:
+                    continue  # skip metadata keys like "_meta"
                 provider, model = key.split('::', 1)
                 pricing[(provider, model)] = rates
-    except Exception:
-        pass
+    except (json.JSONDecodeError, OSError) as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            'Failed to merge pricing override %s: %s', path, e,
+        )
+
+
+# In-memory cache for merged pricing. TTL avoids re-reading 3 JSON files
+# from disk on every chat request.
+_pricing_cache: dict[tuple[str, str], dict[str, float]] | None = None
+_pricing_cache_ts: float = 0.0
+_PRICING_CACHE_TTL_SEC = 60.0
+
+
+def _reset_pricing_cache() -> None:
+    """Clear the in-memory pricing cache. Used by tests that monkeypatch
+    override paths so the next _load_merged_pricing() call re-reads from disk.
+    """
+    global _pricing_cache, _pricing_cache_ts
+    _pricing_cache = None
+    _pricing_cache_ts = 0.0
 
 
 def _load_merged_pricing() -> dict[tuple[str, str], dict[str, float]]:
-    """Gibt die gemergte Pricing-Dict zurück: statisch + Overrides."""
+    """Gibt die gemergte Pricing-Dict zurück: statisch + Overrides.
+
+    Cached in-memory for _PRICING_CACHE_TTL_SEC seconds to avoid reading
+    3 JSON files from disk on every chat request.
+    """
+    global _pricing_cache, _pricing_cache_ts
+    now = time.monotonic()
+    if _pricing_cache is not None and (now - _pricing_cache_ts) < _PRICING_CACHE_TTL_SEC:
+        return _pricing_cache
     pricing = dict(_PRICING_USD_PER_MTOK)
     _merge_override_file(pricing, _PRICING_OVERRIDE_PATH)
     _merge_override_file(pricing, _ZAI_OVERRIDE_PATH)
     _merge_override_file(pricing, _CLINE_OVERRIDE_PATH)
+    _pricing_cache = pricing
+    _pricing_cache_ts = now
     return pricing
 
 

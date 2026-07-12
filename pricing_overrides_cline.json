@@ -1,4 +1,61 @@
 {
+  "_meta": {
+    "description": "Cline model pricing overrides for ai-provider-service",
+    "last_updated": "2026-07-12",
+    "total_models": 513,
+    "clinepass_count": 10,
+    "free_count": 34,
+    "clinepass_models": [
+      "cline-pass/deepseek-v4-flash",
+      "cline-pass/deepseek-v4-pro",
+      "cline-pass/glm-5.2",
+      "cline-pass/kimi-k2.6",
+      "cline-pass/kimi-k2.7-code",
+      "cline-pass/mimo-v2.5",
+      "cline-pass/mimo-v2.5-pro",
+      "cline-pass/minimax-m3",
+      "cline-pass/qwen3.7-max",
+      "cline-pass/qwen3.7-plus"
+    ],
+    "free_models": [
+      "baidu/cobuddy:free",
+      "cohere/north-mini-code:free",
+      "google/gemma-4-26b-a4b-it:free",
+      "google/gemma-4-31b-it:free",
+      "kilo-auto/free",
+      "liquid/lfm-2.5-1.2b-thinking:free",
+      "meituan/longcat-flash-chat",
+      "meta-llama/llama-3.3-70b-instruct:free",
+      "meta/llama-3.3-70b",
+      "meta/llama-4-maverick",
+      "meta/llama-4-scout",
+      "nvidia/nemotron-3-nano-30b-a3b:free",
+      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "nvidia/nemotron-3-super-120b-a12b:free",
+      "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "nvidia/nemotron-nano-12b-v2-vl:free",
+      "nvidia/nemotron-nano-9b-v2:free",
+      "openai/gpt-oss-120b:free",
+      "openai/gpt-oss-20b:free",
+      "openrouter/auto",
+      "openrouter/free",
+      "openrouter/owl-alpha",
+      "perplexity/sonar",
+      "perplexity/sonar-pro",
+      "poolside/laguna-m.1:free",
+      "poolside/laguna-xs-2.1:free",
+      "poolside/laguna-xs.2:free",
+      "qwen/qwen3-30b-a3b-2507",
+      "qwen/qwen3-coder-30b",
+      "qwen/qwen3-coder:free",
+      "qwen/qwen3-next-80b-a3b-instruct:free",
+      "tencent/hy3:free",
+      "zai-org/GLM-4.7-Flash",
+      "zai/glm-4.6v-flash"
+    ],
+    "note_clinepass": "Diese Modelle sind im ClinePass-Abo ($9.99/Monat) ohne Zusatzkosten enthalten",
+    "note_free": "Diese Modelle sind kostenlos (mit Limits)"
+  },
   "cline::JetBrains/Mellum2-12B-A2.5B-Instruct": {
     "in": 0.05,
     "out": 0.1
@@ -484,44 +541,44 @@
     "out": 2.0
   },
   "cline::cline-pass/deepseek-v4-flash": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/deepseek-v4-pro": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/glm-5.2": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/kimi-k2.6": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/kimi-k2.7-code": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/mimo-v2.5": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/mimo-v2.5-pro": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/minimax-m3": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/qwen3.7-max": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cline-pass/qwen3.7-plus": {
-    "in": 0.0,
-    "out": 0.0
+    "in": 0,
+    "out": 0
   },
   "cline::cohere/command-a": {
     "in": 2.5,
