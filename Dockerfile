@@ -17,10 +17,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && \
+    useradd -m -r appuser && \
+    chown -R appuser:appuser /app
 
-# Create non-root user for security
-RUN useradd -m -r appuser && chown -R appuser:appuser /app
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 USER appuser
 
 EXPOSE 8767
@@ -28,4 +31,5 @@ EXPOSE 8767
 HEALTHCHECK --interval=30s --timeout=20s --start-period=20s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8767/health || exit 1
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["gunicorn", "--workers", "2", "--worker-class", "gthread", "--threads", "4", "--bind", "0.0.0.0:8767", "--timeout", "180", "--access-logfile", "-", "--error-logfile", "-", "app:create_app()"]
