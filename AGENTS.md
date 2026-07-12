@@ -1085,3 +1085,19 @@ auf `hidden_provider_count` 5→6 angepasst (cline ist zusätzlich key-pflichtig
 Cline nutzen will (ProviderConfig + ggf. Pricing-Override, sofern Cline-Preise
 bekannt; `calc_cost_usd` liefert aktuell `None` für unbekannte Cline-Modelle,
 was Usage-Events nicht crashen lässt).
+
+**Pricing (2026-07-12, Pi):** Cline veröffentlicht **keine** statische
+Per-Token-Rate-Card — die echten Preise liegen hinter dem auth-walled Dashboard
+(`https://app.cline.bot/dashboard/usage`, JS-SPA, nicht scrapebar; ebenso
+`/dashboard/subscription`). Daher KEIN Erraten von Preisen. Stattdessen
+Drop-in-Override analog zu z.ai: `pricing.py` mergt jetzt
+`pricing_overrides_cline.json` (`_CLINE_OVERRIDE_PATH`), Key-Form
+`cline::<provider/model>` (Modell-Slash bleibt erhalten, z.B.
+`cline::anthropic/claude-sonnet-4-6`). `calc_cost_usd` wird pro Call frisch
+geladen → Override-Änderung braucht keinen Restart. `Dockerfile` nutzt
+`COPY . .`, daher ist die (leere) `pricing_overrides_cline.json` im Image
+enthalten und überlebt Rebuilds. Tests: `tests/test_pricing_cline.py` (4 passed).
+User hat **Cline Pass yearly** — offen, ob Inference damit kostenlos inkludiert
+ist oder weiter per-Token berechnet wird. Sobald der User die Rate-Card (oder
+"gratis inkludiert") liefert, Einträge in `pricing_overrides_cline.json`
+eintragen (Format siehe Datei-Header in `pricing.py`).

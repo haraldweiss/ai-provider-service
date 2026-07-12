@@ -95,6 +95,12 @@ _LOCAL_PROVIDERS = {'ollama'}
 # nicht überschreibt (und umgekehrt).
 _PRICING_OVERRIDE_PATH = Path(os.path.dirname(__file__)) / 'pricing_overrides.json'
 _ZAI_OVERRIDE_PATH = Path(os.path.dirname(__file__)) / 'pricing_overrides_zai.json'
+# Cline (api.cline.bot) override file. Cline publishes no static per-token rate
+# card (rates live behind the auth-walled dashboard at
+# https://app.cline.bot/dashboard/usage), so Cline costs are supplied here as a
+# drop-in override. Keys use the `cline::<provider/model>` form, e.g.
+# {"cline::anthropic/claude-sonnet-4-6": {"in": 3.0, "out": 15.0}}.
+_CLINE_OVERRIDE_PATH = Path(os.path.dirname(__file__)) / 'pricing_overrides_cline.json'
 
 
 def _merge_override_file(pricing: dict, path: Path) -> None:
@@ -114,6 +120,7 @@ def _load_merged_pricing() -> dict[tuple[str, str], dict[str, float]]:
     pricing = dict(_PRICING_USD_PER_MTOK)
     _merge_override_file(pricing, _PRICING_OVERRIDE_PATH)
     _merge_override_file(pricing, _ZAI_OVERRIDE_PATH)
+    _merge_override_file(pricing, _CLINE_OVERRIDE_PATH)
     return pricing
 
 
