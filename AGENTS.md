@@ -1112,3 +1112,34 @@ Separat-Kosten. Annahme: ClinePass deckt nur das kuratierte `cline-pass/*`-Set;
 falls ClinePass laut Dashboard auch andere Open-Weight-Modelle abdeckt,
 betroffene Einträge auf $0 setzen. Dashboard ist die live-Quelle für
 account-spezifische Raten.
+
+### Cline Provider Fixes — Deploy + get_models Fallback + ClinePass bestätigt (2026-07-12, Pi)
+
+**Deployed auf oracle-vm** — Image `c54c980` auf `bewerbungen-net`, Container healthy.
+Harald + pi-agent Configs angelegt (API-Key, fallback_provider=opencode, queue aktiv).
+
+**Probleme während Deploy + Fixes:**
+
+1. **Cline hat keinen GET /models Endpoint** (404 auf alle Pfade).
+   `get_models()` fällt jetzt auf `pricing_overrides_cline.json` zurück (513 Modelle aus
+   Cline's OSS Catalog). `health()` interpretiert 404 als „Server lebt, Endpoint nicht
+   vorhanden" (gibt True zurück).
+
+2. **Cline's Chat-Response ist non-standard**: `{"data": {"choices": [...],
+   "usage": ...}, "success": true}` — OpenAI SDK kann das nicht parsen (choices=None).
+   `create_message()` wurde auf raw httpx umgestellt (import httpx).
+
+3. **ClinePass Dashboard bestätigt $0**: Alle `cline-pass/qwen3.7-plus`-Calls zeigen
+   0.0000 Credits im Dashboard unter `https://app.cline.bot/dashboard/usage`.
+
+**Verification vor Deploy:** `pytest tests/test_cline_provider.py` → 13/14 passed (1
+pre-existing openai SDK httpx-Kompatibilitäts-Fehler, auch bei opencode/zai/other
+Providern). `pytest tests/test_pricing_cline.py` → 6/6 passed. Full suite: 335/343
+passed (8 pre-existing failures — 4× openai SDK compat, 4× claude anthropic SDK fehlt).
+
+**ClinePass-Fakt:** Jahresabo $79.92, UI-Text: „open-weight models". Dashboard zeigt
+0.0000 Credits pro Call → `cline-pass/*`-Modelle sind tatsächlich $0. Die Override-
+Annahme (cline-pass/*=$0) ist korrekt.
+
+**Pi-Connect-Skill aktualisiert:** `pi-connect-ai-provider-service` (global) um Cline-
+spezifische Schritte, Pitfalls und Verification erweitert.
