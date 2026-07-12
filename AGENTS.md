@@ -153,6 +153,36 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Non-root container crash — readonly SQLite database (2026-07-12, opencode)
+
+**Scope:** The security hardening (commit `9610c32`) added `USER appuser` with
+`useradd -m -r appuser` (UID 999). However, the SQLite DB on the Docker volume
+`bewerbungen_data` was owned by UID 1000 (`-rw-------`), so `appuser` could not
+write to it. Every INSERT into `request_queue` failed with
+`(sqlite3.OperationalError) attempt to write a readonly database`.
+
+**Root cause:** The `USER appuser` directive at the end of `Dockerfile` caused
+the `ENTRYPOINT` (and its `chown -R appuser:appuser /app/data`) to also run as
+`appuser`, which lacks permission to chown root-owned volume files. The `chown`
+in v1 (`build.sh 42548d9`) failed silently with "Operation not permitted", then
+gunicorn started as appuser and couldn't write to the UID-1000-owned DB.
+
+**Fix (commit `1570428`):**
+1. **docker-entrypoint.sh** — now checks `$(id -u)` and only runs `chown` when
+   running as root, then drops to appuser via `gosu appuser "$@"`.
+2. **Dockerfile** — removed `USER appuser` so entrypoint runs as root.
+   Installed `gosu` (lightweight privilege drop) in apt-get alongside curl.
+3. **Build order** — `COPY docker-entrypoint.sh` and `RUN chmod +x` now run
+   before gosu-based privilege dropping (no build-order issue).
+
+**Deploy:** Image `localhost/ai-provider:1570428` built on oracle-vm, container
+recreated. `docker ps` shows `healthy`, DB now owned by `appuser:appuser`,
+gunicorn PID 1 runs as UID 999 (appuser). DB write/delete verified via
+sqlite3 INSERT + DELETE to request_queue.
+
+**To verify:** `docker exec ai-provider sh -c "cat /proc/1/status | grep Uid"` →
+`Uid: 999 999 999 999` (appuser). `/health` → `status: ok`.
+
 ### OpenAI-Compatible SSE Finish Reason Compatibility (2026-07-07, Codex)
 
 **Scope:** Fixed Pi/OpenAI-compatible streaming failures for requests such as
