@@ -1,4 +1,8 @@
-"""Tests for ClineClient + factory registration."""
+"""Tests for ClineClient + factory registration.
+
+ClineClient uses raw httpx (not the OpenAI SDK) because Cline wraps
+responses in {"data": {"choices": [...], ...}, "success": true}.
+"""
 
 from unittest.mock import MagicMock, patch
 import pytest
@@ -22,41 +26,37 @@ def test_factory_returns_cline_client():
     assert client.__class__.__name__ == 'ClineClient'
 
 
-@patch('providers.cline.OpenAI')
-def test_uses_default_base_url(mock_openai):
+@patch('providers.cline.httpx.Client')
+def test_uses_default_base_url(mock_httpx_client):
     from providers.cline import ClineClient
-    ClineClient({'api_key': 'sk-test'})
-    _, kwargs = mock_openai.call_args
-    assert kwargs['base_url'] == 'https://api.cline.bot/api/v1'
-    assert kwargs['api_key'] == 'sk-test'
+    c = ClineClient({'api_key': 'sk-test'})
+    assert c._base_url == 'https://api.cline.bot/api/v1'
+    assert c._api_key == 'sk-test'
 
 
-@patch('providers.cline.OpenAI')
-def test_respects_custom_endpoint(mock_openai):
+@patch('providers.cline.httpx.Client')
+def test_respects_custom_endpoint(mock_httpx_client):
     from providers.cline import ClineClient
-    ClineClient({'api_key': 'sk-test', 'api_endpoint': 'https://example.org/v1'})
-    _, kwargs = mock_openai.call_args
-    assert kwargs['base_url'] == 'https://example.org/v1'
+    c = ClineClient({'api_key': 'sk-test', 'api_endpoint': 'https://example.org/v1'})
+    assert c._base_url == 'https://example.org/v1'
 
 
-def test_requires_api_key():
+def test_requires_api_key(monkeypatch):
     from providers.cline import ClineClient
+    monkeypatch.setattr('providers.cline.Config.CLINE_API_KEY', '')
     with pytest.raises(ValueError):
         ClineClient({})
 
 
-@patch('providers.cline.OpenAI')
-def test_uses_config_api_key_before_env(mock_openai, monkeypatch):
+def test_uses_config_api_key_before_env(monkeypatch):
     from providers.cline import ClineClient
     monkeypatch.setattr('providers.cline.Config.CLINE_API_KEY', 'env-key')
-    ClineClient({'api_key': 'cfg-key'})
-    _, kwargs = mock_openai.call_args
-    assert kwargs['api_key'] == 'cfg-key'
+    c = ClineClient({'api_key': 'cfg-key'})
+    assert c._api_key == 'cfg-key'
 
 
-@patch('providers.cline.OpenAI')
 @patch('providers.cline.httpx.Client')
-def test_create_message_returns_claude_format(mock_httpx_client, mock_openai):
+def test_create_message_returns_claude_format(mock_httpx_client):
     from providers.cline import ClineClient
     fake_raw = {
         'data': {
@@ -89,30 +89,9 @@ def test_create_message_returns_claude_format(mock_httpx_client, mock_openai):
     }
 
 
-@patch('providers.cline.OpenAI')
-def test_get_models_returns_sorted_ids_with_slashes(mock_openai):
+def test_get_models_returns_sorted_ids_with_slashes():
+    """get_models() falls back to pricing_overrides_cline.json (513 models)."""
     from providers.cline import ClineClient
-    mock_client_instance = MagicMock()
-    m1 = MagicMock(); m1.id = 'openai/gpt-5'
-    m2 = MagicMock(); m2.id = 'anthropic/claude-sonnet-4-6'
-    mock_client_instance.models.list.return_value.data = [m1, m2]
-    mock_openai.return_value = mock_client_instance
-
-    c = ClineClient({'api_key': 'sk-test'})
-    assert c.get_models() == ['anthropic/claude-sonnet-4-6', 'openai/gpt-5']
-
-
-@patch('providers.cline.OpenAI')
-def test_get_models_falls_back_to_override_on_404(mock_openai):
-    """When Cline's API returns 404 (NotFoundError), fall back to the
-    pricing_overrides_cline.json to extract model IDs."""
-    from openai import NotFoundError
-    from providers.cline import ClineClient
-    mock_openai.return_value.models.list.side_effect = NotFoundError(
-        '404 Not Found',
-        response=MagicMock(status_code=404),
-        body={'error': 'Not Found'},
-    )
     c = ClineClient({'api_key': 'sk-test'})
     models = c.get_models()
     assert len(models) > 100  # catalog has 513 models
@@ -121,31 +100,57 @@ def test_get_models_falls_back_to_override_on_404(mock_openai):
     assert 'openai/gpt-4o' in models
 
 
-@patch('providers.cline.OpenAI')
-def test_health_returns_true_on_success(mock_openai):
+def test_get_models_falls_back_to_override():
+    """get_models() always uses the override file (Cline has no /models endpoint)."""
     from providers.cline import ClineClient
-    mock_openai.return_value.models.list.return_value = MagicMock()
+    c = ClineClient({'api_key': 'sk-test'})
+    models = c.get_models()
+    assert len(models) > 100  # catalog has 513 models
+    assert 'cline-pass/qwen3.7-plus' in models
+    assert 'anthropic/claude-sonnet-4-6' in models
+    assert 'openai/gpt-4o' in models
+
+
+@patch('providers.cline.httpx.Client')
+def test_health_returns_true_on_success(mock_httpx_client):
+    from providers.cline import ClineClient
+    fake_raw = {
+        'data': {
+            'choices': [{
+                'message': {'content': 'pong', 'role': 'assistant'},
+                'finish_reason': 'stop',
+            }],
+            'usage': {'prompt_tokens': 5, 'completion_tokens': 1},
+        },
+        'success': True,
+    }
+    mock_response = MagicMock()
+    mock_response.json.return_value = fake_raw
+    mock_response.status_code = 200
+    mock_httpx_client_instance = MagicMock()
+    mock_httpx_client_instance.post.return_value = mock_response
+    mock_httpx_client.return_value.__enter__.return_value = mock_httpx_client_instance
+
     assert ClineClient({'api_key': 'sk-test'}).health() is True
 
 
-@patch('providers.cline.OpenAI')
-def test_health_returns_true_on_404(mock_openai):
-    """Cline's API returns 404 for /models — that's not a connectivity
-    problem, the server is alive."""
-    from openai import NotFoundError
+@patch('providers.cline.httpx.Client')
+def test_health_returns_false_on_5xx(mock_httpx_client):
+    """Cline health() returns False on 5xx responses."""
     from providers.cline import ClineClient
-    mock_openai.return_value.models.list.side_effect = NotFoundError(
-        '404 Not Found',
-        response=MagicMock(status_code=404),
-        body={'error': 'Not Found'},
-    )
-    assert ClineClient({'api_key': 'sk-test'}).health() is True
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_httpx_client_instance = MagicMock()
+    mock_httpx_client_instance.post.return_value = mock_response
+    mock_httpx_client.return_value.__enter__.return_value = mock_httpx_client_instance
+
+    assert ClineClient({'api_key': 'sk-test'}).health() is False
 
 
-@patch('providers.cline.OpenAI')
-def test_health_returns_false_on_failure(mock_openai):
+@patch('providers.cline.httpx.Client')
+def test_health_returns_false_on_failure(mock_httpx_client):
     from providers.cline import ClineClient
-    mock_openai.return_value.models.list.side_effect = Exception('API down')
+    mock_httpx_client.side_effect = Exception('API down')
     assert ClineClient({'api_key': 'sk-test'}).health() is False
 
 

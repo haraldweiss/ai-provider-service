@@ -10,6 +10,7 @@ def setup_admin():
     Config.ADMIN_TOKEN = 'admin-test-token'
     Config.ADMIN_PASSWORD = 'admin-pw'
     Config.SECRET_KEY = 'test-secret-key-for-sessions'
+    Config.TRUST_FORWARDED_USER = True
 
 
 def _is_redirect(status):

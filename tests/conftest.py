@@ -27,6 +27,16 @@ import providers.opencode  # noqa: F401, E402
 import providers.claude    # noqa: F401, E402
 import providers.ollama    # noqa: F401, E402
 import providers.zai       # noqa: F401, E402
+import pricing            # noqa: F401, E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_pricing_cache():
+    """Clear the in-memory pricing cache before each test so that tests
+    which monkeypatch override paths see fresh data."""
+    pricing._reset_pricing_cache()
+    yield
+    pricing._reset_pricing_cache()
 
 
 @pytest.fixture
