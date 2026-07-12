@@ -38,6 +38,7 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
     app.config.from_object(Config)
+    app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MiB request cap
 
     # ProxyFix: trust X-Forwarded-Proto and X-Forwarded-Prefix from Apache.
     from werkzeug.middleware.proxy_fix import ProxyFix

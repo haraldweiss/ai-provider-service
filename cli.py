@@ -276,13 +276,17 @@ def _format_zai_change_email(diff: dict) -> str:
 
 def _send_email(subject: str, body: str, to: str = ZAI_NOTIFY_EMAIL) -> None:
     import subprocess
+    import logging
+    _log = logging.getLogger(__name__)
     try:
         msg = (f'Subject: {subject}\nFrom: ai-provider@wolfinisoftware.de\n'
                f'To: {to}\n\n{body}\n')
         subprocess.run(['/usr/sbin/sendmail', '-t'], input=msg,
                        capture_output=True, timeout=10, text=True)
-    except Exception:
-        pass
+    except (subprocess.TimeoutExpired, OSError) as e:
+        _log.warning('Failed to send tariff-change email: %s', e)
+    except Exception as e:
+        _log.warning('Unexpected error sending tariff-change email: %s', e)
 
 
 @click.command('update-zai-pricing')

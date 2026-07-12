@@ -19,6 +19,10 @@ COPY . .
 
 RUN mkdir -p /app/data
 
+# Create non-root user for security
+RUN useradd -m -r appuser && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8767
 
 HEALTHCHECK --interval=30s --timeout=20s --start-period=20s --retries=3 \

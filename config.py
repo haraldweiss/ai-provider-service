@@ -68,6 +68,10 @@ class Config:
     # Flask sessions (admin UI cookie)
     SECRET_KEY = os.getenv('SECRET_KEY', '')
 
+    # Admin UI auto-auth via X-Forwarded-User (set by Apache Basic Auth).
+    # Must be explicitly enabled — never trust this header by default.
+    TRUST_FORWARDED_USER = os.getenv('TRUST_FORWARDED_USER', 'false').lower() == 'true'
+
     # Markdown memory (Phase 1)
     VAULT_PATH = os.getenv('VAULT_PATH', os.path.join(os.path.dirname(__file__), 'vault'))
     MEMORY_ENABLED = os.getenv('MEMORY_ENABLED', 'false').lower() == 'true'

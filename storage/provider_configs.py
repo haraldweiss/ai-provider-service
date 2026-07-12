@@ -14,8 +14,12 @@ def save_provider_config(user_id: str, provider_id: str, config_dict: dict) -> P
             existing_key = row.get_config().get('api_key')
             if existing_key:
                 data['api_key'] = existing_key
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                'Failed to preserve existing API key for user=%s provider=%s: %s',
+                user_id, provider_id, e,
+            )
     if row is None:
         row = ProviderConfig(user_id=user_id, provider_id=provider_id)
         db.session.add(row)

@@ -33,11 +33,18 @@ def _parse_model(model: str) -> tuple[str, str, str | None]:
     return 'claude', model, None
 
 
-def _principal_user_id(default: str = 'pi-agent') -> str:
+def _principal_user_id() -> str:
+    """Extract user_id from g.principal. Never silently default to a real user.
+
+    Raises ValueError if principal or user_id is missing — the caller must
+    return 401, not attribute the request to a hardcoded identity.
+    """
     principal = getattr(g, 'principal', None)
     if principal and isinstance(principal, object) and hasattr(principal, 'user_id'):
-        return principal.user_id or default
-    return default
+        uid = principal.user_id
+        if uid:
+            return uid
+    raise ValueError('principal user_id is missing')
 
 
 def _model_id(provider_id: str, model_name: str) -> str:
@@ -183,7 +190,11 @@ def _normalize_messages(messages: list) -> list:
 @require_token
 def list_models():
     """Return list of available models in OpenAI format."""
-    user_id = _principal_user_id()
+    try:
+        user_id = _principal_user_id()
+    except ValueError:
+        return jsonify({'error': {'message': 'authenticated principal has no user_id',
+                                   'type': 'invalid_request'}}), 401
     hidden = hidden_key_provider_rows(user_id)
     return jsonify({
         'object': 'list',
@@ -221,7 +232,11 @@ def chat_completions():
             'error': {'message': f'Unknown provider: {provider_id}', 'type': 'invalid_request'},
         }), 400
 
-    user_id = _principal_user_id()
+    try:
+        user_id = _principal_user_id()
+    except ValueError:
+        return jsonify({'error': {'message': 'authenticated principal has no user_id',
+                                   'type': 'invalid_request'}}), 401
 
     try:
         result = dispatch(

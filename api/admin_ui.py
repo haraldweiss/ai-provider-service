@@ -54,13 +54,16 @@ def _entry():
     if request.endpoint in ('admin_ui.login', 'admin_ui.logout'):
         return None
 
-    # Auto-auth via Apache Basic Auth (X-Forwarded-User set by ai-admin vhost)
-    forwarded_user = request.headers.get('X-Forwarded-User')
-    if forwarded_user:
-        if not _is_authed():
-            session['admin'] = True
-            session['admin_csrf'] = secrets.token_urlsafe(32)
-        return None
+    # Auto-auth via Apache Basic Auth (X-Forwarded-User set by ai-admin vhost).
+    # Only trusted when explicitly enabled via Config.TRUST_FORWARDED_USER and
+    # the request originates from localhost (Apache reverse proxy).
+    if Config.TRUST_FORWARDED_USER:
+        forwarded_user = request.headers.get('X-Forwarded-User')
+        if forwarded_user and request.remote_addr in ('127.0.0.1', '::1', 'localhost'):
+            if not _is_authed():
+                session['admin'] = True
+                session['admin_csrf'] = secrets.token_urlsafe(32)
+            return None
 
     token = request.args.get('token')
     if token:
