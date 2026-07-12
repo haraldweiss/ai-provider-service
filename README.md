@@ -8,7 +8,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 
 ## Features
 
-- **7 Provider** out of the box: Claude, Ollama, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM)
+- **8 Provider** out of the box: Claude, Ollama, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM), Cline (api.cline.bot)
 - **Server-Key-Allowlist** für zentrale Provider-Keys (Claude, z.ai): der zentrale Key ist nur für gelistete User nutzbar; z.ai ist per Default auf `ADMIN_USER_ID` beschränkt — alle anderen brauchen einen eigenen Key (auch für die kostenlosen GLM-Flash-Modelle)
 - **Per-User-Konfiguration** mit Fernet-verschlüsselten API-Keys
 - **Fallback-Provider**: bei Nicht-Erreichbarkeit automatisch auf z.B. Claude umschalten
@@ -461,6 +461,7 @@ verfügbar sind (z.B. `ollama/ornith:latest`).
  | `opencode/deepseek-v4-flash-free` | opencode Free-Modell (mit System-Key) |
  | `zai/glm-4.5` | z.ai, wenn konfiguriert und Account gedeckt |
  | `claude/claude-sonnet-4-6-20250514` | Claude, wenn konfiguriert und API-Key gesetzt |
+ | `cline/anthropic/claude-sonnet-4-6` | Cline (api.cline.bot), wenn konfiguriert und API-Key gesetzt |
 
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
 Backend-Provider synchron aufgerufen wird, kommt die Antwort als ein Chunk.
@@ -624,7 +625,7 @@ bears the cost. Authorization precedence is: gate kill switch, ungated provider,
 admin, owning personal key, active grant.
 
 - **ollama** — available to all callers (configurable via `UNGATED_PROVIDERS`)
-- **claude, opencode, openai, zai, ollama_cloud** — an owning personal key
+- **claude, opencode, openai, zai, ollama_cloud, cline** — an owning personal key
   bypasses approval; server-key use still follows grant/allowlist rules.
 - **mammouth, custom** — require an active `ProviderGrant` or admin access.
 

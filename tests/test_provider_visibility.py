@@ -37,9 +37,9 @@ def test_providers_hides_key_required_providers_without_user_key(client, monkeyp
     assert 'openrouter' in visible_ids
     assert 'openai' not in visible_ids
     assert 'ollama_cloud' not in visible_ids
-    assert {'claude', 'openai', 'opencode', 'zai', 'ollama_cloud'} <= hidden_ids
+    assert {'claude', 'openai', 'opencode', 'zai', 'ollama_cloud', 'cline'} <= hidden_ids
     assert 'openrouter' not in hidden_ids
-    assert body['availability_hint']['hidden_provider_count'] == 5
+    assert body['availability_hint']['hidden_provider_count'] == 6
     assert 'API key' in body['availability_hint']['message']
 
 

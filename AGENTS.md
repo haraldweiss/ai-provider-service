@@ -1057,3 +1057,31 @@ healthy. Pi returns responses for non-ollama models as before.
 **Verifiziert:** Code-Review + Syntax-Check. Proxy-Restart via launchd nötig.
 
 **Kein Deploy auf oracle-vm nötig** — alles lokal auf MacBook (+ Mac Mini wenn dort auch aktualisiert).
+
+### Cline Provider added (2026-07-12, Pi)
+
+**Scope:** Neuer `cline`-Provider für das gehostete OpenAI-kompatible Cline-API
+(`https://api.cline.bot/api/v1`). Cline ist ein Reseller-Gateway mit
+`provider/model`-Model-IDs (z.B. `anthropic/claude-sonnet-4-6`).
+
+**Behavior:** `providers/cline.py` (`ClineClient`) spricht Cline wie
+`OpenAIClient` via `openai`-SDK, `api_key` als Bearer (pflicht), konfigurierbarer
+`api_endpoint`. Der `model`-Parameter behält den eigenen Slash (`anthropic/...`),
+weil `_parse_model` nur am **ersten** Slash splittet — `cline/anthropic/...`
+round-tripet sauber. `get_models()` holt die Live-Liste von Cline `/models`.
+Kein zentraler Server-Key (jeder User konfiguriert eigenen Key via
+ProviderConfig); daher Registry-Eintrag `system: False, requires: ['api_key'],
+optional: ['api_endpoint'], personal_api_key: True` (Spiegel von `openai` /
+`ollama_cloud`). `Config.CLINE_BASE_URL` / `CLINE_API_KEY` (env-Override) +
+`.env.example`-Block hinzugefügt. README Provider-Zahl 7→8, v1-Modell-Tabelle
+und Access-Control-Liste aktualisiert.
+
+**Verification:** `pytest tests/test_cline_provider.py` → 12 passed (inkl.
+Slash-Round-Trip-Test via `_parse_model`); `pytest -q` → 336 passed (1 bestehende
+SQLAlchemy-`Query.get()`-Warnung); `git diff --check` clean. `test_provider_visibility`
+auf `hidden_provider_count` 5→6 angepasst (cline ist zusätzlich key-pflichtig).
+
+**Kein Deploy auf oracle-vm nötig** — Code-Änderung; deployen sobald ein User
+Cline nutzen will (ProviderConfig + ggf. Pricing-Override, sofern Cline-Preise
+bekannt; `calc_cost_usd` liefert aktuell `None` für unbekannte Cline-Modelle,
+was Usage-Events nicht crashen lässt).

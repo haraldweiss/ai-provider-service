@@ -55,6 +55,13 @@ class Config:
     OPENROUTER_BASE_URL = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
     OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
 
+    # Cline provider — OpenAI-compatible hosted gateway (https://api.cline.bot).
+    # Cline has no shared server key: each user configures their own Bearer
+    # API key via ProviderConfig. The base URL is overridable for self-hosted
+    # or proxied Cline-compatible endpoints.
+    CLINE_BASE_URL = os.getenv('CLINE_BASE_URL', 'https://api.cline.bot/api/v1')
+    CLINE_API_KEY = os.getenv('CLINE_API_KEY', '')
+
     # Claude model list (comma-separated, overrides static KNOWN_MODELS)
     CLAUDE_MODEL_LIST = os.getenv('CLAUDE_MODEL_LIST', '')
 

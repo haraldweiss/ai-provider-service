@@ -69,6 +69,13 @@ PROVIDER_REGISTRY = {
         'optional': ['api_key', 'api_endpoint'],
         'personal_api_key': True,
     },
+    'cline': {
+        'name': 'Cline (api.cline.bot)',
+        'system': False,
+        'requires': ['api_key'],
+        'optional': ['api_endpoint'],
+        'personal_api_key': True,
+    },
 }
 
 
@@ -111,6 +118,9 @@ def get_client(provider_id: str, config: Optional[dict] = None) -> BaseClient:
     if provider_id == 'openrouter':
         from providers.openrouter import OpenRouterClient
         return OpenRouterClient(config)
+    if provider_id == 'cline':
+        from providers.cline import ClineClient
+        return ClineClient(config)
 
     raise ValueError(f"Unbekannter Provider: {provider_id}")
 
