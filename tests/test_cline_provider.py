@@ -55,23 +55,34 @@ def test_uses_config_api_key_before_env(mock_openai, monkeypatch):
 
 
 @patch('providers.cline.OpenAI')
-def test_create_message_returns_claude_format(mock_openai):
+@patch('providers.cline.httpx.Client')
+def test_create_message_returns_claude_format(mock_httpx_client, mock_openai):
     from providers.cline import ClineClient
-    fake_response = MagicMock()
-    fake_choice = MagicMock()
-    fake_msg = MagicMock()
-    fake_msg.content = 'hello from cline'
-    fake_choice.message = fake_msg
-    fake_response.choices = [fake_choice]
-    fake_response.usage = MagicMock(prompt_tokens=10, completion_tokens=3)
-    mock_openai.return_value.chat.completions.create.return_value = fake_response
+    fake_raw = {
+        'data': {
+            'choices': [{
+                'message': {'content': 'hello from cline', 'role': 'assistant'},
+                'finish_reason': 'stop',
+            }],
+            'usage': {'prompt_tokens': 10, 'completion_tokens': 3},
+        },
+        'success': True,
+    }
+    mock_response = MagicMock()
+    mock_response.json.return_value = fake_raw
+    mock_response.raise_for_status.return_value = None
+    mock_httpx_client_instance = MagicMock()
+    mock_httpx_client_instance.post.return_value = mock_response
+    # The context manager __enter__ returns the client instance
+    mock_httpx_client.return_value.__enter__.return_value = mock_httpx_client_instance
 
     # Model name keeps its own slash (Cline uses `provider/model` ids).
     c = ClineClient({'api_key': 'sk-test'})
     out = c.create_message('anthropic/claude-sonnet-4-6', [{'role': 'user', 'content': 'hi'}], 50)
 
-    _, kwargs = mock_openai.return_value.chat.completions.create.call_args
-    assert kwargs['model'] == 'anthropic/claude-sonnet-4-6'
+    # Verify the correct model was sent to Cline's API
+    call_kwargs = mock_httpx_client_instance.post.call_args[1]
+    assert call_kwargs['json']['model'] == 'anthropic/claude-sonnet-4-6'
     assert out == {
         'content': [{'text': 'hello from cline'}],
         'usage': {'input_tokens': 10, 'output_tokens': 3},

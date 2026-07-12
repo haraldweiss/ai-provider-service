@@ -14,6 +14,11 @@ Cline's API does NOT expose a GET /models endpoint (returns 404).
 ``get_models()`` falls back to the 513 model IDs from
 ``pricing_overrides_cline.json``, sourced from Cline's OSS catalog.
 ``health()`` treats a 404 as "server is alive".
+
+Cline wraps chat responses in ``{"data": {"choices": [...], "usage": ...},
+"success": true}`` rather than standard OpenAI's flat format.
+``create_message()`` uses raw httpx instead of the OpenAI SDK's parser
+to handle this non-standard response wrapper.
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional
+import httpx
 from openai import OpenAI, NotFoundError, APIStatusError
 from providers.base import BaseClient
 from config import Config
@@ -63,14 +69,29 @@ class ClineClient(BaseClient):
             return []
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
-        r = self.client.chat.completions.create(
-            model=model, messages=messages, max_tokens=max_tokens
-        )
+        # Use raw httpx because Cline wraps responses in
+        # {"data": {"choices": [...], ...}, "success": true}, which the
+        # OpenAI SDK cannot parse (leaves choices=None).
+        body = {'model': model, 'messages': messages, 'max_tokens': max_tokens}
+        with httpx.Client(timeout=120) as hc:
+            r = hc.post(
+                f'{self._base_url}/chat/completions',
+                json=body,
+                headers={'Authorization': f'Bearer {self.client.api_key}'},
+            )
+        r.raise_for_status()
+        raw = r.json()
+        # Cline wraps in {"data": {choices, usage, ...}, "success": bool}
+        data = raw.get('data', raw)
+        choice = (data.get('choices') or [{}])[0]
+        msg = choice.get('message', {})
+        content = msg.get('content') or msg.get('reasoning_content') or ''
+        usage = data.get('usage', {}) or {}
         return {
-            'content': [{'text': r.choices[0].message.content or ''}],
+            'content': [{'text': content}],
             'usage': {
-                'input_tokens': r.usage.prompt_tokens,
-                'output_tokens': r.usage.completion_tokens,
+                'input_tokens': usage.get('prompt_tokens', 0),
+                'output_tokens': usage.get('completion_tokens', 0),
             },
         }
 
