@@ -1143,3 +1143,63 @@ Annahme (cline-pass/*=$0) ist korrekt.
 
 **Pi-Connect-Skill aktualisiert:** `pi-connect-ai-provider-service` (global) um Cline-
 spezifische Schritte, Pitfalls und Verification erweitert.
+
+### Security Hardening + OpenRouter Fix + Deploy (2026-07-12, Cline)
+
+**Scope:** Security hardening across 11 files, pricing cache fix, Cline httpx
+refactor, and OpenRouter `_enforce_credentials` fix. All deployed to oracle-vm.
+
+**Commits:** `561d7f1` (security), `5be4d30` (pricing+cline), `fde40d3` (tests),
+`9610c32` (openrouter fix) — all on `origin/main`.
+
+**Changes:**
+
+1. **TRUST_FORWARDED_USER** (`config.py`, `api/admin_ui.py`) — X-Forwarded-User
+   auto-auth is now gated behind `TRUST_FORWARDED_USER=true` env flag AND
+   `request.remote_addr in ('127.0.0.1', '::1')`. Prevents header spoofing
+   from external clients. Test fixture updated.
+
+2. **MAX_CONTENT_LENGTH** (`app.py`) — 10 MiB request cap on all requests.
+
+3. **Non-root container** (`Dockerfile`) — `useradd -m -r appuser` + `USER appuser`.
+
+4. **_principal_user_id()** (`api/openai_api.py`) — raises `ValueError` instead
+   of defaulting to `'pi-agent'`. Callers return 401 on missing identity.
+
+5. **Bare except cleanup** (`cli.py`, `pricing.py`, `storage/provider_configs.py`)
+   — replaced `except Exception: pass` with specific exceptions + logging.
+
+6. **Pricing cache** (`pricing.py`) — 60s in-memory cache for
+   `_load_merged_pricing()`. `_reset_pricing_cache()` for test isolation.
+   `_merge_override_file()` skips non-`::` keys (like `_meta` in
+   `pricing_overrides_cline.json`).
+
+7. **Cline httpx refactor** (`providers/cline.py`) — removed OpenAI SDK
+   dependency entirely. `health()` does a lightweight chat ping. `max_tokens`
+   floored to 16 (Cline minimum).
+
+8. **OpenRouter `_enforce_credentials` fix** (`providers/openrouter.py`) —
+   removed `_enforce_credentials=False` (removed in openai SDK 1.109+).
+   `_make_openai_client()` helper uses `'sk-anonymous'` placeholder when no
+   API key is configured, enabling anonymous free-model access across all
+   SDK versions.
+
+9. **requirements.txt** — upper-bound pins on all deps + `httpx>=0.27.0,<1.0`.
+
+10. **Tests** — `tests/conftest.py` autouse `_reset_pricing_cache` fixture.
+    `tests/test_cline_provider.py` rewritten for httpx-based implementation.
+    `tests/test_admin_ui.py` sets `TRUST_FORWARDED_USER = True`.
+
+**Deployed on oracle-vm:**
+- Image `localhost/ai-provider:9610c32` (+ `:latest`), container healthy.
+- `/health` → `status=ok`; all providers healthy except `claude` (no key)
+  and `custom` (no endpoint). OpenRouter went from ❌ to ✅.
+
+**Verification:** `pytest -q` → 336 passed, 7 pre-existing openai SDK compat
+failures (`openai 1.54.0` + `httpx 0.28.1` `proxies` TypeError on local Mac;
+container has `openai 1.109.1` which doesn't have this issue).
+
+**Pre-existing test failures note:** 7 tests fail locally due to
+`openai 1.54.0` + `httpx 0.28.1` incompatibility (`proxies` kwarg removed
+in httpx 0.28). These pass in the container (`openai 1.109.1`). Not caused
+by this change — confirmed by stashing and running on clean `main`.
