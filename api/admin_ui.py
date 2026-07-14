@@ -51,7 +51,7 @@ def _require_admin_ui():
 
 @admin_ui_bp.before_request
 def _entry():
-    if request.endpoint in ('admin_ui.login', 'admin_ui.logout'):
+    if request.endpoint == 'admin_ui.logout':
         return None
 
     # Auto-auth via Apache Basic Auth (X-Forwarded-User set by ai-admin vhost).
@@ -63,6 +63,8 @@ def _entry():
             if not _is_authed():
                 session['admin'] = True
                 session['admin_csrf'] = secrets.token_urlsafe(32)
+            if request.endpoint == 'admin_ui.login':
+                return redirect(url_for('admin_ui.root'))
             return None
 
     token = request.args.get('token')
