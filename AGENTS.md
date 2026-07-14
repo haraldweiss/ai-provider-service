@@ -1193,9 +1193,12 @@ refactor, and OpenRouter `_enforce_credentials` fix. All deployed to oracle-vm.
 **Changes:**
 
 1. **TRUST_FORWARDED_USER** (`config.py`, `api/admin_ui.py`) — X-Forwarded-User
-   auto-auth is now gated behind `TRUST_FORWARDED_USER=true` env flag AND
-   `request.remote_addr in ('127.0.0.1', '::1')`. Prevents header spoofing
-   from external clients. Test fixture updated.
+   auto-auth was introduced behind the `TRUST_FORWARDED_USER=true` env flag.
+   **Superseded on 2026-07-14 by `c72c556`:** Docker delivers Apache through
+   `172.20.0.1`, and `ProxyFix` rewrites `request.remote_addr` to the browser
+   IP. The current implementation therefore checks the preserved immediate
+   proxy peer against explicit `TRUSTED_PROXY_IPS`, rather than loopback or the
+   forwarded client address. This keeps external header spoofing blocked.
 
 2. **MAX_CONTENT_LENGTH** (`app.py`) — 10 MiB request cap on all requests.
 
