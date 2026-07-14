@@ -11,6 +11,7 @@ def setup_admin():
     Config.ADMIN_PASSWORD = 'admin-pw'
     Config.SECRET_KEY = 'test-secret-key-for-sessions'
     Config.TRUST_FORWARDED_USER = True
+    Config.TRUSTED_PROXY_IPS = {'127.0.0.1', '::1'}
 
 
 def _is_redirect(status):
@@ -78,6 +79,34 @@ def test_admin_ui_auto_auth_via_forwarded_user(client):
     assert r.status_code == 200
     with client.session_transaction() as sess:
         assert sess.get('admin') is True
+
+
+def test_admin_ui_auto_auth_accepts_configured_docker_proxy(client):
+    """Apache reaches the container through Docker's bridge gateway."""
+    Config.TRUSTED_PROXY_IPS = {'172.20.0.1'}
+
+    r = client.get(
+        '/admin/ui/users',
+        headers={'X-Forwarded-User': 'harald'},
+        environ_base={'REMOTE_ADDR': '172.20.0.1'},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 200
+    with client.session_transaction() as sess:
+        assert sess.get('admin') is True
+
+
+def test_admin_ui_auto_auth_rejects_untrusted_forwarded_user(client):
+    r = client.get(
+        '/admin/ui/users',
+        headers={'X-Forwarded-User': 'attacker'},
+        environ_base={'REMOTE_ADDR': '203.0.113.10'},
+        follow_redirects=False,
+    )
+
+    assert _is_redirect(r.status_code)
+    assert 'login' in r.location.lower()
 
 
 def test_users_page_lists_known_users(client, app):
