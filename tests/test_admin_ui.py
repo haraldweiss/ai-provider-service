@@ -44,6 +44,21 @@ def test_admin_ui_login_returns_form(client):
     assert b'username' in r.data or b'Username' in r.data
 
 
+def test_admin_ui_forwarded_user_redirects_from_login(client):
+    """An Apache-authenticated admin must not see a second login form."""
+    Config.TRUSTED_PROXY_IPS = {'172.20.0.1'}
+
+    r = client.get(
+        '/admin/ui/login',
+        headers={'X-Forwarded-User': 'harald'},
+        environ_base={'REMOTE_ADDR': '172.20.0.1'},
+        follow_redirects=False,
+    )
+
+    assert _is_redirect(r.status_code)
+    assert '/admin/ui/' in r.location
+
+
 def test_admin_ui_login_post_valid_username_password(client):
     r = client.post('/admin/ui/login', data={'username': 'harald', 'password': 'admin-pw'}, follow_redirects=False)
     assert r.status_code in (302, 303)
