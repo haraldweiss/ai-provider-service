@@ -112,6 +112,25 @@ def test_admin_ui_auto_auth_accepts_configured_docker_proxy(client):
         assert sess.get('admin') is True
 
 
+def test_admin_ui_auto_auth_uses_proxy_peer_not_forwarded_client_ip(client):
+    """ProxyFix exposes the browser IP; header trust must use its peer IP."""
+    Config.TRUSTED_PROXY_IPS = {'172.20.0.1'}
+
+    r = client.get(
+        '/admin/ui/users',
+        headers={
+            'X-Forwarded-User': 'harald',
+            'X-Forwarded-For': '203.0.113.10',
+        },
+        environ_base={'REMOTE_ADDR': '172.20.0.1'},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 200
+    with client.session_transaction() as sess:
+        assert sess.get('admin') is True
+
+
 def test_admin_ui_auto_auth_rejects_untrusted_forwarded_user(client):
     r = client.get(
         '/admin/ui/users',
