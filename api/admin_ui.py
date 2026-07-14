@@ -49,6 +49,12 @@ def _require_admin_ui():
     return None
 
 
+def _proxy_peer_addr() -> str:
+    """Return the immediate proxy peer before ProxyFix applies client headers."""
+    proxy_fix_orig = request.environ.get('werkzeug.proxy_fix.orig', {})
+    return proxy_fix_orig.get('REMOTE_ADDR', request.remote_addr)
+
+
 @admin_ui_bp.before_request
 def _entry():
     if request.endpoint == 'admin_ui.logout':
@@ -59,7 +65,7 @@ def _entry():
     # originates from an explicitly configured, local reverse-proxy address.
     if Config.TRUST_FORWARDED_USER:
         forwarded_user = request.headers.get('X-Forwarded-User')
-        if forwarded_user and request.remote_addr in Config.TRUSTED_PROXY_IPS:
+        if forwarded_user and _proxy_peer_addr() in Config.TRUSTED_PROXY_IPS:
             if not _is_authed():
                 session['admin'] = True
                 session['admin_csrf'] = secrets.token_urlsafe(32)

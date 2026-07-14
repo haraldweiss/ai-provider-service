@@ -681,7 +681,8 @@ The admin UI is served at `/admin/ui/`.
   allowlist). For the production Docker network, set
   `TRUSTED_PROXY_IPS=172.20.0.1`; Apache reaches the container through that
   bridge gateway rather than as loopback. Keep the allowlist limited to the
-  reverse-proxy source address(es). An authenticated request to
+  reverse-proxy source address(es); this check uses the original proxy peer,
+  not Apache's client-IP forwarding header. An authenticated request to
   `/admin/ui/login` is redirected to the admin UI, so no second login step is
   needed.
 - **direct access** — log in with `ADMIN_USER_ID`/`ADMIN_PASSWORD` or

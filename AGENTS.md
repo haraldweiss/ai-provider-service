@@ -67,7 +67,10 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
   `TRUST_FORWARDED_USER=true` and must have a narrow `TRUSTED_PROXY_IPS`
   allowlist. In the current Compose network Apache is observed in the
   container as `172.20.0.1`, not loopback; changing Docker networking requires
-  updating the allowlist and recreating the container.
+  updating the allowlist and recreating the container. Because `ProxyFix`
+  rewrites `request.remote_addr` from Apache's `X-Forwarded-For`, auth trust
+  checks must use its preserved immediate-peer address instead of the client
+  address.
 
 ### 3.6 Markdown memory vault is rendered, not authored
 - `VAULT_PATH` (set to `/app/data/vault` in the container env; code default `<app>/vault`) contains `.md` files **generated from the DB** by `VaultRenderer`. Treat as cache.
