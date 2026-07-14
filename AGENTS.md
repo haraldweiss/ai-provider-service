@@ -63,6 +63,11 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - `gunicorn` runs **inside** the `ai-provider` Docker container, which exposes `127.0.0.1:8767` on oracle-vm.
 - Host Apache (`httpd`) reverse-proxies to it: `ai-admin.wolfinisoftware.de` → `:8767/`, and `ai-provider-service.wolfinisoftware.de/` → `:8767/` (see `/etc/httpd/conf.d/`). In-container callers reach the host via `ai-provider-bridge.service` (docker0 gw → loopback :8767).
 - Never bind directly to port 80/443 — Apache owns those.
+- `X-Forwarded-User` admin auto-auth is enabled only with
+  `TRUST_FORWARDED_USER=true` and must have a narrow `TRUSTED_PROXY_IPS`
+  allowlist. In the current Compose network Apache is observed in the
+  container as `172.20.0.1`, not loopback; changing Docker networking requires
+  updating the allowlist and recreating the container.
 
 ### 3.6 Markdown memory vault is rendered, not authored
 - `VAULT_PATH` (set to `/app/data/vault` in the container env; code default `<app>/vault`) contains `.md` files **generated from the DB** by `VaultRenderer`. Treat as cache.

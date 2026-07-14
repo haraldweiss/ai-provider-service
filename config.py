@@ -69,8 +69,15 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', '')
 
     # Admin UI auto-auth via X-Forwarded-User (set by Apache Basic Auth).
-    # Must be explicitly enabled — never trust this header by default.
+    # Must be explicitly enabled.  The source address must also be in the
+    # explicit proxy allowlist; Docker delivers host-Apache traffic via its
+    # bridge gateway rather than as loopback inside the container.
     TRUST_FORWARDED_USER = os.getenv('TRUST_FORWARDED_USER', 'false').lower() == 'true'
+    TRUSTED_PROXY_IPS = {
+        address.strip()
+        for address in os.getenv('TRUSTED_PROXY_IPS', '127.0.0.1,::1').split(',')
+        if address.strip()
+    }
 
     # Markdown memory (Phase 1)
     VAULT_PATH = os.getenv('VAULT_PATH', os.path.join(os.path.dirname(__file__), 'vault'))

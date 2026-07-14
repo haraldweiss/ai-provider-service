@@ -677,7 +677,11 @@ oracle-vm via Host-Crontab gegen den Docker-Container:
 
 The admin UI is served at `/admin/ui/`.
 - **via ai-admin.wolfinisoftware.de** — Apache Basic Auth + `X-Forwarded-User` auto-auth
-  (requires `TRUST_FORWARDED_USER=true` env var; only trusted from localhost),
+  (requires `TRUST_FORWARDED_USER=true` and an explicit `TRUSTED_PROXY_IPS`
+  allowlist). For the production Docker network, set
+  `TRUSTED_PROXY_IPS=172.20.0.1`; Apache reaches the container through that
+  bridge gateway rather than as loopback. Keep the allowlist limited to the
+  reverse-proxy source address(es),
   no second login step needed.
 - **direct access** — log in with `ADMIN_USER_ID`/`ADMIN_PASSWORD` or
   `ADMIN_TOKEN` via the form or URL (`/admin/ui?token=<ADMIN_TOKEN>`).
