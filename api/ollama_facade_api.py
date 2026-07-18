@@ -31,7 +31,6 @@ import requests
 from flask import Blueprint, Response, g, jsonify, request, stream_with_context
 
 from api.auth import Principal, _resolve_principal
-from config import Config
 from dispatcher import dispatch
 from providers import get_client
 

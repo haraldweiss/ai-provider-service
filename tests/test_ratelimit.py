@@ -2,8 +2,8 @@
 
 import time
 import pytest
-from unittest.mock import patch, MagicMock
-from api.ratelimit import _check, _key, _RATE_LIMITS, _windows
+from unittest.mock import patch
+from api.ratelimit import _check, _RATE_LIMITS, _windows
 
 
 @pytest.fixture(autouse=True)

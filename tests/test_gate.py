@@ -2,7 +2,7 @@
 """Tests for is_allowed() and require_provider_access decorator."""
 
 import pytest
-from flask import jsonify, g
+from flask import jsonify
 from config import Config
 from database import db
 from storage.models import ProviderGrant

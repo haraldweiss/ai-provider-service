@@ -1,9 +1,8 @@
 """MemoryWriter — DB-only insert path. Filesystem render is tested separately."""
 
 import pytest
-from database import db
 from storage.memory import MemoryWriter, NoteAlreadyExists
-from storage.memory_models import MemoryNote, MemoryKind
+from storage.memory_models import MemoryKind
 
 
 def test_write_note_minimal(app):

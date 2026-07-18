@@ -17,6 +17,8 @@ from typing import Any
 import requests
 import trafilatura
 
+from agents.news.tool_schemas import TAG_ALLOWLIST, DEFAULT_CATEGORY
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SEARXNG_URL = 'http://127.0.0.1:8888'
@@ -97,9 +99,6 @@ def web_fetch(url: str) -> dict:
     if truncated:
         text = text[:_MAX_TEXT_CHARS].rstrip() + '… [truncated]'
     return {'text': text, 'title': title, 'url': url}
-
-
-from agents.news.tool_schemas import TAG_ALLOWLIST, DEFAULT_CATEGORY
 
 
 _wp_cache: dict[str, Any] = {'self_id': None, 'category_id': None, 'tag_ids': {}}

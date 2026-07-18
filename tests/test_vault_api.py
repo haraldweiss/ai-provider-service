@@ -1,10 +1,8 @@
 """Vault export API — tarball + single-file download with path-traversal guard."""
 
 import io
-import os
 import tarfile
 import pytest
-from pathlib import Path
 from config import Config
 
 

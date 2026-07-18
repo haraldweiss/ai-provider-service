@@ -1,9 +1,5 @@
 """flask vault-backup CLI tests."""
 
-import os
-import tarfile
-import pytest
-from pathlib import Path
 from config import Config
 
 
@@ -21,7 +17,6 @@ def test_vault_backup_creates_files(app, tmp_path, monkeypatch):
     assert result.exit_code == 0
     files = list(tmp_path.iterdir())
     tars = [f for f in files if f.name.endswith('.tar.gz')]
-    dbs = [f for f in files if f.name.endswith('.db')]
     assert len(tars) >= 1
 
 

@@ -123,7 +123,6 @@ def test_delete_unknown_grant_404(client):
 
 
 def test_create_grant_with_session_cookie(client, app):
-    import flask
     app.config['SECRET_KEY'] = 'test-secret-key-for-sessions'
     Config.SECRET_KEY = 'test-secret-key-for-sessions'
     client.get('/admin/ui/?token=admin-test-token', follow_redirects=False)

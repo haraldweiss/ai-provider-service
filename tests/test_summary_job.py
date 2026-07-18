@@ -3,9 +3,8 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
-from config import Config
 from database import db
-from storage.memory_models import MemoryNote, MemoryKind, SummaryJob
+from storage.memory_models import MemoryNote, MemoryKind
 
 
 @pytest.fixture
@@ -16,7 +15,6 @@ def free_models(monkeypatch):
 
 def _seed_audit(user_id, app_name, when, n=3):
     from storage.memory import MemoryWriter
-    from storage.memory_models import MemoryNote
     w = MemoryWriter()
     for i in range(n):
         note = w.write_audit(user_id=user_id, app=app_name, provider='claude',

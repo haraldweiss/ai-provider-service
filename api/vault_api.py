@@ -8,7 +8,6 @@ and `..` components before any filesystem call.
 from __future__ import annotations
 import io
 import logging
-import os
 import tarfile
 from pathlib import Path
 from flask import Blueprint, request, jsonify, send_file, g

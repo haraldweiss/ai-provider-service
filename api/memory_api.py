@@ -14,7 +14,7 @@ from database import db
 from config import Config
 from api.auth import require_token, _asserted_user_id
 from storage.memory_models import MemoryNote, MemoryKind
-from storage.memory import MemoryWriter, NoteAlreadyExists
+from storage.memory import MemoryWriter
 from storage.vault_renderer import VaultRenderer
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,6 @@ def delete_note(note_id: int):
     gate = _gate()
     if gate:
         return gate
-    from datetime import datetime, timezone
     user_id = _scope_user_id()
     n = MemoryNote.query.filter_by(id=note_id, user_id=user_id).first()
     if not n or n.deleted_at is not None:

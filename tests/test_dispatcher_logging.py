@@ -3,7 +3,6 @@
 from __future__ import annotations
 import pytest
 from unittest.mock import patch
-from database import db
 
 
 def test_execute_logs_success_event(app):

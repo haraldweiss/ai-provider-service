@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Tests for the grants-bootstrap CLI command."""
 
-import pytest
 from config import Config
 from database import db
 from storage.models import ProviderConfig, ProviderGrant

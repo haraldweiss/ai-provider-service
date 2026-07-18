@@ -16,7 +16,6 @@ from flask import Flask
 from config import Config
 from providers import get_client, PROVIDER_REGISTRY
 from storage.models import ProviderConfig
-from database import db
 import health_tracker
 from dispatcher import drain_queue_for_provider
 

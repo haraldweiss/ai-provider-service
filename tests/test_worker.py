@@ -7,9 +7,8 @@ mocking to verify individual components without spinning up the full loop.
 from __future__ import annotations
 import threading
 import time
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 
-import pytest
 
 from worker import _check_provider
 

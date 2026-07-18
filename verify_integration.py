@@ -15,7 +15,6 @@ Or with explicit settings:
 
 import os
 import sys
-import json
 import requests
 from typing import Tuple, Optional
 
@@ -130,7 +129,7 @@ def check_authentication(service_url: str, token: str) -> bool:
         elif response.status_code == 401:
             print_error("Authentication failed (401 Unauthorized)")
             print_warning("Token may be incorrect or not set")
-            print_info(f"Verify token matches SERVICE_TOKEN on the service")
+            print_info("Verify token matches SERVICE_TOKEN on the service")
             return False
         else:
             print_error(f"Unexpected response: HTTP {response.status_code}")

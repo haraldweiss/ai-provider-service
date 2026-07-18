@@ -1,10 +1,7 @@
 """Audit hook in dispatcher._execute writes an audit note via MemoryWriter."""
 
-import os
 import pytest
 from unittest.mock import patch, MagicMock
-from config import Config
-from database import db
 from storage.memory_models import MemoryNote, MemoryKind
 
 

@@ -1,8 +1,6 @@
 """VaultRenderer — projects DB rows onto markdown files under VAULT_PATH."""
 
-import os
 import pytest
-from pathlib import Path
 from database import db
 from config import Config
 from storage.memory import MemoryWriter

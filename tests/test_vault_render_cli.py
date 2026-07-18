@@ -1,8 +1,6 @@
 """flask vault-render CLI — full rebuild and stale-check."""
 
-import os
 import pytest
-from pathlib import Path
 from config import Config
 
 

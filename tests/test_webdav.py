@@ -1,7 +1,6 @@
 """WebDAV bridge tests — PROPFIND, GET, PUT."""
 
 import pytest
-from pathlib import Path
 from config import Config
 
 

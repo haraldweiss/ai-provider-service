@@ -319,7 +319,7 @@ def update_zai_pricing_command():
 @click.option('--yesterday', is_flag=True, help='Shortcut for --date=<yesterday>.')
 def summary_job_command(period, date_str, app_name, yesterday):
     """Run summarization for a calendar day or for an app's last 30 days."""
-    from datetime import date, datetime, timedelta, timezone
+    from datetime import date, timedelta
     from agents.summary_job import run_for_day, run_for_app
 
     if period == 'day':

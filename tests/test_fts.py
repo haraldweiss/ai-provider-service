@@ -1,7 +1,5 @@
 """FTS5 full-text search tests."""
 
-import pytest
-from storage.memory_models import MemoryNote, MemoryKind
 from storage.fts import ensure_fts, search, rebuild_index
 
 

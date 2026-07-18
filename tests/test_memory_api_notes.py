@@ -1,10 +1,8 @@
 """Memory API — notes CRUD with auth scoping."""
 
-import json
 import pytest
 from config import Config
-from database import db
-from storage.memory_models import MemoryNote, MemoryKind
+from storage.memory_models import MemoryNote
 
 
 @pytest.fixture

@@ -11,7 +11,6 @@ import os
 import re
 import subprocess
 import time
-from typing import Optional
 from openai import OpenAI, AuthenticationError
 from providers.base import BaseClient
 from config import Config

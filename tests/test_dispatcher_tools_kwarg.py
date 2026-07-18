@@ -1,7 +1,6 @@
 """dispatcher.dispatch() and _execute() forward the `tools` kwarg to the
 provider client. The news-agent runner relies on this for native tool-use."""
 
-import pytest
 from unittest.mock import patch, MagicMock
 
 

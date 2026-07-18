@@ -12,14 +12,14 @@ import sys
 import time
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 # dispatch + execute_tool are imported at module level so tests can patch them
 # as 'agents.news.runner.dispatch' / 'agents.news.runner.execute_tool'.
 from dispatcher import dispatch
 from agents.news.tool_schemas import TOOLS
 from agents.news.prompts import NEWS_SYSTEM_PROMPT
 from agents.news import tools as news_tools
+
+logger = logging.getLogger(__name__)
 
 
 _TOOL_FUNCTIONS = {

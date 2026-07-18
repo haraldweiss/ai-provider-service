@@ -110,7 +110,7 @@ def build_overview() -> list[dict]:
     cfg_users = db.session.query(ProviderConfig.user_id).distinct()
     grant_users = db.session.query(ProviderGrant.user_id).distinct()
     usage_users = db.session.query(UsageEvent.user_id).distinct()
-    profile_users = db.session.query(UserProfile.user_id).filter(UserProfile.disabled == False)
+    profile_users = db.session.query(UserProfile.user_id).filter(UserProfile.disabled.is_(False))
     all_user_ids = sorted({
         r[0] for r in cfg_users.union(grant_users).union(usage_users).union(profile_users).all()
     })

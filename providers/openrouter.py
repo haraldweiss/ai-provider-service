@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import time
-from typing import Optional
 from openai import OpenAI
 from providers.base import BaseClient
 from config import Config

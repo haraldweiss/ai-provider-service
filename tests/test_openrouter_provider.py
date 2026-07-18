@@ -3,7 +3,6 @@
 import json
 import time
 from unittest.mock import MagicMock, patch
-import pytest
 from providers import get_client, PROVIDER_REGISTRY
 
 

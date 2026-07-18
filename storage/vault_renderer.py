@@ -4,15 +4,13 @@ Source of truth is the DB. The vault directory is a rendered cache.
 """
 
 from __future__ import annotations
-import os
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 import json
 from config import Config
-from database import db
-from storage.memory_models import MemoryNote, MemoryKind
+from storage.memory_models import MemoryNote
 
 logger = logging.getLogger(__name__)
 
