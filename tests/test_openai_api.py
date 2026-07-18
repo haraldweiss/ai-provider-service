@@ -3,6 +3,78 @@
 
 import json
 
+
+def test_chat_completions_blocks_unscoped_service_token_from_colibri(
+    app, client, monkeypatch,
+):
+    """An inferred admin user_id must not authorize a service principal."""
+    from config import Config
+    import api.openai_api as openai_api
+
+    monkeypatch.setattr(Config, 'COLIBRI_ENABLED', True)
+    monkeypatch.setattr(Config, 'ADMIN_USER_ID', 'harald')
+    dispatch_called = False
+
+    def fake_dispatch(*args, **kwargs):
+        nonlocal dispatch_called
+        dispatch_called = True
+        raise AssertionError('Colibri dispatch must not be reached')
+
+    monkeypatch.setattr(openai_api, 'dispatch', fake_dispatch)
+
+    response = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'colibri/glm-5.2-colibri',
+            'messages': [{'role': 'user', 'content': 'ping'}],
+        },
+        headers={'Authorization': 'Bearer test-token'},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()['error'] == 'needs_approval'
+    assert dispatch_called is False
+
+
+def test_list_models_hides_colibri_from_unscoped_service_token(
+    app, client, monkeypatch,
+):
+    """Colibri discovery checks the real service principal before user fallback."""
+    from config import Config
+    import api.openai_api as openai_api
+
+    monkeypatch.setattr(Config, 'COLIBRI_ENABLED', True)
+    monkeypatch.setattr(Config, 'ADMIN_USER_ID', 'harald')
+    monkeypatch.setattr(openai_api, 'PROVIDER_REGISTRY', {
+        'colibri': {
+            'name': 'Colibri',
+            'system': True,
+            'requires': [],
+            'optional': [],
+            'personal_api_key': False,
+        },
+    })
+    monkeypatch.setattr(openai_api, '_load_config', lambda user_id, provider_id: {})
+    monkeypatch.setattr(openai_api.health_tracker, 'is_healthy', lambda provider_id: True)
+    client_called = False
+
+    def fake_get_client(*args, **kwargs):
+        nonlocal client_called
+        client_called = True
+        raise AssertionError('Colibri client must not be reached')
+
+    monkeypatch.setattr(openai_api, 'get_client', fake_get_client)
+
+    response = client.get(
+        '/v1/models',
+        headers={'Authorization': 'Bearer test-token'},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()['data'] == []
+    assert client_called is False
+
+
 def test_list_models_is_generated_from_available_provider_models(app, client, monkeypatch):
     from config import Config
     import api.openai_api as openai_api

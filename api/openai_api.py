@@ -11,6 +11,7 @@ import time
 import uuid
 from flask import Blueprint, jsonify, request, Response, stream_with_context
 from api.auth import require_token
+from api.gate import is_allowed
 # from api.gate import require_provider_access
 from api.provider_visibility import availability_hint, hidden_key_provider_rows
 from dispatcher import dispatch, _extract_response_text, _load_config, ProviderUnavailableError
@@ -58,11 +59,16 @@ def _model_id(provider_id: str, model_name: str) -> str:
     return f'{provider_id}/{model_name}'
 
 
-def _available_model_rows(user_id: str) -> list[dict]:
+def _available_model_rows(user_id: str, principal) -> list[dict]:
     now = int(time.time())
     rows = []
     seen = set()
     for provider_id in PROVIDER_REGISTRY:
+        # Most OpenAI-compatible providers retain their legacy fallback user
+        # semantics.  Colibri is deliberately different: it is private to the
+        # authenticated admin principal, never to an inferred fallback user.
+        if provider_id == 'colibri' and not is_allowed(principal, provider_id):
+            continue
         cfg = _load_config(user_id, provider_id)
         if cfg is None:
             continue
@@ -205,7 +211,7 @@ def list_models():
     hidden = hidden_key_provider_rows(user_id)
     return jsonify({
         'object': 'list',
-        'data': _available_model_rows(user_id),
+        'data': _available_model_rows(user_id, g.principal),
         'hidden_providers': hidden,
         'availability_hint': availability_hint(hidden),
     })
@@ -238,6 +244,17 @@ def chat_completions():
         return jsonify({
             'error': {'message': f'Unknown provider: {provider_id}', 'type': 'invalid_request'},
         }), 400
+
+    # /v1/chat/completions derives provider_id from `model`, so it cannot use
+    # the ordinary path/query/body provider decorator.  Check the actual
+    # principal before `_principal_user_id()` can infer the service fallback.
+    if provider_id == 'colibri' and not is_allowed(g.principal, provider_id):
+        return jsonify({
+            'error': 'needs_approval',
+            'provider_id': provider_id,
+            'user_id': g.principal.user_id,
+            'message': f'Provider {provider_id} requires admin approval for this user',
+        }), 403
 
     try:
         user_id = _principal_user_id()
