@@ -55,6 +55,11 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - ⚠️ launchd agents on the Macs must NOT log under `~/.ollama` — it's a symlink to an external SSD; an unmounted/TCC-blocked volume makes launchd fail the job with `EX_CONFIG (78)` (silent, no autossh start). Log to internal disk (`~/Library/Logs/…`). Self-monitors must restart via `launchctl kickstart -k`, not legacy `load/unload` (no-op on wedged jobs).
 - Never assume Ollama is available locally — always handle `ConnectionError` with fallback to next provider.
 
+### 3.3.1 Colibri POC uses its own private tunnel and rollback path
+- Colibri uses a separate Mac Studio launchd service on `127.0.0.1:18000`, a separate `autossh -R 18000:127.0.0.1:18000 opc@oracle-vm` tunnel, and only `ai-provider-colibri-bridge.service` on oracle-vm. The bridge must bind only `172.17.0.1:18000`; never publish Colibri on `0.0.0.0`, `[::]`, or an Ollama port.
+- The two Colibri jobs (`com.wolfini.colibri`, `com.wolfini.colibri-tunnel`) must use internal-disk `~/Library/Logs/colibri/` logs and a mode-600 local environment file outside the repository. Do not edit any Ollama launch agent, tunnel, route, or model except to temporarily stop/reroute Ollama for an explicitly bounded measurement window.
+- Rollback stops/unloads only the two Colibri jobs, stops/disables only `ai-provider-colibri-bridge.service`, removes `COLIBRI_ENABLED` from the gateway environment, recreates the prior SHA-tagged image, and restores the prior Ollama routing. Keep model files unless the owner separately directs their deletion.
+
 ### 3.4 Provider health checks are async and non-blocking
 - ✅ Use thread pool or async for parallel health checks
 - ❌ Serial `for provider in providers: health_check(provider)` — blocks the gateway

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wolfini.colibri</string>
+
+    <!-- Replace REPLACE_WITH_MACOS_USERNAME before installing. The environment
+         file is deliberately outside this repository and must be mode 600. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>if [ ! -f "$HOME/.config/colibri/colibri.env" ] || [ "$(stat -f '%Lp' "$HOME/.config/colibri/colibri.env")" != "600" ]; then echo "Colibri environment file must exist and be mode 600" &gt;&amp;2; exit 78; fi; set -a; . "$HOME/.config/colibri/colibri.env"; set +a; exec /opt/colibri/c/coli serve --host 127.0.0.1 --port 18000 --model-id glm-5.2-colibri --max-queue 1 --queue-timeout 60</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/REPLACE_WITH_MACOS_USERNAME/Library/Logs/colibri/colibri.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/REPLACE_WITH_MACOS_USERNAME/Library/Logs/colibri/colibri.log</string>
+</dict>
+</plist>

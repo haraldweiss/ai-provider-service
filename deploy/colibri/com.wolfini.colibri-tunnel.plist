@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wolfini.colibri-tunnel</string>
+
+    <!-- This is a distinct tunnel. It must not replace, edit, or share an
+         existing Ollama LaunchAgent. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/autossh</string>
+        <string>-M</string>
+        <string>0</string>
+        <string>-N</string>
+        <string>-o</string>
+        <string>ServerAliveInterval=30</string>
+        <string>-o</string>
+        <string>ServerAliveCountMax=3</string>
+        <string>-o</string>
+        <string>ExitOnForwardFailure=yes</string>
+        <string>-o</string>
+        <string>StrictHostKeyChecking=accept-new</string>
+        <string>-R</string>
+        <string>18000:127.0.0.1:18000</string>
+        <string>opc@oracle-vm</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/REPLACE_WITH_MACOS_USERNAME/Library/Logs/colibri/tunnel.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/REPLACE_WITH_MACOS_USERNAME/Library/Logs/colibri/tunnel.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>AUTOSSH_GATETIME</key>
+        <string>30</string>
+    </dict>
+</dict>
+</plist>

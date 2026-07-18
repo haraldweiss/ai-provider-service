@@ -69,6 +69,14 @@ The service reads from `/var/www/ai-provider-service/.env`:
 | `DATABASE_URL` | No | `sqlite:///ai_provider.db` | Database connection string |
 | `OLLAMA_URL` | No | `http://127.0.0.1:11434` | Single-endpoint Ollama URL (legacy mode) |
 | `OLLAMA_URLS` | No | (empty) | Comma-separated list of Ollama endpoints — activates **Pool Mode** (load-balanced multi-Mac). When set, overrides `OLLAMA_URL`. See README → "Ollama Pool Mode" for details. |
+| `COLIBRI_ENABLED` | No | `false` | Enables the admin-only Colibri POC provider only after its acceptance checks pass. Remove it to roll back. |
+| `COLIBRI_BASE_URL` | No | `http://host.docker.internal:18000` | Private Docker-to-host Colibri bridge; never a public listener. |
+| `COLIBRI_API_KEY` | Conditional | empty | Colibri bearer key. Store only in the root-owned gateway environment file and the Mac's separate mode-600 environment file. |
+| `COLIBRI_MODEL_ID` | No | `glm-5.2-colibri` | Fixed POC Colibri model identifier. |
+| `COLIBRI_CONNECT_TIMEOUT_SEC` | No | `10` | Colibri upstream connection timeout, in seconds. |
+| `COLIBRI_STREAM_READ_TIMEOUT_SEC` | No | `180` | Colibri stream-read timeout, in seconds. |
+| `COLIBRI_MAX_WAITING` | No | `1` | Maximum requests waiting behind the one active Colibri inference. |
+| `COLIBRI_QUEUE_TIMEOUT_SEC` | No | `60` | Deadline for a waiting Colibri request, in seconds. |
 
 ### Auto-Restart Behavior
 
@@ -769,4 +777,3 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ai-provider-summary.timer ai-provider-vault-render.timer
 sudo systemctl list-timers | grep ai-provider
 ```
-

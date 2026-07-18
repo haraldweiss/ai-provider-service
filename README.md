@@ -8,7 +8,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 
 ## Features
 
-- **8 Provider** out of the box: Claude, Ollama, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM), Cline (api.cline.bot)
+- **9 Provider** out of the box: Claude, Ollama, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM), Cline (api.cline.bot), Colibri (admin-only POC)
 - **Server-Key-Allowlist** für zentrale Provider-Keys (Claude, z.ai): der zentrale Key ist nur für gelistete User nutzbar; z.ai ist per Default auf `ADMIN_USER_ID` beschränkt — alle anderen brauchen einen eigenen Key (auch für die kostenlosen GLM-Flash-Modelle)
 - **Per-User-Konfiguration** mit Fernet-verschlüsselten API-Keys
 - **Fallback-Provider**: bei Nicht-Erreichbarkeit automatisch auf z.B. Claude umschalten
@@ -58,6 +58,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 - **[MIGRATION.md](MIGRATION.md)** — Integration guide for client apps
 - **[INTEGRATION_TEMPLATES.md](INTEGRATION_TEMPLATES.md)** — Copy-paste code templates
 - **[ROLLOUT_PLAN.md](ROLLOUT_PLAN.md)** — Phase-by-phase implementation timeline
+- **[deploy/colibri/README.md](deploy/colibri/README.md)** — Reversible Mac Studio, reverse-tunnel, and Docker-host bridge POC guide
 
 ## Local Dev Setup
 
@@ -211,6 +212,34 @@ ist.
 
 **Wichtig:** Container-intern wird `host.docker.internal` statt `127.0.0.1`
 für Ollama-URLs verwendet (siehe docker-compose.yml `extra_hosts`).
+
+### Colibri Mac Studio POC
+
+Colibri is a separate, admin-only POC provider. It listens only on the Mac
+Studio's `127.0.0.1:18000`; a dedicated `autossh` reverse tunnel and an
+oracle-vm `socat` bridge expose it only to Docker's host gateway at
+`172.17.0.1:18000`. It must not edit an Ollama LaunchAgent or reuse an Ollama
+port/tunnel. The complete preflight, install checks, and rollback instructions
+are in [deploy/colibri/README.md](deploy/colibri/README.md).
+
+The gateway configuration is deliberately disabled by default:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `COLIBRI_ENABLED` | `false` | Enables the admin-only provider after all POC checks pass. |
+| `COLIBRI_BASE_URL` | `http://host.docker.internal:18000` | Container-facing address of the private bridge. |
+| `COLIBRI_API_KEY` | empty | Secret API key; keep it only in the root-owned gateway env file and local mode-600 Mac env file. |
+| `COLIBRI_MODEL_ID` | `glm-5.2-colibri` | Fixed POC model ID. |
+| `COLIBRI_CONNECT_TIMEOUT_SEC` | `10` | Connection timeout in seconds. |
+| `COLIBRI_STREAM_READ_TIMEOUT_SEC` | `180` | Stream read timeout in seconds. |
+| `COLIBRI_MAX_WAITING` | `1` | Maximum one waiting request behind the active inference. |
+| `COLIBRI_QUEUE_TIMEOUT_SEC` | `60` | Waiting-request deadline in seconds. |
+
+Colibri must be disabled by removing `COLIBRI_ENABLED` and recreating the
+previous SHA-tagged gateway image; do not use a plain restart for environment
+changes. Rollback stops only its two new launchd jobs and only the dedicated
+`ai-provider-colibri-bridge.service`; model files are retained unless the owner
+separately authorizes deletion.
 
 ## Ollama Pool Mode (Load-Balanced Multi-Mac)
 
