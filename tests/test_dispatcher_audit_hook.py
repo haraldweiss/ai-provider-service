@@ -61,7 +61,10 @@ def test_failed_chat_does_not_write_audit(app, memory_enabled):
         assert MemoryNote.query.filter_by(kind=MemoryKind.AUDIT).count() == 0
 
 
-def test_memory_disabled_skips_audit(app):
+def test_memory_disabled_skips_audit(app, monkeypatch):
+    import config as config_module
+
+    monkeypatch.setattr(config_module.Config, 'MEMORY_ENABLED', False)
     with app.app_context():
         with patch('dispatcher.get_client') as gc:
             client = MagicMock()
