@@ -77,7 +77,7 @@ Mac Studio; the last executes on oracle-vm after the bridge is running.
 
 ```bash
 curl -fsS -H "Authorization: Bearer $COLI_API_KEY" http://127.0.0.1:18000/health
-ss -tln | grep -E '127\.0\.0\.1:18000|\[::1\]:18000'
+lsof -nP -iTCP:18000 -sTCP:LISTEN
 curl -fsS -H "Authorization: Bearer $COLI_API_KEY" http://127.0.0.1:18000/v1/models
 ss -tln | grep '172\.17\.0\.1:18000'
 ```

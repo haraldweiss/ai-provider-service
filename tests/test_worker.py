@@ -137,18 +137,12 @@ def test_tick_starts_independent_health_checks_before_waiting(app, monkeypatch):
     if worker._worker_thread:
         worker._worker_thread.join(timeout=1)
 
-    started = 0
-    started_lock = threading.Lock()
-    both_started = threading.Event()
+    rendezvous = threading.Barrier(3)
     release = threading.Event()
 
     def slow_check(_):
-        nonlocal started
-        with started_lock:
-            started += 1
-            if started == 2:
-                both_started.set()
-        release.wait(timeout=1)
+        rendezvous.wait(timeout=3)
+        assert release.wait(timeout=3)
         return True
 
     monkeypatch.setattr(worker, 'PROVIDER_REGISTRY', {'one': {}, 'two': {}})
@@ -157,10 +151,10 @@ def test_tick_starts_independent_health_checks_before_waiting(app, monkeypatch):
     thread = threading.Thread(target=worker._tick, args=(app,), daemon=True)
     thread.start()
     try:
-        assert both_started.wait(timeout=0.2)
+        rendezvous.wait(timeout=3)
     finally:
         release.set()
-        thread.join(timeout=1)
+        thread.join(timeout=3)
 
     assert not thread.is_alive()
 
