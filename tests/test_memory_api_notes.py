@@ -92,7 +92,7 @@ def test_delete_soft_deletes(client, user_headers, app):
     r = client.delete(f'/memory/notes/{nid}?user_id=harald', headers=user_headers)
     assert r.status_code == 204
     with app.app_context():
-        assert MemoryNote.query.get(nid).deleted_at is not None
+        assert db.session.get(MemoryNote, nid).deleted_at is not None
 
 
 def test_create_note_requires_auth(client):
