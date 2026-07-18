@@ -44,7 +44,7 @@ class Config:
     ADMIN_USER_ID = os.getenv('ADMIN_USER_ID', 'harald')
     UNGATED_PROVIDERS = set(
         p.strip() for p in (os.getenv('UNGATED_PROVIDERS') or 'ollama').split(',') if p.strip()
-    )
+    ) - {'colibri'}
     GATE_ENABLED = os.getenv('GATE_ENABLED', 'false').lower() == 'true'
 
     # opencode.ai provider

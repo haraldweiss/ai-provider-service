@@ -28,6 +28,14 @@ def test_ungated_providers_env_override(monkeypatch):
     assert Config.UNGATED_PROVIDERS == {'ollama', 'custom'}
 
 
+def test_ungated_providers_env_override_cannot_include_colibri(monkeypatch):
+    monkeypatch.setenv('UNGATED_PROVIDERS', 'ollama,colibri,custom')
+    Config = reload_config()
+
+    assert Config.UNGATED_PROVIDERS == {'ollama', 'custom'}
+    assert 'colibri' not in Config.UNGATED_PROVIDERS
+
+
 def test_gate_enabled_default_false(monkeypatch):
     monkeypatch.delenv('GATE_ENABLED', raising=False)
     Config = reload_config()

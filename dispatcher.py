@@ -70,6 +70,9 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     Mit System-Key (OPENROUTER_API_KEY) im free-only Modus; eigener Key
     schaltet Paid-Modelle frei.
     """
+    if provider_id == 'colibri':
+        return {} if Config.COLIBRI_ENABLED and user_id == Config.ADMIN_USER_ID else None
+
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     if pc:
         return pc.get_config()
@@ -84,9 +87,6 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
         if Config.OPENROUTER_API_KEY:
             return {'_free_only': True, 'api_key': Config.OPENROUTER_API_KEY}
         return {'_free_only': True}
-
-    if provider_id == 'colibri':
-        return {} if Config.COLIBRI_ENABLED and user_id == Config.ADMIN_USER_ID else None
 
     if PROVIDER_REGISTRY.get(provider_id, {}).get('system'):
         if provider_id == 'claude' and not _is_claude_server_key_allowed(user_id):
