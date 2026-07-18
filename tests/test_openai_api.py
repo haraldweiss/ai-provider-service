@@ -559,6 +559,40 @@ def test_colibri_stream_relays_each_upstream_frame(app, client, monkeypatch):
     provider_stream.close.assert_called_once()
 
 
+def test_colibri_response_close_before_first_iteration_closes_provider_stream(
+    app, client, monkeypatch,
+):
+    """A disconnected client releases admission even before the SSE body starts."""
+    from config import Config
+    from api.auth import Principal
+    import api.openai_api as openai_api
+    from flask import g
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+    monkeypatch.setattr(openai_api, 'is_allowed', lambda *_: True)
+    provider_stream = _fake_provider_stream(events=[{'choices': []}])
+    monkeypatch.setattr(openai_api, 'dispatch_stream', lambda **_: provider_stream)
+
+    with app.test_request_context(
+        '/v1/chat/completions',
+        method='POST',
+        json={
+            'model': 'colibri/glm-5.2-colibri',
+            'messages': [{'role': 'user', 'content': 'Hi'}],
+            'stream': True,
+        },
+    ):
+        g.principal = Principal('harald', 'admin', 'admin')
+        response = openai_api.chat_completions.__wrapped__()
+        assert response.status_code == 200
+        provider_stream.close.assert_not_called()
+
+        response.close()
+
+    provider_stream.close.assert_called_once()
+
+
 def test_colibri_stream_unavailable_is_503_before_headers(app, client, monkeypatch):
     from config import Config
     from dispatcher import ProviderUnavailableError

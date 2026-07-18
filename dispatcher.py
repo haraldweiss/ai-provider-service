@@ -4,9 +4,11 @@ Das ist der Kern des Services: jeder /chat-Aufruf läuft hier durch.
 """
 
 from __future__ import annotations
+import asyncio
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -255,47 +257,91 @@ def _instrument_stream(
 ) -> ProviderStream:
     """Attach completion-only health, usage, and audit bookkeeping to a stream."""
     upstream_events = stream.events
+    upstream_close = stream.close
     chat_request_id = uuid.uuid4().hex
     started = datetime.now(timezone.utc)
+    lifecycle_lock = threading.Lock()
+    accounted = False
+    closed = False
+
+    def close_upstream() -> None:
+        nonlocal closed
+        with lifecycle_lock:
+            if closed:
+                return
+            closed = True
+        upstream_close()
+
+    def record_success() -> None:
+        nonlocal accounted
+        with lifecycle_lock:
+            if accounted:
+                return
+            accounted = True
+
+        latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+        result = stream.result or {}
+        usage = result.get('usage') or {}
+        _log_usage_event(
+            user_id, provider_id, model,
+            usage.get('input_tokens'), usage.get('output_tokens'),
+            'success', origin_app=origin_app,
+        )
+        _write_audit_note(
+            user_id=user_id, provider_id=provider_id, origin_app=origin_app,
+            chat_request_id=chat_request_id,
+            prompt_text=_join_messages(messages),
+            response_text=_extract_response_text(result),
+            usage=usage, cost_eur=0.0, latency_ms=latency_ms,
+        )
+        health_tracker.set_status(provider_id, True)
+
+    def record_error(exc: BaseException, *, provider_failure: bool = True) -> None:
+        nonlocal accounted
+        with lifecycle_lock:
+            if accounted:
+                return
+            accounted = True
+
+        # Stream exceptions can contain upstream response material. Record
+        # only their class so neither prompt/tool data nor credentials leak.
+        error_name = type(exc).__name__
+        if provider_failure:
+            health_tracker.set_status(
+                provider_id, False, reason=error_name, persistent=False,
+            )
+        _log_usage_event(
+            user_id, provider_id, model, None, None,
+            'error', error_message=error_name, origin_app=origin_app,
+        )
+        logger.warning('Colibri stream failed: %s', error_name)
 
     def events():
         try:
             for frame in upstream_events:
                 yield frame
-
-            latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
-            result = stream.result or {}
-            usage = result.get('usage') or {}
-            _log_usage_event(
-                user_id, provider_id, model,
-                usage.get('input_tokens'), usage.get('output_tokens'),
-                'success', origin_app=origin_app,
-            )
-            _write_audit_note(
-                user_id=user_id, provider_id=provider_id, origin_app=origin_app,
-                chat_request_id=chat_request_id,
-                prompt_text=_join_messages(messages),
-                response_text=_extract_response_text(result),
-                usage=usage, cost_eur=0.0, latency_ms=latency_ms,
-            )
-            health_tracker.set_status(provider_id, True)
+            record_success()
+        except (GeneratorExit, asyncio.CancelledError) as exc:
+            # A client abandoning the response is terminal for this request,
+            # but says nothing about Colibri's availability.
+            record_error(exc, provider_failure=False)
+            raise
         except Exception as exc:
-            # Stream exceptions can contain upstream response material. Record
-            # only their class so neither prompt/tool data nor credentials leak.
-            error_name = type(exc).__name__
-            health_tracker.set_status(
-                provider_id, False, reason=error_name, persistent=False,
-            )
-            _log_usage_event(
-                user_id, provider_id, model, None, None,
-                'error', error_message=error_name, origin_app=origin_app,
-            )
-            logger.warning('Colibri stream failed: %s', error_name)
+            record_error(exc)
             raise
         finally:
-            stream.close()
+            close_upstream()
 
-    stream.events = events()
+    instrumented_events = events()
+
+    def close() -> None:
+        try:
+            instrumented_events.close()
+        finally:
+            close_upstream()
+
+    stream.events = instrumented_events
+    stream.close = close
     return stream
 
 

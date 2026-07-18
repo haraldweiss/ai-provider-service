@@ -11,15 +11,18 @@ from storage.models import ProviderConfig
 def _fake_provider_stream(events=(), result=None):
     from providers.base import ProviderStream
 
-    return ProviderStream(
+    close = Mock()
+    stream = ProviderStream(
         events=iter(events),
-        close=Mock(),
+        close=close,
         result=result or {
             'content': [{'text': 'Hallo'}],
             'usage': {'input_tokens': 1, 'output_tokens': 1},
             'stop_reason': 'stop',
         },
     )
+    stream.close_mock = close
+    return stream
 
 
 def test_colibri_only_loads_for_enabled_admin(app, monkeypatch):
@@ -164,7 +167,7 @@ def test_dispatch_stream_records_one_success_and_closes(app, monkeypatch):
     )
     audit.assert_called_once()
     healthy.assert_called_once_with('colibri', True)
-    upstream_stream.close.assert_called_once()
+    upstream_stream.close_mock.assert_called_once()
 
 
 def test_dispatch_stream_records_one_error_and_closes(app, monkeypatch):
@@ -178,14 +181,14 @@ def test_dispatch_stream_records_one_error_and_closes(app, monkeypatch):
     upstream_stream = _fake_provider_stream(events=failing_events())
     opened = Mock(return_value=upstream_stream)
     usage = Mock()
-    unhealthy = Mock()
+    health_status = Mock()
     monkeypatch.setattr('dispatcher._load_config', lambda *_: {})
     monkeypatch.setattr(
         'dispatcher.get_client', lambda *_: SimpleNamespace(open_stream=opened),
     )
     monkeypatch.setattr('dispatcher.health_tracker.is_healthy', lambda _: True)
     monkeypatch.setattr('dispatcher._log_usage_event', usage)
-    monkeypatch.setattr('dispatcher.health_tracker.set_status', unhealthy)
+    monkeypatch.setattr('dispatcher.health_tracker.set_status', health_status)
 
     stream = dispatch_stream(
         'harald', 'colibri', 'glm-5.2-colibri', [], 16,
@@ -198,7 +201,78 @@ def test_dispatch_stream_records_one_error_and_closes(app, monkeypatch):
         'harald', 'colibri', 'glm-5.2-colibri', None, None, 'error',
         error_message='RuntimeError', origin_app=None,
     )
-    unhealthy.assert_called_once_with(
+    health_status.assert_called_once_with(
         'colibri', False, reason='RuntimeError', persistent=False,
     )
-    upstream_stream.close.assert_called_once()
+    upstream_stream.close_mock.assert_called_once()
+
+
+def test_dispatch_stream_abandon_after_frame_records_one_error_and_closes(app, monkeypatch):
+    """Closing an already-started relay records one aborted-stream failure."""
+    from dispatcher import dispatch_stream
+
+    upstream_stream = _fake_provider_stream(events=[{'choices': []}, {'choices': []}])
+    opened = Mock(return_value=upstream_stream)
+    usage = Mock()
+    health_status = Mock()
+    monkeypatch.setattr('dispatcher._load_config', lambda *_: {})
+    monkeypatch.setattr(
+        'dispatcher.get_client', lambda *_: SimpleNamespace(open_stream=opened),
+    )
+    monkeypatch.setattr('dispatcher.health_tracker.is_healthy', lambda _: True)
+    monkeypatch.setattr('dispatcher._log_usage_event', usage)
+    monkeypatch.setattr('dispatcher.health_tracker.set_status', health_status)
+
+    stream = dispatch_stream(
+        'harald', 'colibri', 'glm-5.2-colibri', [], 16,
+        tools=[], tool_choice=None,
+    )
+    assert next(stream.events) == {'choices': []}
+
+    stream.close()
+    stream.close()
+
+    usage.assert_called_once_with(
+        'harald', 'colibri', 'glm-5.2-colibri', None, None, 'error',
+        error_message='GeneratorExit', origin_app=None,
+    )
+    health_status.assert_not_called()
+    upstream_stream.close_mock.assert_called_once()
+
+
+def test_dispatch_stream_cancellation_records_one_error_without_changing_health(
+    app, monkeypatch,
+):
+    """Client cancellation is terminal request accounting, not provider failure."""
+    import asyncio
+    from dispatcher import dispatch_stream
+
+    def cancelled_events():
+        raise asyncio.CancelledError()
+        yield  # pragma: no cover
+
+    upstream_stream = _fake_provider_stream(events=cancelled_events())
+    opened = Mock(return_value=upstream_stream)
+    usage = Mock()
+    health_status = Mock()
+    monkeypatch.setattr('dispatcher._load_config', lambda *_: {})
+    monkeypatch.setattr(
+        'dispatcher.get_client', lambda *_: SimpleNamespace(open_stream=opened),
+    )
+    monkeypatch.setattr('dispatcher.health_tracker.is_healthy', lambda _: True)
+    monkeypatch.setattr('dispatcher._log_usage_event', usage)
+    monkeypatch.setattr('dispatcher.health_tracker.set_status', health_status)
+
+    stream = dispatch_stream(
+        'harald', 'colibri', 'glm-5.2-colibri', [], 16,
+        tools=[], tool_choice=None,
+    )
+    with pytest.raises(asyncio.CancelledError):
+        next(stream.events)
+
+    usage.assert_called_once_with(
+        'harald', 'colibri', 'glm-5.2-colibri', None, None, 'error',
+        error_message='CancelledError', origin_app=None,
+    )
+    health_status.assert_not_called()
+    upstream_stream.close_mock.assert_called_once()

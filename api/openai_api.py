@@ -306,7 +306,7 @@ def chat_completions():
             finally:
                 provider_stream.close()
 
-        return Response(
+        response = Response(
             stream_with_context(generate_colibri()),
             mimetype='text/event-stream',
             headers={
@@ -314,6 +314,11 @@ def chat_completions():
                 'X-Accel-Buffering': 'no',
             },
         )
+        # Flask may close a response before it ever starts iterating its body.
+        # Register the provider cleanup on the response itself so admission is
+        # released in that disconnect path too.
+        response.call_on_close(provider_stream.close)
+        return response
 
     try:
         result = dispatch(
