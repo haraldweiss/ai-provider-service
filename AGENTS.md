@@ -103,6 +103,13 @@ This rule applies to **every AI agent** working in this repo. When a skill exist
 
 ---
 
+### 3.10 GitHub App and Actions tokens are opaque
+
+- Never enforce a fixed token length or a restrictive token regex; GitHub App installation tokens may use the `ghs_` JWT format with dots and roughly 520 characters.
+- Token storage, configuration and HTTP authorization handling must accept at least 520 characters and must not parse token contents.
+
+---
+
 ## 4. Verification standards
 
 Record in commit body. Examples:
