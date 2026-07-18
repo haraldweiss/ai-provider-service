@@ -8,6 +8,7 @@ jeder Worker eigenständig — das ist OK, weil:
 """
 
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import threading
 import time
@@ -29,6 +30,9 @@ _stop_event = threading.Event()
 def _check_provider(provider_id: str) -> bool:
     """Health-Check für einen Provider. Nutzt eine beliebige user-Config oder
     System-Defaults."""
+    if provider_id == 'colibri' and not Config.COLIBRI_ENABLED:
+        return True
+
     cfg = {}
     # Wenn user-Provider, brauchen wir eine Config — nimm die erste verfügbare.
     if not PROVIDER_REGISTRY[provider_id]['system']:
@@ -53,14 +57,39 @@ def _check_provider(provider_id: str) -> bool:
         return False
 
 
+def _check_provider_in_app_context(app: Flask, provider_id: str) -> bool:
+    """Run a provider probe with the thread-local Flask context it needs."""
+    with app.app_context():
+        return _check_provider(provider_id)
+
+
 def _tick(app: Flask) -> None:
     """Ein Worker-Durchlauf: alle Provider pingen + bei Recovery Queue drainen."""
-    with app.app_context():
-        for pid in PROVIDER_REGISTRY:
+    provider_ids = tuple(
+        provider_id for provider_id in PROVIDER_REGISTRY
+        if provider_id != 'colibri' or Config.COLIBRI_ENABLED
+    )
+    if not provider_ids:
+        return
+
+    with ThreadPoolExecutor(
+        max_workers=min(8, len(provider_ids)),
+        thread_name_prefix='provider-health',
+    ) as pool:
+        futures = {
+            pool.submit(_check_provider_in_app_context, app, provider_id): provider_id
+            for provider_id in provider_ids
+        }
+        for future in as_completed(futures):
+            provider_id = futures[future]
             try:
-                _check_provider(pid)
-            except Exception as e:
-                logger.warning(f'health-check {pid} crashed: {e}')
+                future.result()
+            except Exception as exc:
+                logger.warning(
+                    'health-check %s crashed: %s',
+                    provider_id,
+                    type(exc).__name__,
+                )
 
 
 def _refresh_free_models(app: Flask) -> None:

@@ -12,6 +12,8 @@ from unittest.mock import patch, MagicMock, PropertyMock
 import pytest
 
 from worker import _check_provider
+from database import db
+from storage.models import ProviderConfig
 
 
 # ─── _check_provider ──────────────────────────────────────────────────────
@@ -102,6 +104,94 @@ def test_check_provider_exception_swallowed(mock_ht, mock_get_client, mock_reg):
 
     assert result is False
     mock_ht.set_status.assert_called_once()
+
+
+def test_check_provider_skips_colibri_when_disabled(monkeypatch):
+    """Disabled Colibri must not create a client or alter its health state."""
+    import worker
+
+    monkeypatch.setattr(worker.Config, 'COLIBRI_ENABLED', False, raising=False)
+    monkeypatch.setattr(worker, 'PROVIDER_REGISTRY', {'colibri': {'system': True}})
+    get_client = MagicMock()
+    get_status = MagicMock()
+    set_status = MagicMock()
+    monkeypatch.setattr(worker, 'get_client', get_client)
+    monkeypatch.setattr(worker.health_tracker, 'get_status', get_status)
+    monkeypatch.setattr(worker.health_tracker, 'set_status', set_status)
+
+    assert worker._check_provider('colibri') is True
+
+    get_client.assert_not_called()
+    get_status.assert_not_called()
+    set_status.assert_not_called()
+
+
+# ─── _tick ────────────────────────────────────────────────────────────────
+
+
+def test_tick_starts_independent_health_checks_before_waiting(app, monkeypatch):
+    """A slow provider must not delay scheduling an independent provider."""
+    import worker
+
+    worker.stop()
+    if worker._worker_thread:
+        worker._worker_thread.join(timeout=1)
+
+    started = 0
+    started_lock = threading.Lock()
+    both_started = threading.Event()
+    release = threading.Event()
+
+    def slow_check(_):
+        nonlocal started
+        with started_lock:
+            started += 1
+            if started == 2:
+                both_started.set()
+        release.wait(timeout=1)
+        return True
+
+    monkeypatch.setattr(worker, 'PROVIDER_REGISTRY', {'one': {}, 'two': {}})
+    monkeypatch.setattr(worker, '_check_provider', slow_check)
+
+    thread = threading.Thread(target=worker._tick, args=(app,), daemon=True)
+    thread.start()
+    try:
+        assert both_started.wait(timeout=0.2)
+    finally:
+        release.set()
+        thread.join(timeout=1)
+
+    assert not thread.is_alive()
+
+
+def test_tick_gives_non_system_health_checks_an_app_context(app, monkeypatch):
+    """Executor probes retain the database access needed by user providers."""
+    import worker
+
+    worker.stop()
+    if worker._worker_thread:
+        worker._worker_thread.join(timeout=1)
+
+    provider_config = ProviderConfig(user_id='lisa', provider_id='custom')
+    provider_config.set_config({'api_endpoint': 'http://custom.test'})
+    db.session.add(provider_config)
+    db.session.commit()
+
+    client = MagicMock()
+    client.health.return_value = True
+    monkeypatch.setattr(worker, 'PROVIDER_REGISTRY', {'custom': {'system': False}})
+    monkeypatch.setattr(worker, 'get_client', MagicMock(return_value=client))
+    monkeypatch.setattr(
+        worker.health_tracker,
+        'get_status',
+        MagicMock(return_value={'persistent': False, 'healthy': None}),
+    )
+    monkeypatch.setattr(worker.health_tracker, 'set_status', MagicMock())
+
+    worker._tick(app)
+
+    client.health.assert_called_once()
 
 
 # ─── start / stop ─────────────────────────────────────────────────────────
