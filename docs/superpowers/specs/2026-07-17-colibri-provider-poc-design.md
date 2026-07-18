@@ -107,12 +107,16 @@ streaming.
 
 ## Queueing, timeout, and failure rules
 
-Colibri is configured for one active inference request, one waiting request,
-and a 60-second admission timeout.  These values are POC-specific and are not
-inherited from the Ollama pool.  Queue full and queue deadline expiration map
-to 429.  A missing tunnel, failed health check, connection error, invalid
-upstream response, or engine crash maps to `ProviderUnavailableError` and
-therefore 503 when no eligible fallback exists.
+The single Colibri service is configured with `--max-queue 1 --queue-timeout
+60`, so it is the global admission authority across both Gunicorn workers: one
+active inference request, one waiting request, and a 60-second admission
+deadline. The gateway has no process-local semaphore or waiter counter and
+opens each request directly. Colibri's OpenAI-shaped HTTP 429 `queue_full` and
+`queue_timeout` codes map to gateway 429 codes `colibri_queue_full` and
+`colibri_queue_timeout`. A transport timeout without that protocol signal,
+missing tunnel, failed health check, connection error, invalid upstream
+response, or engine crash remains an upstream failure and maps to
+`ProviderUnavailableError` / 503 when no eligible fallback exists.
 
 The gateway may keep existing client-controlled fallback behaviour, but no
 provider configuration may name `colibri` as a default fallback during the
@@ -158,7 +162,7 @@ for the new environment variables.  No container-local hotfix is permitted.
 | Plain completion | Non-streaming reply has normalized content, usage, and a concrete finish reason. |
 | Tool call | An offered function returns structured OpenAI `tool_calls`; an unoffered function cannot become executable output. |
 | Streaming | Client receives multiple SSE chunks before completion, `finish_reason: null` on interim choices, a final concrete finish reason, and `[DONE]`. |
-| Queue full / deadline | Gateway returns an OpenAI-shaped 429 without hanging a Gunicorn worker. |
+| Queue full / deadline | The Colibri service enforces the global bound and the gateway returns its result as an OpenAI-shaped 429 without a per-worker queue. |
 | Tunnel or engine loss mid-request | Client sees a bounded failure; health recovers when the dependency recovers; unrelated providers continue serving. |
 | Regression | Focused provider/API tests, full `pytest -q`, Docker build/boot/`/health` smoke, and `git diff --check` are clean. |
 

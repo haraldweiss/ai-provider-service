@@ -4,7 +4,7 @@
 
 **Goal:** Add an admin-only, tunnelled Colibri GLM-5.2 provider with validated OpenAI tool calls and native SSE streaming, then run a reversible Mac-Studio POC.
 
-**Architecture:** A `ColibriClient` reaches the loopback-only Mac Studio service through a separate reverse-SSH port and oracle-vm Docker bridge. The gateway opens the upstream response before HTTP headers are sent, limits access to one running plus one waiting request, validates streamed tool names, and relays valid SSE frames without buffering them.
+**Architecture:** A `ColibriClient` reaches the loopback-only Mac Studio service through a separate reverse-SSH port and oracle-vm Docker bridge. The gateway opens the upstream response before HTTP headers are sent and relays valid SSE frames without buffering them. The single Colibri service is the cross-process admission authority for both Gunicorn workers.
 
 **Tech Stack:** Python 3.9+, Flask, Requests, `threading`, `concurrent.futures`, gunicorn, Docker Compose, macOS launchd/autossh, socat, pytest.
 
@@ -14,7 +14,7 @@
 - The Colibri API key lives only in the root-owned gateway environment file and a mode-600 Mac local environment file. Never log, return, print, or commit it.
 - Colibri binds `127.0.0.1:18000`; existing Ollama ports 11434, 11435, and 11440 remain unchanged.
 - The bridge is `172.17.0.1:18000 -> 127.0.0.1:18000`; the container calls `http://host.docker.internal:18000`.
-- POC admission is one active inference, one waiting request, and a 60-second queue deadline. Colibri is never written to `request_queue`.
+- The Colibri service launch flags `--max-queue 1 --queue-timeout 60` globally enforce one active inference plus one waiting request. The gateway has no local admission queue, and Colibri is never written to `request_queue`.
 - Health probes are concurrent and use five-second Colibri health timeouts.
 - The 32-GB Mac Studio is exclusive to Colibri during measurements; stop or remove its Ollama endpoint only for the measurement window.
 - Use immutable gateway deployment: tests, `CURRENT_SHA="$(git rev-parse HEAD)"`, `build.sh "$CURRENT_SHA"`, and Compose recreate. Never hot-edit the container.
@@ -28,11 +28,11 @@
 | `config.py` | Colibri configuration constants. |
 | `providers/base.py` | Shared native-stream handle. |
 | `providers/__init__.py` | Provider registry and factory. |
-| `providers/colibri.py` | Colibri REST/SSE adapter, admission, tool-name validation. |
+| `providers/colibri.py` | Colibri REST/SSE adapter, upstream admission-error mapping, tool-name validation. |
 | `dispatcher.py` | Admin gate and pre-header streaming lifecycle. |
 | `api/openai_api.py` | Native Colibri SSE branch. |
 | `worker.py` | Concurrent health checks. |
-| `tests/test_colibri_provider.py` | Adapter, parser, admission, and health tests. |
+| `tests/test_colibri_provider.py` | Adapter, parser, service-authoritative admission mapping, and health tests. |
 | `tests/test_dispatcher_colibri.py` | Identity, no-queue, and lifecycle tests. |
 | `tests/test_openai_api.py` | Flask SSE relay tests. |
 | `tests/test_worker.py` | Health-probe concurrency regression. |
@@ -85,8 +85,6 @@ Add immediately after the Ollama settings:
     COLIBRI_MODEL_ID = os.getenv('COLIBRI_MODEL_ID', 'glm-5.2-colibri')
     COLIBRI_CONNECT_TIMEOUT_SEC = int(os.getenv('COLIBRI_CONNECT_TIMEOUT_SEC', '10'))
     COLIBRI_STREAM_READ_TIMEOUT_SEC = int(os.getenv('COLIBRI_STREAM_READ_TIMEOUT_SEC', '180'))
-    COLIBRI_MAX_WAITING = int(os.getenv('COLIBRI_MAX_WAITING', '1'))
-    COLIBRI_QUEUE_TIMEOUT_SEC = int(os.getenv('COLIBRI_QUEUE_TIMEOUT_SEC', '60'))
 ```
 
 Add this concrete type in `providers/base.py`:
@@ -133,7 +131,7 @@ git add config.py providers/base.py providers/__init__.py dispatcher.py tests/te
 git commit -m "Add: define Colibri provider contract" -m "Verified: pytest tests/test_dispatcher_colibri.py tests/test_config_access_control.py -q"
 ```
 
-### Task 2: Implement the authenticated Colibri adapter and bounded admission
+### Task 2: Implement the authenticated Colibri adapter and service admission mapping
 
 **Files:**
 - Create: `providers/colibri.py`
@@ -141,7 +139,7 @@ git commit -m "Add: define Colibri provider contract" -m "Verified: pytest tests
 
 **Interfaces:**
 - Produces `ColibriClient.get_models()`, `health()`, `create_message(...)`, and `open_stream(...) -> ProviderStream`.
-- Produces `ColibriOverloaded` for 429 and `ColibriProtocolError` for invalid upstream SSE.
+- Produces `ColibriOverloaded` from Colibri's global admission 429 response and `ColibriProtocolError` for invalid upstream SSE.
 
 - [ ] **Step 1: Write failing adapter tests**
 
@@ -202,9 +200,9 @@ if tool_choice is not None:
     payload['tool_choice'] = tool_choice
 ```
 
-Use `requests.post(..., stream=True, timeout=(Config.COLIBRI_CONNECT_TIMEOUT_SEC, Config.COLIBRI_STREAM_READ_TIMEOUT_SEC))`. Parse only `data:` lines, ignore blank/comment frames, stop on `[DONE]`, JSON-decode each frame, and require a non-empty `choices` list. Before yielding a frame, verify every non-empty `delta.tool_calls[*].function.name` occurs in the caller's offered tool names. Update `ProviderStream.result` with text, tool calls, usage, and the final finish reason. `close()` must be idempotent, close the response, and release admission.
+Use `requests.post(..., stream=True, timeout=(Config.COLIBRI_CONNECT_TIMEOUT_SEC, Config.COLIBRI_STREAM_READ_TIMEOUT_SEC))`. Parse only `data:` lines, ignore blank/comment frames, stop on `[DONE]`, JSON-decode each frame, and require a non-empty `choices` list. Before yielding a frame, verify every non-empty `delta.tool_calls[*].function.name` occurs in the caller's offered tool names. Update `ProviderStream.result` with text, tool calls, usage, and the final finish reason. `close()` must be idempotent and close the response.
 
-Implement admission using one active `threading.Semaphore`, a lock-protected waiter counter, `COLIBRI_MAX_WAITING=1`, and `COLIBRI_QUEUE_TIMEOUT_SEC=60`. A second waiting request raises `ColibriOverloaded('colibri_queue_full')`; a timed-out waiter raises `ColibriOverloaded('colibri_queue_timeout')`.
+Do not implement gateway admission state. Every Gunicorn worker opens the request directly against the one Colibri service, whose `--max-queue 1 --queue-timeout 60` scheduler is authoritative across processes. Map upstream HTTP 429 `error.code=queue_timeout` to `ColibriOverloaded('colibri_queue_timeout')`; map other upstream 429 responses (including `queue_full`) to `ColibriOverloaded('colibri_queue_full')`. Preserve transport timeouts and other upstream failures when no Colibri protocol code identifies a queue timeout.
 
 - [ ] **Step 4: Verify and commit the adapter**
 
@@ -456,8 +454,6 @@ COLIBRI_API_KEY=
 COLIBRI_MODEL_ID=glm-5.2-colibri
 COLIBRI_CONNECT_TIMEOUT_SEC=10
 COLIBRI_STREAM_READ_TIMEOUT_SEC=180
-COLIBRI_MAX_WAITING=1
-COLIBRI_QUEUE_TIMEOUT_SEC=60
 ```
 
 - [ ] **Step 5: Validate and commit operations assets**
@@ -542,7 +538,7 @@ git commit -m "Doc: record Colibri POC outcome" -m "Verified: focused tests, ful
 
 ## Plan self-review
 
-- Coverage: Tasks 1–4 implement identity, tools, SSE, admission, failure mapping, and parallel health; Task 5 covers Mac/tunnel/bridge/docs; Task 6 covers preflight, deploy, acceptance, and rollback.
+- Coverage: Tasks 1–4 implement identity, tools, SSE, service-authoritative admission mapping, failure mapping, and parallel health; Task 5 covers Mac/tunnel/bridge/docs; Task 6 covers preflight, deploy, acceptance, and rollback.
 - Scope: no personal Colibri keys, automatic fallback, price tracking, media, or broad routing is introduced.
 - Contract consistency: Task 1 defines `ProviderStream`/`dispatch_stream`; Task 2 returns that handle; Task 3 consumes it; later tasks leave its API unchanged.
 
@@ -557,3 +553,28 @@ git commit -m "Doc: record Colibri POC outcome" -m "Verified: focused tests, ful
 - The Colibri binary was not installed.
 
 The POC must not continue to model download, launchd/tunnel/bridge installation, or immutable gateway deployment until the model volume exists with at least 400 GB free, Colibri is installed and passes `setup.sh`, `coli doctor`, and `coli iobench`, and Ollama has been deliberately rerouted for the measurement window. No key material, local user path, or complete environment file was recorded.
+
+## Global admission architecture correction — 2026-07-18
+
+The gateway's process-local semaphore and waiter counter were removed. With
+two Gunicorn workers, those counters could admit two active inferences and two
+waiters even though each process believed it was enforcing a one-plus-one
+bound. The single Colibri service is now the sole cross-process authority via
+the existing `--max-queue 1 --queue-timeout 60` launch flags.
+
+Each gateway worker opens the upstream request directly. Colibri HTTP 429
+`error.code=queue_timeout` maps to `colibri_queue_timeout`; every other
+Colibri 429, including `queue_full`, maps to `colibri_queue_full`. Transport
+timeouts without an upstream queue code remain upstream failures. The API's
+OpenAI-shaped 429 mapping and the no-fallback/no-SQLite-queue policy are
+unchanged.
+
+TDD RED evidence: the two new architecture regressions failed because
+`queue_timeout` was mapped as `colibri_queue_full` and because a second request
+was blocked by the gateway semaphore before reaching `requests.post`. GREEN
+evidence: Colibri adapter tests passed 20/20; configuration tests passed 8/8;
+the focused provider/dispatcher/API/worker suite passed 61/61; full `pytest
+-q` passed 399/399; `python3 -m py_compile` and `git diff --check` exited 0.
+
+The earlier Task 6 HOLD remains in force. No Mac service, tunnel, bridge,
+container, model, or production environment was changed for this correction.
