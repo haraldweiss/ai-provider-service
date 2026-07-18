@@ -58,8 +58,7 @@ def test_colibri_config_defaults(monkeypatch):
     for name in (
         'COLIBRI_ENABLED', 'COLIBRI_BASE_URL', 'COLIBRI_API_KEY',
         'COLIBRI_MODEL_ID', 'COLIBRI_CONNECT_TIMEOUT_SEC',
-        'COLIBRI_STREAM_READ_TIMEOUT_SEC', 'COLIBRI_MAX_WAITING',
-        'COLIBRI_QUEUE_TIMEOUT_SEC',
+        'COLIBRI_STREAM_READ_TIMEOUT_SEC',
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -71,5 +70,3 @@ def test_colibri_config_defaults(monkeypatch):
     assert Config.COLIBRI_MODEL_ID == 'glm-5.2-colibri'
     assert Config.COLIBRI_CONNECT_TIMEOUT_SEC == 10
     assert Config.COLIBRI_STREAM_READ_TIMEOUT_SEC == 180
-    assert Config.COLIBRI_MAX_WAITING == 1
-    assert Config.COLIBRI_QUEUE_TIMEOUT_SEC == 60

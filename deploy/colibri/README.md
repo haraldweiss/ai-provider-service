@@ -98,11 +98,14 @@ The gateway consumes these values from `/etc/ai-provider/ai-provider.env`:
 | `COLIBRI_MODEL_ID` | `glm-5.2-colibri` | Fixed POC model identifier. |
 | `COLIBRI_CONNECT_TIMEOUT_SEC` | `10` | Upstream connection timeout in seconds. |
 | `COLIBRI_STREAM_READ_TIMEOUT_SEC` | `180` | Per-stream read timeout in seconds. |
-| `COLIBRI_MAX_WAITING` | `1` | One request may wait behind the active inference. |
-| `COLIBRI_QUEUE_TIMEOUT_SEC` | `60` | Waiting request deadline in seconds. |
 
-The POC has one active inference and one waiting request. Colibri is not added
-to the persistent `request_queue`.
+The launchd template, not the gateway environment, owns global admission with
+`coli serve --max-queue 1 --queue-timeout 60`. The single Colibri service
+therefore enforces one active inference and one waiting request consistently
+across both Gunicorn workers. The gateway opens each request directly; it maps
+the service's OpenAI-shaped 429 `queue_full` and `queue_timeout` codes, and has
+no local semaphore or waiter counter. Colibri is never added to the persistent
+`request_queue` and never falls back to another provider.
 
 ## Rollback
 

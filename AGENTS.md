@@ -57,6 +57,7 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 
 ### 3.3.1 Colibri POC uses its own private tunnel and rollback path
 - Colibri uses a separate Mac Studio launchd service on `127.0.0.1:18000`, a separate `autossh -R 18000:127.0.0.1:18000 opc@oracle-vm` tunnel, and only `ai-provider-colibri-bridge.service` on oracle-vm. The bridge must bind only `172.17.0.1:18000`; never publish Colibri on `0.0.0.0`, `[::]`, or an Ollama port.
+- The one Colibri service is the sole global admission authority across all Gunicorn workers. Keep its launch flags `--max-queue 1 --queue-timeout 60`; the gateway must open requests directly, map the service's `queue_full` and `queue_timeout` HTTP 429 codes, and must not add a process-local semaphore, waiter counter, fallback, or SQLite queue for Colibri.
 - The two Colibri jobs (`com.wolfini.colibri`, `com.wolfini.colibri-tunnel`) must use internal-disk `~/Library/Logs/colibri/` logs and a mode-600 local environment file outside the repository. Do not edit any Ollama launch agent, tunnel, route, or model except to temporarily stop/reroute Ollama for an explicitly bounded measurement window.
 - Rollback stops/unloads only the two Colibri jobs, stops/disables only `ai-provider-colibri-bridge.service`, removes `COLIBRI_ENABLED` from the gateway environment, recreates the prior SHA-tagged image, and restores the prior Ollama routing. Keep model files unless the owner separately directs their deletion.
 

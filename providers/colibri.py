@@ -13,41 +13,28 @@ from providers.base import BaseClient, ProviderStream
 
 
 class ColibriOverloaded(RuntimeError):
-    """The single Colibri inference slot or its bounded waiting room is full."""
+    """Colibri's service-authoritative admission queue rejected the request."""
 
 
 class ColibriProtocolError(RuntimeError):
     """The upstream native SSE stream did not follow the expected protocol."""
 
 
-_active_request = threading.Semaphore(1)
-_waiter_lock = threading.Lock()
-_waiter_count = 0
-
-
-def _acquire_admission() -> None:
-    """Acquire Colibri's one active request slot with one bounded waiter."""
-    global _waiter_count
-
-    if _active_request.acquire(blocking=False):
-        return
-
-    with _waiter_lock:
-        if _waiter_count >= Config.COLIBRI_MAX_WAITING:
-            raise ColibriOverloaded('colibri_queue_full')
-        _waiter_count += 1
-
-    try:
-        if not _active_request.acquire(timeout=Config.COLIBRI_QUEUE_TIMEOUT_SEC):
-            raise ColibriOverloaded('colibri_queue_timeout')
-    finally:
-        with _waiter_lock:
-            _waiter_count -= 1
-
-
 def _raise_for_inference_status(response) -> None:
     if getattr(response, 'status_code', None) == 429:
-        raise ColibriOverloaded('colibri_queue_full')
+        upstream_code = None
+        try:
+            data = response.json()
+        except (TypeError, ValueError):
+            data = None
+        if isinstance(data, dict) and isinstance(data.get('error'), dict):
+            upstream_code = data['error'].get('code')
+        error_code = (
+            'colibri_queue_timeout'
+            if upstream_code == 'queue_timeout'
+            else 'colibri_queue_full'
+        )
+        raise ColibriOverloaded(error_code)
     response.raise_for_status()
 
 
@@ -167,7 +154,6 @@ class ColibriClient(BaseClient):
         *, tools: list[dict] | None = None, tool_choice=None,
     ) -> dict:
         del model
-        _acquire_admission()
         response = None
         try:
             response = requests.post(
@@ -215,18 +201,14 @@ class ColibriClient(BaseClient):
                 'stop_reason': stop_reason,
             }
         finally:
-            try:
-                if response is not None:
-                    response.close()
-            finally:
-                _active_request.release()
+            if response is not None:
+                response.close()
 
     def open_stream(
         self, model: str, messages: list[dict], max_tokens: int = 600,
         *, tools: list[dict] | None = None, tool_choice=None,
     ) -> ProviderStream:
         del model
-        _acquire_admission()
         response = None
         try:
             response = requests.post(
@@ -238,11 +220,8 @@ class ColibriClient(BaseClient):
             )
             _raise_for_inference_status(response)
         except Exception:
-            try:
-                if response is not None:
-                    response.close()
-            finally:
-                _active_request.release()
+            if response is not None:
+                response.close()
             raise
 
         result = {
@@ -257,10 +236,7 @@ class ColibriClient(BaseClient):
                 if closed:
                     return
                 closed = True
-            try:
-                response.close()
-            finally:
-                _active_request.release()
+            response.close()
 
         offered_names = _offered_tool_names(tools)
         text_parts: list[str] = []

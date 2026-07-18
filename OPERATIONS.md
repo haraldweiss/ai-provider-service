@@ -75,8 +75,12 @@ The service reads from `/var/www/ai-provider-service/.env`:
 | `COLIBRI_MODEL_ID` | No | `glm-5.2-colibri` | Fixed POC Colibri model identifier. |
 | `COLIBRI_CONNECT_TIMEOUT_SEC` | No | `10` | Colibri upstream connection timeout, in seconds. |
 | `COLIBRI_STREAM_READ_TIMEOUT_SEC` | No | `180` | Colibri stream-read timeout, in seconds. |
-| `COLIBRI_MAX_WAITING` | No | `1` | Maximum requests waiting behind the one active Colibri inference. |
-| `COLIBRI_QUEUE_TIMEOUT_SEC` | No | `60` | Deadline for a waiting Colibri request, in seconds. |
+
+Colibri admission is configured only on the Mac service command with
+`--max-queue 1 --queue-timeout 60`. That one service is the global authority
+across both Gunicorn workers. Do not add gateway admission environment values
+or a process-local queue; the gateway must submit directly and relay the
+service's `queue_full` / `queue_timeout` 429 result.
 
 ### Auto-Restart Behavior
 

@@ -562,7 +562,7 @@ def test_colibri_stream_relays_each_upstream_frame(app, client, monkeypatch):
 def test_colibri_response_close_before_first_iteration_closes_provider_stream(
     app, client, monkeypatch,
 ):
-    """A disconnected client releases admission even before the SSE body starts."""
+    """A disconnected client closes upstream before the SSE body starts."""
     from config import Config
     from api.auth import Principal
     import api.openai_api as openai_api

@@ -381,7 +381,7 @@ def dispatch_stream(
         health_tracker.set_status(
             provider_id, False, reason=error_name, persistent=False,
         )
-        logger.warning('Colibri stream admission failed: %s', error_name)
+        logger.warning('Colibri stream open failed: %s', error_name)
         raise ProviderUnavailableError(
             'Provider colibri nicht erreichbar, kein Fallback/Queue konfiguriert',
         ) from exc

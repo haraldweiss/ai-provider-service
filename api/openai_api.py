@@ -315,8 +315,8 @@ def chat_completions():
             },
         )
         # Flask may close a response before it ever starts iterating its body.
-        # Register the provider cleanup on the response itself so admission is
-        # released in that disconnect path too.
+        # Register upstream cleanup on the response itself so a disconnect
+        # before body iteration still closes the Colibri HTTP response.
         response.call_on_close(provider_stream.close)
         return response
 

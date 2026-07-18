@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import threading
-import time
 from unittest.mock import Mock
 
 import pytest
@@ -30,8 +28,6 @@ def colibri_config(monkeypatch):
     monkeypatch.setattr(Config, 'COLIBRI_MODEL_ID', 'glm-5.2-colibri')
     monkeypatch.setattr(Config, 'COLIBRI_CONNECT_TIMEOUT_SEC', 10)
     monkeypatch.setattr(Config, 'COLIBRI_STREAM_READ_TIMEOUT_SEC', 180)
-    monkeypatch.setattr(Config, 'COLIBRI_MAX_WAITING', 1)
-    monkeypatch.setattr(Config, 'COLIBRI_QUEUE_TIMEOUT_SEC', 60)
 
 
 def test_stream_forwards_tools_and_emits_multiple_frames(monkeypatch):
@@ -174,6 +170,32 @@ def test_open_stream_maps_upstream_429_to_bounded_admission_error(monkeypatch):
     response.close.assert_called_once()
 
 
+def test_open_stream_maps_upstream_queue_timeout_code(monkeypatch):
+    from providers.colibri import ColibriClient, ColibriOverloaded
+
+    response = fake_sse_response([])
+    response.status_code = 429
+    response.json.return_value = {
+        'error': {'code': 'queue_timeout', 'message': 'Timed out waiting.'},
+    }
+    monkeypatch.setattr('providers.colibri.requests.post', Mock(return_value=response))
+
+    with pytest.raises(ColibriOverloaded, match='colibri_queue_timeout'):
+        ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
+
+    response.close.assert_called_once()
+
+
+def test_open_stream_preserves_transport_timeout_without_protocol_signal(monkeypatch):
+    from providers.colibri import ColibriClient
+
+    post = Mock(side_effect=requests.ReadTimeout('upstream read timed out'))
+    monkeypatch.setattr('providers.colibri.requests.post', post)
+
+    with pytest.raises(requests.ReadTimeout, match='upstream read timed out'):
+        ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
+
+
 def test_stream_accepts_only_data_frames_and_rejects_invalid_sse(monkeypatch):
     from providers.colibri import ColibriClient, ColibriProtocolError
 
@@ -203,7 +225,7 @@ def test_stream_rejects_invalid_json_data_frame(monkeypatch):
     response.close.assert_called_once()
 
 
-def test_stream_close_is_idempotent_and_releases_admission(monkeypatch):
+def test_stream_close_is_idempotent_and_does_not_block_next_upstream_open(monkeypatch):
     from providers.colibri import ColibriClient
 
     first_response = fake_sse_response([])
@@ -220,62 +242,25 @@ def test_stream_close_is_idempotent_and_releases_admission(monkeypatch):
     second.close()
 
 
-def test_second_waiter_is_rejected_and_waiting_request_acquires_after_release(monkeypatch):
+def test_gateway_opens_requests_directly_for_service_admission(monkeypatch):
     from providers import colibri
-    from providers.colibri import ColibriClient, ColibriOverloaded
+    from providers.colibri import ColibriClient
 
-    monkeypatch.setattr(Config, 'COLIBRI_QUEUE_TIMEOUT_SEC', 1)
+    assert not hasattr(colibri, '_active_request')
+    assert not hasattr(colibri, '_waiter_count')
+    assert not hasattr(colibri, '_waiter_lock')
     responses = [fake_sse_response([]) for _ in range(2)]
-    monkeypatch.setattr('providers.colibri.requests.post', Mock(side_effect=responses))
+    post = Mock(side_effect=responses)
+    monkeypatch.setattr('providers.colibri.requests.post', post)
 
-    active = ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
-    started = threading.Event()
-    acquired = threading.Event()
-    result: dict[str, object] = {}
+    first = ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
+    try:
+        second = ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
+    finally:
+        first.close()
 
-    def wait_for_admission():
-        started.set()
-        try:
-            result['stream'] = ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
-            acquired.set()
-        except Exception as exc:  # pragma: no cover - asserted below
-            result['error'] = exc
-
-    waiter = threading.Thread(target=wait_for_admission)
-    waiter.start()
-    assert started.wait(timeout=1)
-    deadline = time.monotonic() + 1
-    while time.monotonic() < deadline:
-        with colibri._waiter_lock:
-            if colibri._waiter_count == 1:
-                break
-        time.sleep(0.01)
-    else:
-        pytest.fail('waiting request did not register for admission')
-
-    with pytest.raises(ColibriOverloaded, match='colibri_queue_full'):
-        ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
-
-    active.close()
-    assert acquired.wait(timeout=1)
-    waiter.join(timeout=1)
-    assert 'error' not in result
-    result['stream'].close()
-
-
-def test_waiter_timeout_releases_waiter_slot(monkeypatch):
-    from providers.colibri import ColibriClient, ColibriOverloaded
-
-    monkeypatch.setattr(Config, 'COLIBRI_QUEUE_TIMEOUT_SEC', 0)
-    monkeypatch.setattr('providers.colibri.requests.post', Mock(return_value=fake_sse_response([])))
-    active = ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
-
-    with pytest.raises(ColibriOverloaded, match='colibri_queue_timeout'):
-        ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
-
-    active.close()
-    replacement = ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
-    replacement.close()
+    assert post.call_count == 2
+    second.close()
 
 
 @pytest.mark.parametrize(

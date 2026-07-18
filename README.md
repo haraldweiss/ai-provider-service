@@ -232,8 +232,14 @@ The gateway configuration is deliberately disabled by default:
 | `COLIBRI_MODEL_ID` | `glm-5.2-colibri` | Fixed POC model ID. |
 | `COLIBRI_CONNECT_TIMEOUT_SEC` | `10` | Connection timeout in seconds. |
 | `COLIBRI_STREAM_READ_TIMEOUT_SEC` | `180` | Stream read timeout in seconds. |
-| `COLIBRI_MAX_WAITING` | `1` | Maximum one waiting request behind the active inference. |
-| `COLIBRI_QUEUE_TIMEOUT_SEC` | `60` | Waiting-request deadline in seconds. |
+
+Global admission belongs to the single Colibri service, not to either of the
+two Gunicorn workers. Its launch command uses `--max-queue 1 --queue-timeout
+60`, making the service the sole authority for one active inference plus one
+waiting request. The gateway opens requests directly and maps Colibri's
+OpenAI-shaped 429 codes (`queue_full` and `queue_timeout`) to its existing 429
+API response; it has no process-local semaphore, fallback, or SQLite queue for
+Colibri.
 
 Colibri must be disabled by removing `COLIBRI_ENABLED` and recreating the
 previous SHA-tagged gateway image; do not use a plain restart for environment
