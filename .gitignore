@@ -12,5 +12,6 @@ venv/
 # AI tooling
 .claude/
 .serena/
+.superpowers/
 .worktrees/
 /vault/
