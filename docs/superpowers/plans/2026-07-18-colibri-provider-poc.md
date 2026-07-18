@@ -545,3 +545,15 @@ git commit -m "Doc: record Colibri POC outcome" -m "Verified: focused tests, ful
 - Coverage: Tasks 1–4 implement identity, tools, SSE, admission, failure mapping, and parallel health; Task 5 covers Mac/tunnel/bridge/docs; Task 6 covers preflight, deploy, acceptance, and rollback.
 - Scope: no personal Colibri keys, automatic fallback, price tracking, media, or broad routing is introduced.
 - Contract consistency: Task 1 defines `ProviderStream`/`dispatch_stream`; Task 2 returns that handle; Task 3 consumes it; later tasks leave its API unchanged.
+
+## Task 6 execution evidence — 2026-07-18
+
+**Decision: HOLD — no runtime installation or gateway deployment performed.**
+
+- Repository gate passed: focused Colibri suite 53 passed; full suite 388 passed; `git diff --check` clean.
+- Read-only Mac Studio preflight confirmed 32 GiB RAM.
+- The required `/Volumes/ColibriModels/glm52_i4` model directory was absent, so its free-space and filesystem checks could not pass.
+- Ollama was still running on the Mac Studio, so the required exclusive measurement window had not begun.
+- The Colibri binary was not installed.
+
+The POC must not continue to model download, launchd/tunnel/bridge installation, or immutable gateway deployment until the model volume exists with at least 400 GB free, Colibri is installed and passes `setup.sh`, `coli doctor`, and `coli iobench`, and Ollama has been deliberately rerouted for the measurement window. No key material, local user path, or complete environment file was recorded.

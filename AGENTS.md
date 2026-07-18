@@ -166,6 +166,25 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Colibri POC — preflight HOLD (2026-07-18, Codex)
+
+**Repository state:** Colibri Tasks 1-5 are implemented on the isolated
+`codex/colibri-provider-poc` branch. Local verification: focused Colibri suite
+53 passed; full suite 388 passed; `git diff --check` clean. The SQLAlchemy
+`Query.get()` warning was removed by test commit `671408d`.
+
+**Mac Studio preflight:** Read-only checks confirmed 32 GiB RAM, but the
+required `/Volumes/ColibriModels/glm52_i4` model directory is absent, Ollama is
+still running, and `/opt/colibri/c/coli` is not installed. This is a mandatory
+HOLD: no model download, launchd job, reverse tunnel, Oracle bridge, environment
+change, container recreate, or production request was performed.
+
+**Resume only after:** a stable directly attached model volume is prepared with
+at least 400 GB free; Colibri has been installed and passes `setup.sh`, `coli
+doctor`, and `coli iobench`; and Ollama is explicitly rerouted for the bounded
+measurement window. Then continue with the documented Task 6 checks and record
+the final pass/hold/rollback outcome in the Colibri plan.
+
 ### Non-root container crash — readonly SQLite database (2026-07-12, opencode)
 
 **Scope:** The security hardening (commit `9610c32`) added `USER appuser` with
