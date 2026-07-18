@@ -13,6 +13,7 @@ from flask import Blueprint, jsonify, request, Response, stream_with_context
 from api.auth import require_token
 # from api.gate import require_provider_access
 from api.provider_visibility import availability_hint, hidden_key_provider_rows
+from api.validation import parse_max_tokens
 from dispatcher import dispatch, _extract_response_text, _load_config, ProviderUnavailableError
 from providers import PROVIDER_REGISTRY, get_client
 from flask import g
@@ -44,8 +45,8 @@ def _principal_user_id() -> str:
     error and raises ValueError -> 401.
     """
     principal = getattr(g, 'principal', None)
-    if principal and isinstance(principal, object) and hasattr(principal, 'user_id'):
-        uid = principal.user_id
+    if principal is not None:
+        uid = getattr(principal, 'user_id', None)
         if uid:
             return uid
         if getattr(principal, 'credential', '') == 'service':
@@ -222,15 +223,22 @@ def chat_completions():
     """
     body = request.get_json(silent=True) or {}
     model = body.get('model', '')
-    messages = _normalize_messages(body.get('messages', []))
+    raw_messages = body.get('messages')
     stream = body.get('stream', False)
-    max_tokens = int(body.get('max_tokens', 4096))
     tools = body.get('tools') if isinstance(body.get('tools'), list) else None
 
     if not model:
         return jsonify({'error': {'message': 'model is required', 'type': 'invalid_request'}}), 400
+    if raw_messages is not None and not isinstance(raw_messages, list):
+        return jsonify({'error': {'message': 'messages must be a list',
+                                  'type': 'invalid_request'}}), 400
+    messages = _normalize_messages(raw_messages or [])
     if not messages:
         return jsonify({'error': {'message': 'messages is required', 'type': 'invalid_request'}}), 400
+    try:
+        max_tokens = parse_max_tokens(body.get('max_tokens'), default=4096)
+    except ValueError as e:
+        return jsonify({'error': {'message': str(e), 'type': 'invalid_request'}}), 400
 
     provider_id, model_name, origin_app = _parse_model(model)
 

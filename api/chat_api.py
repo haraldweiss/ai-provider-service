@@ -4,6 +4,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from api.auth import require_token
 from api.gate import require_provider_access, is_allowed
+from api.validation import parse_max_tokens
 from dispatcher import ProviderUnavailableError, dispatch
 from flask import g
 from providers import PROVIDER_REGISTRY
@@ -40,6 +41,9 @@ def chat():
     if missing:
         return jsonify({'error': f'Pflicht: {", ".join(missing)}'}), 400
 
+    if not isinstance(body.get('messages'), list):
+        return jsonify({'error': 'messages must be a list'}), 400
+
     provider = body['provider']
     if provider not in PROVIDER_REGISTRY:
         return jsonify({'error': f'Unbekannter Provider: {provider}'}), 400
@@ -65,7 +69,7 @@ def chat():
             provider_id=provider,
             model=body.get('model', '') or '',
             messages=body['messages'],
-            max_tokens=int(body.get('max_tokens', 600)),
+            max_tokens=parse_max_tokens(body.get('max_tokens'), default=600),
             fallback_provider_override=fallback_provider,
             fallback_model_override=body.get('fallback_model'),
             fallback_config_override=body.get('fallback_config'),

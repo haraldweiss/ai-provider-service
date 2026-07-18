@@ -218,6 +218,81 @@ def test_chat_completions_returns_503_for_provider_unavailable(app, client, monk
     assert r.json['error']['type'] == 'service_unavailable'
 
 
+def test_chat_completions_treats_null_max_tokens_as_default(app, client, monkeypatch):
+    """max_tokens: null previously crashed with TypeError -> 500."""
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    captured = {}
+
+    def mock_dispatch(*args, **kwargs):
+        captured.update(kwargs)
+        return {
+            'result': {'content': [{'text': 'ok'}],
+                       'usage': {'input_tokens': 1, 'output_tokens': 1}},
+            'via': 'ollama',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': [{'role': 'user', 'content': 'ping'}],
+            'max_tokens': None,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 200
+    assert captured['max_tokens'] == 4096
+
+
+def test_chat_completions_returns_400_for_invalid_max_tokens(app, client):
+    from config import Config
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': [{'role': 'user', 'content': 'ping'}],
+            'max_tokens': -5,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 400
+    assert r.json['error']['type'] == 'invalid_request'
+    assert 'max_tokens' in r.json['error']['message']
+
+
+def test_chat_completions_returns_400_for_non_list_messages(app, client):
+    from config import Config
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'ollama/ornith:latest',
+            'messages': 'just-a-string',
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 400
+    assert r.json['error']['message'] == 'messages must be a list'
+
+
 def test_chat_completions_maps_provider_length_stop_reason(app, client, monkeypatch):
     from config import Config
     import api.openai_api as openai_api
