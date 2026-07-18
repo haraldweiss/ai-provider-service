@@ -2,6 +2,13 @@
 """Tests for OpenAI API endpoint /v1/chat/completions."""
 
 import json
+from unittest.mock import Mock
+
+from providers.base import ProviderStream
+
+
+def _fake_provider_stream(events):
+    return ProviderStream(events=iter(events), close=Mock())
 
 
 def test_chat_completions_blocks_unscoped_service_token_from_colibri(
@@ -517,3 +524,94 @@ def test_streaming_chat_completions_emits_finish_reason_on_every_choice(
         None,
         'stop',
     ]
+
+
+def test_colibri_stream_relays_each_upstream_frame(app, client, monkeypatch):
+    """Colibri frames are already validated upstream and must be byte-shaped intact."""
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+    monkeypatch.setattr(openai_api, 'is_allowed', lambda *_: True)
+    provider_stream = _fake_provider_stream(events=[
+        {'choices': [{'delta': {'role': 'assistant', 'content': ''}, 'finish_reason': None}]},
+        {'choices': [{'delta': {'content': 'Hallo'}, 'finish_reason': None}]},
+        {'choices': [{'delta': {}, 'finish_reason': 'stop'}],
+         'usage': {'prompt_tokens': 1, 'completion_tokens': 1}},
+    ])
+    monkeypatch.setattr(openai_api, 'dispatch_stream', lambda **_: provider_stream)
+
+    response = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'colibri/glm-5.2-colibri',
+            'messages': [{'role': 'user', 'content': 'Hi'}],
+            'stream': True,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert response.status_code == 200
+    body = response.data.decode()
+    assert body.count('data: {') == 3
+    assert body.endswith('data: [DONE]\n\n')
+    provider_stream.close.assert_called_once()
+
+
+def test_colibri_stream_unavailable_is_503_before_headers(app, client, monkeypatch):
+    from config import Config
+    from dispatcher import ProviderUnavailableError
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+    monkeypatch.setattr(openai_api, 'is_allowed', lambda *_: True)
+    monkeypatch.setattr(
+        openai_api, 'dispatch_stream',
+        lambda **_: (_ for _ in ()).throw(ProviderUnavailableError('unavailable')),
+    )
+
+    response = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'colibri/glm-5.2-colibri',
+            'messages': [{'role': 'user', 'content': 'Hi'}],
+            'stream': True,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert response.status_code == 503
+    assert response.json['error']['type'] == 'service_unavailable'
+
+
+def test_colibri_stream_queue_is_openai_429_before_headers(app, client, monkeypatch):
+    from config import Config
+    from providers.colibri import ColibriOverloaded
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+    monkeypatch.setattr(openai_api, 'is_allowed', lambda *_: True)
+    monkeypatch.setattr(
+        openai_api, 'dispatch_stream',
+        lambda **_: (_ for _ in ()).throw(ColibriOverloaded('colibri_queue_full')),
+    )
+
+    response = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'colibri/glm-5.2-colibri',
+            'messages': [{'role': 'user', 'content': 'Hi'}],
+            'stream': True,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert response.status_code == 429
+    assert response.json['error'] == {
+        'message': 'colibri_queue_full',
+        'type': 'rate_limit_error',
+        'code': 'colibri_queue_full',
+    }

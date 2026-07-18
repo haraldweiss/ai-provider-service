@@ -13,6 +13,8 @@ from typing import Optional
 from database import db
 from storage.models import ProviderConfig, RequestQueue
 from providers import get_client, PROVIDER_REGISTRY
+from providers.base import ProviderStream
+from providers.colibri import ColibriOverloaded
 from config import Config
 import health_tracker
 
@@ -241,6 +243,104 @@ def _execute(
             origin_app=origin_app,
         )
         raise
+
+
+def _instrument_stream(
+    stream: ProviderStream,
+    user_id: str,
+    provider_id: str,
+    model: str,
+    messages: list,
+    origin_app: Optional[str],
+) -> ProviderStream:
+    """Attach completion-only health, usage, and audit bookkeeping to a stream."""
+    upstream_events = stream.events
+    chat_request_id = uuid.uuid4().hex
+    started = datetime.now(timezone.utc)
+
+    def events():
+        try:
+            for frame in upstream_events:
+                yield frame
+
+            latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            result = stream.result or {}
+            usage = result.get('usage') or {}
+            _log_usage_event(
+                user_id, provider_id, model,
+                usage.get('input_tokens'), usage.get('output_tokens'),
+                'success', origin_app=origin_app,
+            )
+            _write_audit_note(
+                user_id=user_id, provider_id=provider_id, origin_app=origin_app,
+                chat_request_id=chat_request_id,
+                prompt_text=_join_messages(messages),
+                response_text=_extract_response_text(result),
+                usage=usage, cost_eur=0.0, latency_ms=latency_ms,
+            )
+            health_tracker.set_status(provider_id, True)
+        except Exception as exc:
+            # Stream exceptions can contain upstream response material. Record
+            # only their class so neither prompt/tool data nor credentials leak.
+            error_name = type(exc).__name__
+            health_tracker.set_status(
+                provider_id, False, reason=error_name, persistent=False,
+            )
+            _log_usage_event(
+                user_id, provider_id, model, None, None,
+                'error', error_message=error_name, origin_app=origin_app,
+            )
+            logger.warning('Colibri stream failed: %s', error_name)
+            raise
+        finally:
+            stream.close()
+
+    stream.events = events()
+    return stream
+
+
+def dispatch_stream(
+    user_id: str,
+    provider_id: str,
+    model: str,
+    messages: list,
+    max_tokens: int,
+    *,
+    tools: Optional[list],
+    tool_choice,
+    origin_app: Optional[str] = None,
+) -> ProviderStream:
+    """Open Colibri's validated native stream before response headers commit.
+
+    Native stream requests intentionally bypass the ordinary fallback and queue
+    policy: streaming cannot safely switch providers after bytes are emitted.
+    """
+    if provider_id != 'colibri':
+        raise ProviderUnavailableError('Native streaming is only available for colibri')
+
+    cfg = _load_config(user_id, provider_id)
+    if cfg is None or not health_tracker.is_healthy(provider_id):
+        raise ProviderUnavailableError(
+            'Provider colibri nicht erreichbar, kein Fallback/Queue konfiguriert',
+        )
+
+    try:
+        stream = get_client(provider_id, cfg).open_stream(
+            model, messages, max_tokens, tools=tools, tool_choice=tool_choice,
+        )
+    except ColibriOverloaded:
+        raise
+    except Exception as exc:
+        error_name = type(exc).__name__
+        health_tracker.set_status(
+            provider_id, False, reason=error_name, persistent=False,
+        )
+        logger.warning('Colibri stream admission failed: %s', error_name)
+        raise ProviderUnavailableError(
+            'Provider colibri nicht erreichbar, kein Fallback/Queue konfiguriert',
+        ) from exc
+
+    return _instrument_stream(stream, user_id, provider_id, model, messages, origin_app)
 
 
 def dispatch(

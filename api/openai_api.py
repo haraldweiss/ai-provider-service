@@ -14,8 +14,12 @@ from api.auth import require_token
 from api.gate import is_allowed
 # from api.gate import require_provider_access
 from api.provider_visibility import availability_hint, hidden_key_provider_rows
-from dispatcher import dispatch, _extract_response_text, _load_config, ProviderUnavailableError
+from dispatcher import (
+    dispatch, dispatch_stream, _extract_response_text, _load_config,
+    ProviderUnavailableError,
+)
 from providers import PROVIDER_REGISTRY, get_client
+from providers.colibri import ColibriOverloaded
 from flask import g
 import health_tracker
 
@@ -232,6 +236,7 @@ def chat_completions():
     stream = body.get('stream', False)
     max_tokens = int(body.get('max_tokens', 4096))
     tools = body.get('tools') if isinstance(body.get('tools'), list) else None
+    tool_choice = body.get('tool_choice')
 
     if not model:
         return jsonify({'error': {'message': 'model is required', 'type': 'invalid_request'}}), 400
@@ -261,6 +266,54 @@ def chat_completions():
     except ValueError:
         return jsonify({'error': {'message': 'authenticated principal has no user_id',
                                    'type': 'invalid_request'}}), 401
+
+    if provider_id == 'colibri' and stream:
+        try:
+            provider_stream = dispatch_stream(
+                user_id=user_id,
+                provider_id=provider_id,
+                model=model_name,
+                messages=messages,
+                max_tokens=max_tokens,
+                origin_app=origin_app,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
+        except ColibriOverloaded as exc:
+            code = str(exc)
+            return jsonify({
+                'error': {
+                    'message': code,
+                    'type': 'rate_limit_error',
+                    'code': code,
+                },
+            }), 429
+        except ProviderUnavailableError as exc:
+            logger.warning('v1/chat/completions provider unavailable: %s', type(exc).__name__)
+            return jsonify({
+                'error': {'message': str(exc), 'type': 'service_unavailable'},
+            }), 503
+
+        def generate_colibri():
+            try:
+                for frame in provider_stream.events:
+                    yield f'data: {json.dumps(frame, ensure_ascii=False)}\n\n'
+                yield 'data: [DONE]\n\n'
+            except Exception as exc:
+                # Headers may be committed; an OpenAI error document is no
+                # longer valid. Keep logs free of upstream content.
+                logger.warning('Colibri stream relay failed: %s', type(exc).__name__)
+            finally:
+                provider_stream.close()
+
+        return Response(
+            stream_with_context(generate_colibri()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+            },
+        )
 
     try:
         result = dispatch(
