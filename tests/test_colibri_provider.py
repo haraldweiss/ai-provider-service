@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -205,6 +206,7 @@ def test_stream_close_is_idempotent_and_releases_admission(monkeypatch):
 
 
 def test_second_waiter_is_rejected_and_waiting_request_acquires_after_release(monkeypatch):
+    from providers import colibri
     from providers.colibri import ColibriClient, ColibriOverloaded
 
     monkeypatch.setattr(Config, 'COLIBRI_QUEUE_TIMEOUT_SEC', 1)
@@ -227,6 +229,14 @@ def test_second_waiter_is_rejected_and_waiting_request_acquires_after_release(mo
     waiter = threading.Thread(target=wait_for_admission)
     waiter.start()
     assert started.wait(timeout=1)
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline:
+        with colibri._waiter_lock:
+            if colibri._waiter_count == 1:
+                break
+        time.sleep(0.01)
+    else:
+        pytest.fail('waiting request did not register for admission')
 
     with pytest.raises(ColibriOverloaded, match='colibri_queue_full'):
         ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
@@ -253,12 +263,17 @@ def test_waiter_timeout_releases_waiter_slot(monkeypatch):
     replacement.close()
 
 
-def test_create_message_maps_openai_response_and_releases_admission(monkeypatch):
+@pytest.mark.parametrize(
+    ('finish_reason', 'stop_reason'), [('length', 'length'), (None, 'stop')],
+)
+def test_create_message_maps_openai_response_and_releases_admission(
+    monkeypatch, finish_reason, stop_reason,
+):
     from providers.colibri import ColibriClient
 
     response = Mock()
     response.json.return_value = {
-        'choices': [{'message': {'content': 'Hello'}}],
+        'choices': [{'message': {'content': 'Hello'}, 'finish_reason': finish_reason}],
         'usage': {'prompt_tokens': 2, 'completion_tokens': 3},
     }
     post = Mock(return_value=response)
@@ -274,6 +289,7 @@ def test_create_message_maps_openai_response_and_releases_admission(monkeypatch)
         'content': [{'text': 'Hello'}],
         'tool_calls': [],
         'usage': {'input_tokens': 2, 'output_tokens': 3},
+        'stop_reason': stop_reason,
     }
     assert post.call_args.kwargs['json'] == {
         'model': 'glm-5.2-colibri',

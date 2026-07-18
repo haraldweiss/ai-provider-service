@@ -159,6 +159,8 @@ class ColibriClient(BaseClient):
             choice = choices[0]
             message = choice.get('message') if isinstance(choice.get('message'), dict) else {}
             content = message.get('content') if isinstance(message.get('content'), str) else ''
+            finish_reason = choice.get('finish_reason')
+            stop_reason = finish_reason if isinstance(finish_reason, str) and finish_reason else 'stop'
             usage = data.get('usage') if isinstance(data.get('usage'), dict) else {}
             tool_calls = []
             for index, call in enumerate(message.get('tool_calls') or []):
@@ -183,6 +185,7 @@ class ColibriClient(BaseClient):
                     'input_tokens': usage.get('prompt_tokens', 0),
                     'output_tokens': usage.get('completion_tokens', 0),
                 },
+                'stop_reason': stop_reason,
             }
         finally:
             try:
