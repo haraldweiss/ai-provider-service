@@ -43,6 +43,15 @@ def has_personal_api_key(user_id: str, provider_id: str) -> bool:
 
 
 def is_allowed(principal: Principal, provider_id: str) -> bool:
+    # Colibri is a fixed POC system provider, not a generally gateable
+    # provider.  This must precede every generic bypass, including the global
+    # gate kill switch, so direct models/health/test routes stay private.
+    if provider_id == 'colibri':
+        return (
+            Config.COLIBRI_ENABLED
+            and principal.user_id == Config.ADMIN_USER_ID
+            and principal.role == 'admin'
+        )
     if not Config.GATE_ENABLED:
         return True
     if provider_id in Config.UNGATED_PROVIDERS:

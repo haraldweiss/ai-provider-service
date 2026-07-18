@@ -272,7 +272,7 @@ def dispatch(
         raise ProviderUnavailableError('Provider colibri ist nicht für diesen Benutzer verfügbar')
 
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
-    should_queue = pc.queue_when_unavailable if pc else False
+    should_queue = pc.queue_when_unavailable if pc and provider_id != 'colibri' else False
     queue_ttl_h = pc.queue_ttl_hours if pc else 24
 
     # Effektiver Fallback: Per-Request-Override gewinnt vor DB-Config

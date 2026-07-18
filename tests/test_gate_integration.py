@@ -71,3 +71,58 @@ def test_chat_blocks_claude_without_grant(client):
     )
     assert r.status_code == 403
     assert r.get_json()['error'] == 'needs_approval'
+
+
+@pytest.mark.parametrize(
+    ('method', 'path', 'payload'),
+    [
+        ('GET', '/providers/colibri/models', None),
+        ('GET', '/providers/colibri/health', None),
+        ('POST', '/providers/colibri/test', {}),
+    ],
+)
+def test_colibri_direct_routes_deny_non_admin_without_user_id(
+    client, monkeypatch, method, path, payload,
+):
+    """Direct provider clients must not accept an unscoped service caller."""
+    monkeypatch.setattr(Config, 'COLIBRI_ENABLED', True, raising=False)
+    monkeypatch.setattr(Config, 'ADMIN_USER_ID', 'harald')
+    monkeypatch.setattr(Config, 'GATE_ENABLED', False)
+
+    response = client.open(
+        path,
+        method=method,
+        json=payload,
+        headers={'Authorization': 'Bearer test-token'},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()['error'] == 'needs_approval'
+
+
+@pytest.mark.parametrize(
+    ('method', 'path', 'payload'),
+    [
+        ('GET', '/providers/colibri/models', None),
+        ('GET', '/providers/colibri/health', None),
+        ('POST', '/providers/colibri/test', {}),
+    ],
+)
+def test_colibri_direct_routes_deny_admin_when_disabled(
+    client, monkeypatch, method, path, payload,
+):
+    """The generic disabled gate cannot enable a disabled Colibri POC."""
+    monkeypatch.setattr(Config, 'COLIBRI_ENABLED', False, raising=False)
+    monkeypatch.setattr(Config, 'ADMIN_USER_ID', 'harald')
+    monkeypatch.setattr(Config, 'ADMIN_TOKEN', 'admin-test-token')
+    monkeypatch.setattr(Config, 'GATE_ENABLED', False)
+
+    response = client.open(
+        path,
+        method=method,
+        json=payload,
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()['error'] == 'needs_approval'

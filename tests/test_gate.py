@@ -57,6 +57,22 @@ def test_gate_disabled_allows_everything(app):
         assert is_allowed(Principal('anyone', 'user'), 'claude') is True
 
 
+def test_colibri_gate_requires_enabled_admin_identity_before_global_bypasses(app, monkeypatch):
+    """Colibri remains private even when the generic provider gate is off."""
+    monkeypatch.setattr(Config, 'ADMIN_USER_ID', 'harald')
+    monkeypatch.setattr(Config, 'GATE_ENABLED', False)
+    monkeypatch.setattr(Config, 'COLIBRI_ENABLED', True, raising=False)
+
+    with app.app_context():
+        assert is_allowed(Principal('harald', 'admin'), 'colibri') is True
+        assert is_allowed(Principal('harald', 'user'), 'colibri') is False
+        assert is_allowed(Principal('', 'user'), 'colibri') is False
+
+    monkeypatch.setattr(Config, 'COLIBRI_ENABLED', False, raising=False)
+    with app.app_context():
+        assert is_allowed(Principal('harald', 'admin'), 'colibri') is False
+
+
 def test_decorator_403s_when_denied(gate_on, client):
     from api.gate import require_provider_access
     from api.auth import require_token

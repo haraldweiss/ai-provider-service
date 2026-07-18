@@ -58,3 +58,39 @@ def test_colibri_dispatch_rejects_non_admin_before_fallback_or_queue(app, monkey
     health_check.assert_not_called()
     execute.assert_not_called()
     request_queue.assert_not_called()
+
+
+def test_colibri_dispatch_never_queues_for_enabled_admin(app, monkeypatch):
+    """A saved generic queue preference cannot queue the Colibri POC."""
+    from dispatcher import ProviderUnavailableError, dispatch
+
+    monkeypatch.setattr('dispatcher.Config.COLIBRI_ENABLED', True, raising=False)
+    monkeypatch.setattr('dispatcher.Config.ADMIN_USER_ID', 'harald')
+    config = ProviderConfig(
+        user_id='harald',
+        provider_id='colibri',
+        queue_when_unavailable=True,
+    )
+    config.set_config({})
+    db.session.add(config)
+    db.session.commit()
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=False) as health_check, \
+            patch('dispatcher.RequestQueue') as request_queue, \
+            patch('dispatcher.db.session.add') as session_add, \
+            patch('dispatcher.db.session.commit') as session_commit:
+        with pytest.raises(
+            ProviderUnavailableError,
+            match='Provider colibri nicht erreichbar, kein Fallback/Queue konfiguriert',
+        ):
+            dispatch(
+                user_id='harald',
+                provider_id='colibri',
+                model='glm-5.2-colibri',
+                messages=[{'role': 'user', 'content': 'hi'}],
+            )
+
+    health_check.assert_called_once_with('colibri')
+    request_queue.assert_not_called()
+    session_add.assert_not_called()
+    session_commit.assert_not_called()
