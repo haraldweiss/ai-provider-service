@@ -65,6 +65,31 @@ def _offered_tool_names(tools: list[dict] | None) -> set[str]:
     return names
 
 
+def _validate_tool_calls(
+    tool_calls, offered_names: set[str], *, allow_missing_name: bool,
+) -> list[dict]:
+    if tool_calls is None:
+        return []
+    if not isinstance(tool_calls, list):
+        raise ColibriProtocolError('Colibri response has invalid tool calls')
+    for tool_call in tool_calls:
+        if not isinstance(tool_call, dict):
+            raise ColibriProtocolError('Colibri response has invalid tool call')
+        function = tool_call.get('function')
+        if allow_missing_name and function is None:
+            continue
+        if not isinstance(function, dict):
+            raise ColibriProtocolError('Colibri response has invalid tool call')
+        name = function.get('name')
+        if allow_missing_name and (name is None or name == ''):
+            continue
+        if not isinstance(name, str) or not name:
+            raise ColibriProtocolError('Colibri response has invalid tool call name')
+        if name not in offered_names:
+            raise ColibriProtocolError('unoffered tool in Colibri response')
+    return tool_calls
+
+
 def _result_tool_calls(tool_parts: dict[int, dict]) -> list[dict]:
     calls = []
     for index in sorted(tool_parts):
@@ -163,11 +188,13 @@ class ColibriClient(BaseClient):
             stop_reason = finish_reason if isinstance(finish_reason, str) and finish_reason else 'stop'
             usage = data.get('usage') if isinstance(data.get('usage'), dict) else {}
             tool_calls = []
-            for index, call in enumerate(message.get('tool_calls') or []):
-                if not isinstance(call, dict):
-                    continue
-                function = call.get('function') if isinstance(call.get('function'), dict) else {}
-                name = function.get('name') if isinstance(function.get('name'), str) else ''
+            validated_calls = _validate_tool_calls(
+                message.get('tool_calls'), _offered_tool_names(tools),
+                allow_missing_name=False,
+            )
+            for index, call in enumerate(validated_calls):
+                function = call['function']
+                name = function['name']
                 arguments = function.get('arguments', '{}')
                 try:
                     parsed_arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
@@ -240,6 +267,7 @@ class ColibriClient(BaseClient):
         tool_parts: dict[int, dict] = {}
 
         def events() -> Iterator[dict]:
+            terminal_seen = False
             try:
                 for raw_line in response.iter_lines(decode_unicode=True):
                     if not raw_line:
@@ -270,17 +298,10 @@ class ColibriClient(BaseClient):
                             delta = {}
                         if not isinstance(delta, dict):
                             raise ColibriProtocolError('SSE frame has invalid delta')
-                        for tool_call in delta.get('tool_calls') or []:
-                            if not isinstance(tool_call, dict):
-                                raise ColibriProtocolError('SSE frame has invalid tool call')
-                            function = tool_call.get('function')
-                            if function is None:
-                                function = {}
-                            if not isinstance(function, dict):
-                                raise ColibriProtocolError('SSE frame has invalid tool call')
-                            name = function.get('name')
-                            if name and (not isinstance(name, str) or name not in offered_names):
-                                raise ColibriProtocolError('unoffered tool in Colibri SSE stream')
+                        _validate_tool_calls(
+                            delta.get('tool_calls'), offered_names,
+                            allow_missing_name=True,
+                        )
 
                     for choice in choices:
                         delta = choice.get('delta') or {}
@@ -303,7 +324,8 @@ class ColibriClient(BaseClient):
                             if isinstance(arguments, str):
                                 part['arguments'] += arguments
                         finish_reason = choice.get('finish_reason')
-                        if isinstance(finish_reason, str):
+                        if isinstance(finish_reason, str) and finish_reason:
+                            terminal_seen = True
                             result['stop_reason'] = finish_reason
 
                     if text_parts:
@@ -316,6 +338,10 @@ class ColibriClient(BaseClient):
                             'output_tokens': usage.get('completion_tokens', 0),
                         }
                     yield frame
+                if not terminal_seen:
+                    raise ColibriProtocolError(
+                        'Colibri SSE stream ended without a terminal marker',
+                    )
             finally:
                 close()
 

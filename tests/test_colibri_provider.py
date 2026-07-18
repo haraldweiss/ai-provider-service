@@ -86,6 +86,21 @@ def test_stream_rejects_an_unoffered_tool_before_yield(monkeypatch):
     stream.close()
 
 
+def test_stream_rejects_clean_eof_without_terminal_marker(monkeypatch):
+    from providers.colibri import ColibriClient, ColibriProtocolError
+
+    response = fake_sse_response([
+        {'choices': [{'delta': {'content': 'partial'}, 'finish_reason': None}]},
+    ])
+    monkeypatch.setattr('providers.colibri.requests.post', Mock(return_value=response))
+
+    stream = ColibriClient({}).open_stream('glm-5.2-colibri', [], 16)
+
+    with pytest.raises(ColibriProtocolError, match='terminal marker'):
+        list(stream.events)
+    response.close.assert_called_once()
+
+
 def test_client_requires_enabled_server_configuration(monkeypatch):
     from providers.colibri import ColibriClient
 
@@ -299,4 +314,46 @@ def test_create_message_maps_openai_response_and_releases_admission(
         'tools': [{'type': 'function', 'function': {'name': 'read_file'}}],
         'tool_choice': 'required',
     }
+    response.close.assert_called_once()
+
+
+def test_create_message_rejects_unoffered_tool_call(monkeypatch):
+    from providers.colibri import ColibriClient, ColibriProtocolError
+
+    response = Mock()
+    response.json.return_value = {
+        'choices': [{'message': {'content': None, 'tool_calls': [{
+            'id': 'call_1',
+            'function': {'name': 'erase_all', 'arguments': '{}'},
+        }]}, 'finish_reason': 'tool_calls'}],
+    }
+    monkeypatch.setattr('providers.colibri.requests.post', Mock(return_value=response))
+
+    with pytest.raises(ColibriProtocolError, match='unoffered tool'):
+        ColibriClient({}).create_message(
+            'glm-5.2-colibri', [], 16,
+            tools=[{'type': 'function', 'function': {'name': 'read_file'}}],
+        )
+    response.close.assert_called_once()
+
+
+@pytest.mark.parametrize('tool_call', [
+    {'function': {'name': '', 'arguments': '{}'}},
+    {'function': 'not-an-object'},
+    'not-an-object',
+])
+def test_create_message_rejects_malformed_tool_call(monkeypatch, tool_call):
+    from providers.colibri import ColibriClient, ColibriProtocolError
+
+    response = Mock()
+    response.json.return_value = {
+        'choices': [{'message': {'tool_calls': [tool_call]}, 'finish_reason': 'tool_calls'}],
+    }
+    monkeypatch.setattr('providers.colibri.requests.post', Mock(return_value=response))
+
+    with pytest.raises(ColibriProtocolError, match='invalid tool call'):
+        ColibriClient({}).create_message(
+            'glm-5.2-colibri', [], 16,
+            tools=[{'type': 'function', 'function': {'name': 'read_file'}}],
+        )
     response.close.assert_called_once()

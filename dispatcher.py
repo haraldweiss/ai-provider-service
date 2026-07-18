@@ -414,8 +414,29 @@ def dispatch(
     Fallback-Strategie pro Aufruf zu übergeben, ohne sie in der Service-DB zu
     persistieren.
     """
-    if provider_id == 'colibri' and _load_config(user_id, provider_id) is None:
-        raise ProviderUnavailableError('Provider colibri ist nicht für diesen Benutzer verfügbar')
+    if provider_id == 'colibri':
+        if _load_config(user_id, provider_id) is None:
+            raise ProviderUnavailableError(
+                'Provider colibri ist nicht für diesen Benutzer verfügbar',
+            )
+        if not health_tracker.is_healthy(provider_id):
+            raise ProviderUnavailableError(
+                'Provider colibri nicht erreichbar, kein Fallback/Queue konfiguriert',
+            )
+        try:
+            result = _execute(
+                user_id, provider_id, model, messages, max_tokens,
+                origin_app=origin_app, tools=tools,
+            )
+        except Exception as exc:
+            logger.warning('Colibri non-stream dispatch failed: %s', type(exc).__name__)
+            raise ProviderUnavailableError(
+                'Provider colibri nicht erreichbar, kein Fallback/Queue konfiguriert',
+            ) from exc
+        return {
+            'result': result, 'via': provider_id, 'model': model,
+            'fallback_used': False,
+        }
 
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     should_queue = pc.queue_when_unavailable if pc and provider_id != 'colibri' else False

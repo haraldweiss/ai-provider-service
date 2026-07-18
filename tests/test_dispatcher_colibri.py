@@ -114,6 +114,65 @@ def test_colibri_dispatch_never_queues_for_enabled_admin(app, monkeypatch):
     session_commit.assert_not_called()
 
 
+def test_colibri_dispatch_ignores_request_fallback_after_primary_failure(app, monkeypatch):
+    """Colibri failures are terminal even when the request supplies fallback."""
+    from dispatcher import ProviderUnavailableError, dispatch
+
+    monkeypatch.setattr('dispatcher.Config.COLIBRI_ENABLED', True, raising=False)
+    monkeypatch.setattr('dispatcher.Config.ADMIN_USER_ID', 'harald')
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+            patch('dispatcher._execute', side_effect=RuntimeError('upstream failed')) as execute:
+        with pytest.raises(
+            ProviderUnavailableError,
+            match='Provider colibri nicht erreichbar, kein Fallback/Queue konfiguriert',
+        ):
+            dispatch(
+                user_id='harald',
+                provider_id='colibri',
+                model='glm-5.2-colibri',
+                messages=[{'role': 'user', 'content': 'hi'}],
+                fallback_provider_override='ollama',
+                fallback_model_override='qwen3',
+                fallback_config_override={},
+            )
+
+    execute.assert_called_once()
+    assert execute.call_args.args[1] == 'colibri'
+
+
+def test_colibri_dispatch_ignores_persisted_fallback_when_unavailable(app, monkeypatch):
+    """Saved generic fallback policy is never read into Colibri dispatch."""
+    from dispatcher import ProviderUnavailableError, dispatch
+
+    monkeypatch.setattr('dispatcher.Config.COLIBRI_ENABLED', True, raising=False)
+    monkeypatch.setattr('dispatcher.Config.ADMIN_USER_ID', 'harald')
+    config = ProviderConfig(
+        user_id='harald',
+        provider_id='colibri',
+        fallback_provider='ollama',
+        fallback_model='qwen3',
+    )
+    config.set_config({})
+    db.session.add(config)
+    db.session.commit()
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=False), \
+            patch('dispatcher._execute') as execute:
+        with pytest.raises(
+            ProviderUnavailableError,
+            match='Provider colibri nicht erreichbar, kein Fallback/Queue konfiguriert',
+        ):
+            dispatch(
+                user_id='harald',
+                provider_id='colibri',
+                model='glm-5.2-colibri',
+                messages=[{'role': 'user', 'content': 'hi'}],
+            )
+
+    execute.assert_not_called()
+
+
 def test_dispatch_stream_opens_colibri_before_response_headers(app, monkeypatch):
     """Native streaming admits Colibri before Flask can commit headers."""
     from dispatcher import dispatch_stream
