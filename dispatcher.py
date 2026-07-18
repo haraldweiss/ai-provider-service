@@ -115,7 +115,7 @@ def _log_usage_event(
         db.session.add(ev)
         db.session.commit()
     except Exception as log_err:
-        logger.warning(f'usage_event logging failed: {log_err}')
+        logger.warning('usage_event logging failed: %s', log_err)
         db.session.rollback()
 
 
@@ -147,7 +147,7 @@ def _write_audit_note(
         except NoteAlreadyExists:
             return
     except Exception as e:
-        logger.warning(f'memory audit write failed: {e}')
+        logger.warning('memory audit write failed: %s', e)
         try:
             db.session.rollback()
         except Exception:
@@ -291,13 +291,14 @@ def dispatch(
                 'fallback_used': False,
             }
         except Exception as e:
-            logger.info(f'Primary {provider_id} failed for user={user_id}: {e}')
+            logger.info('Primary %s failed for user=%s: %s', provider_id, user_id, e)
             # weiter mit Fallback / Queue
 
     # 2) Fallback versuchen
     if fallback:
         try:
-            logger.info(f'Trying fallback {fallback} (model={fallback_model}) for user={user_id}')
+            logger.info('Trying fallback %s (model=%s) for user=%s',
+                        fallback, fallback_model, user_id)
             result = _execute(user_id, fallback, fallback_model, messages, max_tokens,
                               fallback_cfg, origin_app=origin_app, tools=tools)
             return {
@@ -306,7 +307,7 @@ def dispatch(
                 'primary_model': model,
             }
         except Exception as e:
-            logger.warning(f'Fallback {fallback} also failed for user={user_id}: {e}')
+            logger.warning('Fallback %s also failed for user=%s: %s', fallback, user_id, e)
 
     # 3) Queueing
     if should_queue:
