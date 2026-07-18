@@ -20,6 +20,13 @@ PROVIDER_REGISTRY = {
         'optional': [],
         'personal_api_key': False,
     },
+    'colibri': {
+        'name': 'Colibri',
+        'system': True,
+        'requires': [],
+        'optional': [],
+        'personal_api_key': False,
+    },
     'openai': {
         'name': 'ChatGPT / OpenAI',
         'system': False,
@@ -97,6 +104,9 @@ def get_client(provider_id: str, config: Optional[dict] = None) -> BaseClient:
     if provider_id == 'ollama':
         from providers.ollama import OllamaClient
         return OllamaClient(config)
+    if provider_id == 'colibri':
+        from providers.colibri import ColibriClient
+        return ColibriClient(config)
     if provider_id == 'openai':
         from providers.openai_client import OpenAIClient
         return OpenAIClient(config)

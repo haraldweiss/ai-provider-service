@@ -20,6 +20,14 @@ class Config:
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
     OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
     OLLAMA_URLS = os.getenv('OLLAMA_URLS', '')
+    COLIBRI_ENABLED = os.getenv('COLIBRI_ENABLED', 'false').lower() == 'true'
+    COLIBRI_BASE_URL = os.getenv('COLIBRI_BASE_URL', 'http://host.docker.internal:18000')
+    COLIBRI_API_KEY = os.getenv('COLIBRI_API_KEY', '')
+    COLIBRI_MODEL_ID = os.getenv('COLIBRI_MODEL_ID', 'glm-5.2-colibri')
+    COLIBRI_CONNECT_TIMEOUT_SEC = int(os.getenv('COLIBRI_CONNECT_TIMEOUT_SEC', '10'))
+    COLIBRI_STREAM_READ_TIMEOUT_SEC = int(os.getenv('COLIBRI_STREAM_READ_TIMEOUT_SEC', '180'))
+    COLIBRI_MAX_WAITING = int(os.getenv('COLIBRI_MAX_WAITING', '1'))
+    COLIBRI_QUEUE_TIMEOUT_SEC = int(os.getenv('COLIBRI_QUEUE_TIMEOUT_SEC', '60'))
 
     DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///storage.db')
 

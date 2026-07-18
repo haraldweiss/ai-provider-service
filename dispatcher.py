@@ -85,6 +85,9 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
             return {'_free_only': True, 'api_key': Config.OPENROUTER_API_KEY}
         return {'_free_only': True}
 
+    if provider_id == 'colibri':
+        return {} if Config.COLIBRI_ENABLED and user_id == Config.ADMIN_USER_ID else None
+
     if PROVIDER_REGISTRY.get(provider_id, {}).get('system'):
         if provider_id == 'claude' and not _is_claude_server_key_allowed(user_id):
             return None
@@ -265,6 +268,9 @@ def dispatch(
     Fallback-Strategie pro Aufruf zu übergeben, ohne sie in der Service-DB zu
     persistieren.
     """
+    if provider_id == 'colibri' and _load_config(user_id, provider_id) is None:
+        raise ProviderUnavailableError('Provider colibri ist nicht für diesen Benutzer verfügbar')
+
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     should_queue = pc.queue_when_unavailable if pc else False
     queue_ttl_h = pc.queue_ttl_hours if pc else 24

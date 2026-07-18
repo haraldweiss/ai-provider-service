@@ -10,6 +10,17 @@ Antwort-Format ist Claude-kompatibel (für Drop-in-Migration):
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Callable, Iterator
+
+
+@dataclass
+class ProviderStream:
+    events: Iterator[dict]
+    close: Callable[[], None]
+    result: dict = field(default_factory=lambda: {
+        'content': [], 'tool_calls': [], 'usage': {}, 'stop_reason': 'stop',
+    })
 
 
 class BaseClient(ABC):
