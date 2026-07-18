@@ -168,6 +168,44 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Code-Review Fixes + CI-Workflow-Reparatur + Deploy (2026-07-18, Cline)
+
+**Scope:** Vollständiges Code-Review (python-review Skill + ruff) mit Fixes,
+Deploy auf oracle-vm. Running == committed (`5ca7d0e`).
+
+**Code-Fixes (4 Commits):**
+- `9c4d1df` — requirements-Floors `anthropic>=0.40.0` / `openai>=1.55.3`:
+  die alten Floors sind inkompatibel mit httpx>=0.28 (`proxies`-kwarg entfernt)
+  → 7 "pre-existing" lokale Test-Failures. Suite 340+7 failed → 347/347 grün.
+- `76cb9be` — `/v1/chat/completions` + `/chat`: `max_tokens: null` crashte mit
+  TypeError → 500; non-list `messages` wurde zeichenweise in den Dispatcher
+  iteriert. Neuer shared Helper `api/validation.py::parse_max_tokens()`
+  (null→default, invalid→400) + 400 auf non-list messages.
+- `7f20bf6` — lazy %-Logging im Dispatcher-Hot-Path.
+- `2339e59` — ruff-Cleanup: 73 Findings → 0 (unused imports, E402, F811,
+  E712 `is_(False)`, F841, F541).
+
+**⚠️ CI war seit 2026-07-03 komplett kaputt (Fix-Commit `5ca7d0e`):**
+- `c3acb29` (Coverage-CI) führte den Step-Namen `pytest + coverage (target: 80%)`
+  ein — unquotet enthält er `: ` → YAML-ScannerError → GitHub meldete "workflow
+  file issue", **0 Jobs liefen**. Zwei Pushes (`837caa9`, `8e793bf`) hatten somit
+  gar kein CI-Gate. Fix: Step-Name gequotet. Nach dem Push liefen test +
+  docker-smoke wieder grün. Kleinere offene Baustelle: actions/checkout@v4
+  Node-20-Deprecation-Warnung (cosmetic).
+
+**Deploy:**
+- Server-Repo `/opt/ai-provider-service` war sauber (kein Drift), ff auf `5ca7d0e`.
+- Image `localhost/ai-provider:5ca7d0e` (+`:latest`) via `build.sh` gebaut;
+  Container per `sudo docker compose up -d --force-recreate ai-provider` recreated.
+- `docker ps`: healthy nach 8s; Container-Image-ID matcht Tag `5ca7d0e`.
+- **Verifiziert live:** `/health` lokal + public 200 (claude weiterhin ohne Key
+  unhealthy — bekannter Ist-Zustand); `/v1/models` 573 Modelle;
+  `max_tokens:null` → 200 (vorher 500); `messages:"hello"` → 400;
+  `max_tokens:-3` → 400. Keine Startup-Tracebacks im Log.
+
+**Verification vor Deploy:** pytest 360/360 (13 neue Tests), ruff clean,
+GitHub CI test + docker-smoke grün (nach Workflow-Fix).
+
 ### Non-root container crash — readonly SQLite database (2026-07-12, opencode)
 
 **Scope:** The security hardening (commit `9610c32`) added `USER appuser` with
