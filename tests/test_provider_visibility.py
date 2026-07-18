@@ -68,6 +68,56 @@ def test_personal_key_makes_provider_visible(client, app, monkeypatch):
     assert 'openai' not in hidden_ids
 
 
+def test_providers_hides_colibri_entirely_when_principal_is_not_allowed(
+    client, monkeypatch,
+):
+    import api.gate as gate
+
+    monkeypatch.setattr(gate.Config, 'COLIBRI_ENABLED', True, raising=False)
+    monkeypatch.setattr(gate.Config, 'ADMIN_USER_ID', 'harald')
+
+    response = client.get(
+        '/providers?user_id=lisa',
+        headers={'Authorization': 'Bearer test-token'},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert 'colibri' not in {provider['id'] for provider in body['providers']}
+    assert 'colibri' not in {provider['id'] for provider in body['hidden_providers']}
+
+
+def test_providers_includes_colibri_for_allowed_admin(client, monkeypatch):
+    import api.auth as auth
+    import api.gate as gate
+
+    monkeypatch.setattr(auth.Config, 'ADMIN_TOKEN', 'admin-test-token')
+    monkeypatch.setattr(auth.Config, 'ADMIN_USER_ID', 'harald')
+    monkeypatch.setattr(gate.Config, 'COLIBRI_ENABLED', True, raising=False)
+    monkeypatch.setattr(gate.Config, 'ADMIN_USER_ID', 'harald')
+
+    response = client.get(
+        '/providers?user_id=harald',
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert response.status_code == 200
+    colibri = next(
+        provider for provider in response.get_json()['providers']
+        if provider['id'] == 'colibri'
+    )
+    assert colibri['allowed'] is True
+
+
+def test_public_health_hides_colibri(client):
+    response = client.get('/health')
+
+    assert response.status_code == 200
+    providers = response.get_json()['providers']
+    assert 'ollama' in providers
+    assert 'colibri' not in providers
+
+
 def test_models_endpoint_refuses_key_required_provider_without_user_key(client, monkeypatch):
     from config import Config
 

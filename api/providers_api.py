@@ -30,6 +30,8 @@ def list_providers():
     out = []
     hidden = hidden_key_provider_rows(user_id)
     for pid, meta in PROVIDER_REGISTRY.items():
+        if pid == 'colibri' and not is_allowed(g.principal, pid):
+            continue
         if provider_requires_user_key(user_id, pid):
             continue
 

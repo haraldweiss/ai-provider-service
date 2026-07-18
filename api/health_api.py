@@ -20,5 +20,6 @@ def health():
                 'name': meta['name'],
             }
             for pid, meta in PROVIDER_REGISTRY.items()
+            if pid != 'colibri'
         }
     })
