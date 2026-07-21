@@ -64,6 +64,8 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Its reverse-SSH forward is Oracle `127.0.0.1:11442`, bridged for Docker by `ai-provider-omlx-11442.service` (`172.17.0.1:11442 → 127.0.0.1:11442`). The container endpoint is `http://host.docker.internal:11442/v1`.
 - `OMLX_API_KEY` is opaque: store it only in root-owned `/etc/ai-provider/ai-provider.env`; never log, commit, render, or pass it in a shell command line. Do not disable oMLX authentication to avoid distributing this key.
 - Keep `com.wolfini.omlx-tunnel` and its monitor separate from all Ollama launchd agents. Log only under `~/Library/Logs`; repair a wedged job using `launchctl kickstart -k`.
+- For Pi/OpenAI-compatible 4xx triage, log only request shape (field names, roles, value types, lengths, and counts), never content, keys, or tokens. Check tool count, `max_completion_tokens`, and large system-context sizes before changing provider authentication or tunnel configuration.
+- A reachable oMLX `/v1/models` endpoint does not prove that a large completion will finish: use the oMLX 180s chat timeout, while preserving short model-health checks. Do not classify upstream 4xx validation failures as provider outages.
 
 ### 3.5 Gunicorn in the container, behind host Apache
 - `gunicorn` runs **inside** the `ai-provider` Docker container, which exposes `127.0.0.1:8767` on oracle-vm.
