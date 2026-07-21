@@ -218,6 +218,32 @@ def test_chat_completions_returns_503_for_provider_unavailable(app, client, monk
     assert r.json['error']['type'] == 'service_unavailable'
 
 
+def test_omlx_request_metadata_excludes_message_content():
+    from api.openai_api import _omlx_request_metadata
+
+    metadata = _omlx_request_metadata({
+        'model': 'omlx/devstral',
+        'messages': [
+            {'role': 'developer', 'content': 'private system instruction'},
+            {'role': 'user', 'content': [{'type': 'text', 'text': 'private prompt'}]},
+        ],
+        'stream': True,
+        'max_tokens': 4096,
+    })
+
+    assert metadata == {
+        'request_keys': ['max_tokens', 'messages', 'model', 'stream'],
+        'message_count': 2,
+        'message_roles': ['developer', 'user'],
+        'message_content_types': ['str', 'list'],
+        'message_content_lengths': [26, 1],
+        'stream': True,
+        'max_tokens_type': 'int',
+        'tool_count': 0,
+    }
+    assert 'private' not in str(metadata)
+
+
 def test_chat_completions_returns_400_when_provider_rejects_request(app, client, monkeypatch):
     """A provider-side 4xx is a request error, not an availability outage."""
     from config import Config

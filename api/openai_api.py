@@ -194,6 +194,24 @@ def _normalize_messages(messages: list) -> list:
     return normalized
 
 
+def _omlx_request_metadata(body: dict) -> dict:
+    """Return oMLX-safe request diagnostics without retaining content values."""
+    messages = body.get('messages') if isinstance(body.get('messages'), list) else []
+    return {
+        'request_keys': sorted(str(key) for key in body),
+        'message_count': len(messages),
+        'message_roles': [str(message.get('role', '')) if isinstance(message, dict) else type(message).__name__
+                          for message in messages],
+        'message_content_types': [type(message.get('content')).__name__ if isinstance(message, dict)
+                                  else type(message).__name__ for message in messages],
+        'message_content_lengths': [len(message.get('content')) if isinstance(message, dict)
+                                    and hasattr(message.get('content'), '__len__') else None for message in messages],
+        'stream': body.get('stream') is True,
+        'max_tokens_type': type(body.get('max_tokens')).__name__,
+        'tool_count': len(body.get('tools')) if isinstance(body.get('tools'), list) else 0,
+    }
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────
 
 
@@ -267,6 +285,8 @@ def chat_completions():
             tools=tools,
         )
     except ProviderRequestError as e:
+        if e.provider_id == 'omlx':
+            logger.warning('oMLX rejected request metadata: %s', _omlx_request_metadata(body))
         return jsonify({
             'error': {'message': str(e), 'type': 'invalid_request'},
         }), e.status_code
