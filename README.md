@@ -8,7 +8,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 
 ## Features
 
-- **8 Provider** out of the box: Claude, Ollama, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM), Cline (api.cline.bot)
+- **9 Provider** out of the box: Claude, Ollama, oMLX, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM), Cline (api.cline.bot)
 - **Server-Key-Allowlist** für zentrale Provider-Keys (Claude, z.ai): der zentrale Key ist nur für gelistete User nutzbar; z.ai ist per Default auf `ADMIN_USER_ID` beschränkt — alle anderen brauchen einen eigenen Key (auch für die kostenlosen GLM-Flash-Modelle)
 - **Per-User-Konfiguration** mit Fernet-verschlüsselten API-Keys
 - **Fallback-Provider**: bei Nicht-Erreichbarkeit automatisch auf z.B. Claude umschalten
@@ -331,6 +331,17 @@ Lokales `ollama` bleibt immer sichtbar. Die Response enthält zusätzlich
 `hidden_providers` mit neutralen Provider-Namen und `availability_hint`, damit
 Clients einen Hinweis wie "mehr Provider nach Hinterlegen eines API-Keys"
 anzeigen können, ohne Keys oder interne Fehlerdetails offenzulegen.
+
+### oMLX (MacBook)
+
+oMLX is a separate, OpenAI-compatible Apple-Silicon backend. Its server stays
+on MacBook loopback (`127.0.0.1:8000`) and reaches Oracle through a dedicated
+reverse-SSH port `11442`; the Oracle `ai-provider-omlx-11442` socat bridge
+exposes it only to Docker. The container uses
+`OMLX_BASE_URL=http://host.docker.internal:11442/v1`. `OMLX_API_KEY` is an
+opaque server secret stored only in `/etc/ai-provider/ai-provider.env`, never
+in the repository. Enable it for shared access explicitly with
+`UNGATED_PROVIDERS=ollama,omlx`; otherwise use an admin grant.
 
 ### Configs
 

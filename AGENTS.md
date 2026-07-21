@@ -59,6 +59,12 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - ✅ Use thread pool or async for parallel health checks
 - ❌ Serial `for provider in providers: health_check(provider)` — blocks the gateway
 
+### 3.4.1 oMLX is a separate authenticated MacBook backend
+- oMLX runs only on the MacBook at `127.0.0.1:8000`; it is not an Ollama endpoint and must use its OpenAI-compatible `/v1` API.
+- Its reverse-SSH forward is Oracle `127.0.0.1:11442`, bridged for Docker by `ai-provider-omlx-11442.service` (`172.17.0.1:11442 → 127.0.0.1:11442`). The container endpoint is `http://host.docker.internal:11442/v1`.
+- `OMLX_API_KEY` is opaque: store it only in root-owned `/etc/ai-provider/ai-provider.env`; never log, commit, render, or pass it in a shell command line. Do not disable oMLX authentication to avoid distributing this key.
+- Keep `com.wolfini.omlx-tunnel` and its monitor separate from all Ollama launchd agents. Log only under `~/Library/Logs`; repair a wedged job using `launchctl kickstart -k`.
+
 ### 3.5 Gunicorn in the container, behind host Apache
 - `gunicorn` runs **inside** the `ai-provider` Docker container, which exposes `127.0.0.1:8767` on oracle-vm.
 - Host Apache (`httpd`) reverse-proxies to it: `ai-admin.wolfinisoftware.de` → `:8767/`, and `ai-provider-service.wolfinisoftware.de/` → `:8767/` (see `/etc/httpd/conf.d/`). In-container callers reach the host via `ai-provider-bridge.service` (docker0 gw → loopback :8767).
