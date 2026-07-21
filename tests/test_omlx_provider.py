@@ -3,6 +3,10 @@ from unittest.mock import patch
 from providers.omlx import OmlxClient
 
 
+def test_omlx_uses_extended_chat_timeout():
+    assert OmlxClient.timeout == 180
+
+
 @patch('providers.omlx.requests.get')
 def test_get_models_uses_v1_models_and_bearer_key(mock_get):
     mock_get.return_value.json.return_value = {'data': [{'id': 'devstral'}]}

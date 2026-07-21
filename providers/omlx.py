@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class OmlxClient(BaseClient):
+    timeout = 180
+
     def __init__(self, config: dict):
         self._base_url = (config.get('api_endpoint') or Config.OMLX_BASE_URL).rstrip('/')
         self._api_key = config.get('api_key') or Config.OMLX_API_KEY
