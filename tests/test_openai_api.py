@@ -218,6 +218,36 @@ def test_chat_completions_returns_503_for_provider_unavailable(app, client, monk
     assert r.json['error']['type'] == 'service_unavailable'
 
 
+def test_chat_completions_returns_400_when_provider_rejects_request(app, client, monkeypatch):
+    """A provider-side 4xx is a request error, not an availability outage."""
+    from config import Config
+    import api.openai_api as openai_api
+    from dispatcher import ProviderRequestError
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    def mock_dispatch(*args, **kwargs):
+        raise ProviderRequestError('omlx', 400)
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    response = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'omlx/Devstral-Small-2-24B-Instruct-2512-4bit',
+            'messages': [{'role': 'user', 'content': 'test'}],
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert response.status_code == 400
+    assert response.json['error'] == {
+        'message': 'Provider omlx rejected the request (HTTP 400)',
+        'type': 'invalid_request',
+    }
+
+
 def test_chat_completions_treats_null_max_tokens_as_default(app, client, monkeypatch):
     """max_tokens: null previously crashed with TypeError -> 500."""
     from config import Config

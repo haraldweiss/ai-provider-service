@@ -6,7 +6,11 @@ Verifiziert, dass `dispatch()` Per-Request-Override-Felder
 korrekt verwendet und Vorrang vor der DB-ProviderConfig haben.
 """
 from __future__ import annotations
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+import pytest
+import requests
+
 from database import db
 
 
@@ -52,6 +56,88 @@ def test_dispatch_primary_returns_model_field(app):
         assert result['fallback_used'] is False
         assert result['via'] == 'ollama'
         assert result['model'] == 'qwen:latest'
+
+
+def test_execute_does_not_mark_provider_unhealthy_when_request_is_rejected(app):
+    """An upstream 400 describes this request, not the provider's health."""
+    from dispatcher import ProviderRequestError, _execute
+
+    response = Mock(status_code=400)
+    rejected_request = requests.HTTPError(response=response)
+    client = Mock()
+    client.create_message.side_effect = rejected_request
+
+    with patch('dispatcher._load_config', return_value={}), \
+         patch('dispatcher.get_client', return_value=client), \
+         patch('dispatcher.health_tracker.set_status') as set_status:
+        with pytest.raises(ProviderRequestError) as error:
+            _execute(
+                user_id='harald', provider_id='omlx', model='devstral',
+                messages=[{'role': 'user', 'content': 'test'}], max_tokens=16,
+            )
+
+    assert error.value.status_code == 400
+    assert not any(
+        call.args[:2] == ('omlx', False) for call in set_status.call_args_list
+    )
+
+
+def test_execute_treats_sdk_style_4xx_as_a_request_error(app):
+    """SDK clients expose status_code directly rather than requests.HTTPError."""
+    from dispatcher import ProviderRequestError, _execute
+
+    class SdkStatusError(RuntimeError):
+        status_code = 400
+
+    client = Mock()
+    client.create_message.side_effect = SdkStatusError('upstream details')
+
+    with patch('dispatcher._load_config', return_value={}), \
+         patch('dispatcher.get_client', return_value=client), \
+         patch('dispatcher.health_tracker.set_status') as set_status:
+        with pytest.raises(ProviderRequestError) as error:
+            _execute(
+                user_id='harald', provider_id='openai', model='gpt-test',
+                messages=[{'role': 'user', 'content': 'test'}], max_tokens=16,
+            )
+
+    assert error.value.status_code == 400
+    assert not any(
+        call.args[:2] == ('openai', False) for call in set_status.call_args_list
+    )
+
+
+def test_dispatch_propagates_provider_request_errors(app):
+    """Request validation errors must not enter the fallback/queue path."""
+    from dispatcher import ProviderRequestError, dispatch
+
+    rejected_request = ProviderRequestError('omlx', 400)
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+         patch('dispatcher._execute', side_effect=rejected_request):
+        with pytest.raises(ProviderRequestError) as error:
+            dispatch(
+                user_id='harald', provider_id='omlx', model='devstral',
+                messages=[{'role': 'user', 'content': 'test'}], max_tokens=16,
+            )
+
+    assert error.value.status_code == 400
+
+
+def test_dispatch_propagates_provider_request_errors_from_fallback(app):
+    """A fallback validation error must not be queued or rewritten as a 503."""
+    from dispatcher import ProviderRequestError, dispatch
+
+    rejected_request = ProviderRequestError('openai', 400)
+    with patch('dispatcher.health_tracker.is_healthy', return_value=False), \
+         patch('dispatcher._execute', side_effect=rejected_request):
+        with pytest.raises(ProviderRequestError) as error:
+            dispatch(
+                user_id='harald', provider_id='omlx', model='devstral',
+                messages=[{'role': 'user', 'content': 'test'}], max_tokens=16,
+                fallback_provider_override='openai',
+            )
+
+    assert error.value.provider_id == 'openai'
 
 
 def test_dispatch_request_fallback_overrides_db_fallback(app):

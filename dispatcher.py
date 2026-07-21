@@ -23,6 +23,24 @@ class ProviderUnavailableError(RuntimeError):
     """Raised when primary provider is unavailable and no fallback/queue is configured."""
 
 
+class ProviderRequestError(RuntimeError):
+    """Raised when a provider rejects an otherwise reachable request."""
+
+    def __init__(self, provider_id: str, status_code: int):
+        self.provider_id = provider_id
+        self.status_code = status_code
+        super().__init__(f'Provider {provider_id} rejected the request (HTTP {status_code})')
+
+
+def _client_error_status(error: Exception) -> Optional[int]:
+    """Return an upstream 4xx status without depending on a provider SDK."""
+    for source in (error, getattr(error, 'response', None)):
+        status_code = getattr(source, 'status_code', None)
+        if type(status_code) is int and 400 <= status_code < 500:
+            return status_code
+    return None
+
+
 def _is_claude_server_key_allowed(user_id: str) -> bool:
     """Allowlist für den zentralen ANTHROPIC_API_KEY (Server-Key).
 
@@ -231,10 +249,18 @@ def _execute(
             logger.warning('memory audit write failed in _execute', exc_info=True)
         return result
     except Exception as e:
-        health_tracker.set_status(provider_id, False, reason=f"{type(e).__name__}: {e}", persistent=True)
+        status_code = _client_error_status(e)
+        if status_code is not None:
+            _log_usage_event(
+                user_id, provider_id, model, None, None,
+                'error', error_message=f'HTTP {status_code}', origin_app=origin_app,
+            )
+            raise ProviderRequestError(provider_id, status_code) from e
+        error_type = type(e).__name__
+        health_tracker.set_status(provider_id, False, reason=error_type, persistent=True)
         _log_usage_event(
             user_id, provider_id, model, None, None,
-            'error', error_message=f"{type(e).__name__}: {e}",
+            'error', error_message=error_type,
             origin_app=origin_app,
         )
         raise
@@ -290,8 +316,10 @@ def dispatch(
                 'result': result, 'via': provider_id, 'model': model,
                 'fallback_used': False,
             }
+        except ProviderRequestError:
+            raise
         except Exception as e:
-            logger.info('Primary %s failed for user=%s: %s', provider_id, user_id, e)
+            logger.info('Primary %s failed for user=%s: %s', provider_id, user_id, type(e).__name__)
             # weiter mit Fallback / Queue
 
     # 2) Fallback versuchen
@@ -306,8 +334,12 @@ def dispatch(
                 'fallback_used': True, 'primary_provider': provider_id,
                 'primary_model': model,
             }
+        except ProviderRequestError:
+            raise
         except Exception as e:
-            logger.warning('Fallback %s also failed for user=%s: %s', fallback, user_id, e)
+            logger.warning(
+                'Fallback %s also failed for user=%s: %s', fallback, user_id, type(e).__name__,
+            )
 
     # 3) Queueing
     if should_queue:

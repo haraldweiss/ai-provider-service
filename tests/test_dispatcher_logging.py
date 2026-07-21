@@ -47,8 +47,7 @@ def test_execute_logs_error_event(app):
     assert len(events) == 1
     ev = events[0]
     assert ev.status == 'error'
-    assert 'RuntimeError' in ev.error_message
-    assert 'boom' in ev.error_message
+    assert ev.error_message == 'RuntimeError'
     assert ev.input_tokens is None
     assert ev.cost_usd is None
 

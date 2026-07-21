@@ -14,7 +14,10 @@ from api.auth import require_token
 # from api.gate import require_provider_access
 from api.provider_visibility import availability_hint, hidden_key_provider_rows
 from api.validation import parse_max_tokens
-from dispatcher import dispatch, _extract_response_text, _load_config, ProviderUnavailableError
+from dispatcher import (
+    dispatch, _extract_response_text, _load_config, ProviderRequestError,
+    ProviderUnavailableError,
+)
 from providers import PROVIDER_REGISTRY, get_client
 from flask import g
 import health_tracker
@@ -263,6 +266,10 @@ def chat_completions():
             origin_app=origin_app,
             tools=tools,
         )
+    except ProviderRequestError as e:
+        return jsonify({
+            'error': {'message': str(e), 'type': 'invalid_request'},
+        }), e.status_code
     except ProviderUnavailableError as e:
         logger.warning(f'v1/chat/completions provider unavailable: {e}')
         return jsonify({

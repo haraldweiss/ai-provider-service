@@ -63,6 +63,7 @@ def test_http_error_is_sanitized(monkeypatch):
 
     with pytest.raises(RuntimeError) as caught:
         OllamaCloudClient({'api_key': 'secret'}).get_models()
+    assert caught.value.status_code == 401
     assert '401' in str(caught.value)
     assert 'secret' not in str(caught.value)
 

@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from api.auth import require_token
 from api.gate import require_provider_access, is_allowed
 from api.validation import parse_max_tokens
-from dispatcher import ProviderUnavailableError, dispatch
+from dispatcher import ProviderRequestError, ProviderUnavailableError, dispatch
 from flask import g
 from providers import PROVIDER_REGISTRY
 
@@ -76,6 +76,8 @@ def chat():
             origin_app=request.headers.get('X-Origin-App'),
         )
         return jsonify(result)
+    except ProviderRequestError as e:
+        return jsonify({'error': str(e)}), e.status_code
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except ProviderUnavailableError as e:

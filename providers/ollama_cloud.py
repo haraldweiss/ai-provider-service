@@ -7,6 +7,15 @@ import requests
 from providers.base import BaseClient
 
 
+class OllamaCloudRequestError(RuntimeError):
+    """Sanitized upstream error retaining only a safe HTTP status code."""
+
+    def __init__(self, operation: str, status_code=None):
+        self.status_code = status_code if type(status_code) is int else None
+        suffix = f' (HTTP {self.status_code})' if self.status_code else ''
+        super().__init__(f'Ollama Cloud {operation} failed{suffix}')
+
+
 class OllamaCloudClient(BaseClient):
     timeout = 180
 
@@ -24,11 +33,10 @@ class OllamaCloudClient(BaseClient):
         self.headers = {'Authorization': f'Bearer {self.api_key}'}
 
     @staticmethod
-    def _error(operation: str, exc: Exception) -> RuntimeError:
+    def _error(operation: str, exc: Exception) -> OllamaCloudRequestError:
         response = getattr(exc, 'response', None)
         status = getattr(response, 'status_code', None)
-        suffix = f' (HTTP {status})' if status else ''
-        return RuntimeError(f'Ollama Cloud {operation} failed{suffix}')
+        return OllamaCloudRequestError(operation, status)
 
     def get_models(self) -> list[str]:
         try:

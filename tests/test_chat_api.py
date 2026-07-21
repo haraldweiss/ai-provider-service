@@ -33,6 +33,34 @@ def test_chat_returns_503_for_provider_unavailable(app, client, monkeypatch):
     )
 
 
+def test_chat_returns_400_when_provider_rejects_request(app, client, monkeypatch):
+    from config import Config
+    import api.chat_api as chat_api
+    from dispatcher import ProviderRequestError
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    def mock_dispatch(*args, **kwargs):
+        raise ProviderRequestError('omlx', 400)
+
+    monkeypatch.setattr(chat_api, 'dispatch', mock_dispatch)
+
+    response = client.post(
+        '/chat',
+        json={
+            'user_id': 'harald',
+            'provider': 'omlx',
+            'model': 'Devstral-Small-2-24B-Instruct-2512-4bit',
+            'messages': [{'role': 'user', 'content': 'test'}],
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert response.status_code == 400
+    assert response.json['error'] == 'Provider omlx rejected the request (HTTP 400)'
+
+
 def test_chat_treats_null_max_tokens_as_default(app, client, monkeypatch):
     """max_tokens: null previously crashed with TypeError -> 500 (int(None))."""
     from config import Config
