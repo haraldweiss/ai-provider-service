@@ -20,6 +20,8 @@ class Config:
     ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
     OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
     OLLAMA_URLS = os.getenv('OLLAMA_URLS', '')
+    OMLX_BASE_URL = os.getenv('OMLX_BASE_URL', 'http://host.docker.internal:11442/v1')
+    OMLX_API_KEY = os.getenv('OMLX_API_KEY', '')
 
     DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///storage.db')
 
