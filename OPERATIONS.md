@@ -69,6 +69,8 @@ The service reads from `/var/www/ai-provider-service/.env`:
 | `DATABASE_URL` | No | `sqlite:///ai_provider.db` | Database connection string |
 | `OLLAMA_URL` | No | `http://127.0.0.1:11434` | Single-endpoint Ollama URL (legacy mode) |
 | `OLLAMA_URLS` | No | (empty) | Comma-separated list of Ollama endpoints — activates **Pool Mode** (load-balanced multi-Mac). When set, overrides `OLLAMA_URL`. See README → "Ollama Pool Mode" for details. |
+| `OMLX_BASE_URL` | No | `http://host.docker.internal:11442/v1` | oMLX OpenAI-compatible endpoint via the MacBook reverse-SSH tunnel and Oracle bridge. |
+| `OMLX_API_KEY` | Conditional | - | Opaque oMLX server key; set only in `/etc/ai-provider/ai-provider.env`, never in Git or logs. |
 
 ### Auto-Restart Behavior
 
@@ -769,4 +771,3 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ai-provider-summary.timer ai-provider-vault-render.timer
 sudo systemctl list-timers | grep ai-provider
 ```
-

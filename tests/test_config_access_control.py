@@ -44,3 +44,9 @@ def test_opencode_base_url_default(monkeypatch):
     monkeypatch.delenv('OPENCODE_BASE_URL', raising=False)
     Config = reload_config()
     assert Config.OPENCODE_BASE_URL == 'https://opencode.ai/zen/v1'
+
+
+def test_omlx_defaults_to_the_docker_host_bridge(monkeypatch):
+    monkeypatch.delenv('OMLX_BASE_URL', raising=False)
+    Config = reload_config()
+    assert Config.OMLX_BASE_URL == 'http://host.docker.internal:11442/v1'
