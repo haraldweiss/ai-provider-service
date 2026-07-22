@@ -444,7 +444,7 @@ GET /v1/models
      "model": "zai/glm-4.5",
      "messages": [{"role": "user", "content": "..."}],
      "stream": true,       // SSE streaming
-     "max_tokens": 4096
+     "max_tokens": 4096    // or OpenAI's current max_completion_tokens
    }
 ```
 

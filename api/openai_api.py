@@ -208,6 +208,7 @@ def _omlx_request_metadata(body: dict) -> dict:
                                     and hasattr(message.get('content'), '__len__') else None for message in messages],
         'stream': body.get('stream') is True,
         'max_tokens_type': type(body.get('max_tokens')).__name__,
+        'max_completion_tokens_type': type(body.get('max_completion_tokens')).__name__,
         'tool_count': len(body.get('tools')) if isinstance(body.get('tools'), list) else 0,
     }
 
@@ -257,7 +258,10 @@ def chat_completions():
     if not messages:
         return jsonify({'error': {'message': 'messages is required', 'type': 'invalid_request'}}), 400
     try:
-        max_tokens = parse_max_tokens(body.get('max_tokens'), default=4096)
+        requested_max_tokens = body.get('max_completion_tokens')
+        if requested_max_tokens is None:
+            requested_max_tokens = body.get('max_tokens')
+        max_tokens = parse_max_tokens(requested_max_tokens, default=4096)
     except ValueError as e:
         return jsonify({'error': {'message': str(e), 'type': 'invalid_request'}}), 400
 

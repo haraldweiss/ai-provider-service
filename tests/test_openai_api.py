@@ -239,6 +239,7 @@ def test_omlx_request_metadata_excludes_message_content():
         'message_content_lengths': [26, 1],
         'stream': True,
         'max_tokens_type': 'int',
+        'max_completion_tokens_type': 'NoneType',
         'tool_count': 0,
     }
     assert 'private' not in str(metadata)
@@ -307,6 +308,41 @@ def test_chat_completions_treats_null_max_tokens_as_default(app, client, monkeyp
 
     assert r.status_code == 200
     assert captured['max_tokens'] == 4096
+
+
+def test_chat_completions_accepts_max_completion_tokens(app, client, monkeypatch):
+    """Modern OpenAI clients use max_completion_tokens instead of max_tokens."""
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    captured = {}
+
+    def mock_dispatch(*args, **kwargs):
+        captured.update(kwargs)
+        return {
+            'result': {'content': [{'text': 'ok'}],
+                       'usage': {'input_tokens': 1, 'output_tokens': 1}},
+            'via': 'omlx',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch)
+
+    r = client.post(
+        '/v1/chat/completions',
+        json={
+            'model': 'omlx/Devstral-Small-2-24B-Instruct-2512-4bit',
+            'messages': [{'role': 'user', 'content': 'ping'}],
+            'max_completion_tokens': 64,
+        },
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert r.status_code == 200
+    assert captured['max_tokens'] == 64
 
 
 def test_chat_completions_returns_400_for_invalid_max_tokens(app, client):
