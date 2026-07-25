@@ -118,6 +118,24 @@ This rule applies to **every AI agent** working in this repo. When a skill exist
 
 ---
 
+### 3.11 HTTP 429/402 trigger fallback, not hard errors
+
+- `dispatch()` treats `ProviderRequestError` with status code 402 (Payment Required)
+  or 429 (Too Many Requests) as **retryable** — the request falls through to the
+  configured fallback provider instead of being returned as an error to the client.
+- All other 4xx codes (400, 401, 403, 422, etc.) continue to propagate as hard
+  errors without fallback — they describe a malformed or unauthorized request that
+  would fail identically on any provider.
+- `_RETRYABLE_4XX = frozenset({402, 429})` in `dispatcher.py`.
+- The opencode client has an additional intra-provider free-model failover that
+  runs before the dispatch-level fallback: on `Insufficient Balance`, it tries
+  `{model}-free` first, then all discovered free models, before raising an error.
+  This is independent of the retryable-4xx mechanism.
+- Neither retryable 4xx nor intra-provider failover marks the provider as
+  `persistent` unhealthy — a rate limit resets, and the next request may succeed.
+
+---
+
 ## 4. Verification standards
 
 Record in commit body. Examples:
@@ -175,6 +193,31 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 ---
 
 ## 7. Handoff zone
+
+### Retryable 4xx Fallback — 429/402 (2026-07-28, Cline)
+
+**Scope:** `ProviderRequestError` mit 429 (Rate Limit) oder 402 (Insufficient Balance)
+löst jetzt automatisch den konfigurierten Fallback aus statt als Hard Error zum
+Client durchgereicht zu werden.
+
+**Neue Regel §3.11:** `_RETRYABLE_4XX = frozenset({402, 429})` in `dispatcher.py`.
+Non-retryable 4xx (400, 422, 401, 403) werden weiterhin sofort throughgereicht.
+
+**Tests (6 neue):** 379 passed, keine Regression.
+- `test_dispatch_retries_fallback_on_429_rate_limit`
+- `test_dispatch_still_blocked_on_400_bad_request`
+- `test_dispatch_queues_when_both_primary_and_fallback_return_429`
+- `test_dispatch_fallback_429_no_queue_raises_error`
+- `test_chat_fallbacks_on_429_from_primary`
+- `test_chat_returns_429_when_no_fallback_and_all_providers_rate_limited`
+
+**Dokumentation:** README.md Features + Fallback-Sektion + Provider-Ausfälle
+aktualisiert. AGENTS.md §3.11 neu. Commit `bda94db`.
+
+**Kein Deploy auf oracle-vm** — Code-Änderung; deployen sobald gewünscht
+(`./build.sh bda94db && sudo docker compose up -d --force-recreate ai-provider`).
+
+---
 
 ### Code-Review Fixes + CI-Workflow-Reparatur + Deploy (2026-07-18, Cline)
 

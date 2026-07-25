@@ -12,6 +12,9 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 - **Server-Key-Allowlist** für zentrale Provider-Keys (Claude, z.ai): der zentrale Key ist nur für gelistete User nutzbar; z.ai ist per Default auf `ADMIN_USER_ID` beschränkt — alle anderen brauchen einen eigenen Key (auch für die kostenlosen GLM-Flash-Modelle)
 - **Per-User-Konfiguration** mit Fernet-verschlüsselten API-Keys
 - **Fallback-Provider**: bei Nicht-Erreichbarkeit automatisch auf z.B. Claude umschalten
+  - **Network-Errors** (Timeout, ConnectionError) → sofortiger Fallback
+  - **HTTP 429/402** (Rate Limit / Insufficient Balance) → Fallback auf nächsten verfügbaren Provider
+  - **HTTP 400/422** (Bad Request) → kein Fallback (request-spezifischer Fehler, würde überall scheitern)
 - **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist
 - **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider; opencode ohne persönlichen Key nur Free-Modelle
 - **Health-Monitoring**: Background-Worker pollt alle Provider regelmäßig
@@ -404,6 +407,17 @@ POST /chat
 1. `fallback_provider` im Request-Body — pro Aufruf
 2. `ProviderConfig.fallback_provider` in der DB — pro User+Provider gespeichert
 
+**Wann wird Fallback ausgelöst?**
+- **Network-Fehler** (ConnectionError, Timeout) — Provider nicht erreichbar
+- **HTTP 429 Too Many Requests** — Rate Limit / Quota erschöpft
+- **HTTP 402 Payment Required** — Insufficient Balance (opencode, z.ai, Cline)
+
+**Wann wird KEIN Fallback ausgelöst?**
+- **HTTP 400/422** (Bad Request, Unprocessable Entity) — der Fehler beschreibt die Anfrage selbst und würde bei jedem Provider gleich scheitern
+- **HTTP 401/403** (Unauthorized/Forbidden) — falscher API-Key oder fehlende Berechtigung
+
+**opencode.ai Sonderfall:** opencode hat zusätzlich einen internen Free-Modell-Failover bei Insufficient Balance: zuerst wird `{model}-free` probiert, dann alle anderen Discovery-Free-Modelle. Erst wenn auch alle Free-Modelle scheitern, wird der Dispatch-Level-Fallback aktiviert.
+
 Per-Request-Override erlaubt Clients, eine eigene Fallback-Strategie pro Aufruf
 mitzugeben, ohne sie in der Service-DB zu persistieren. Nützlich, wenn der
 Client (z.B. Bewerbungstracker) den Fallback-Provider in seiner eigenen User-DB
@@ -514,9 +528,11 @@ dem Provider-Dispatch zu String-Content, weil Ollama `/api/chat` sonst mit
 **Provider-Ausfälle:** Wenn ein Provider beim Chat-Call nicht nutzbar ist und
 für den User weder Fallback noch Queue konfiguriert ist, antwortet
 `/v1/chat/completions` mit `503 service_unavailable` statt internem `500`.
-Beispiele sind ein leerer z.ai-Account (`429 Insufficient balance`) oder ein
-temporär nicht nutzbarer Ollama-Backend-Call. Das ist ein erwartbarer
-Upstream-/Konfigurationszustand, kein Flask-Crash.
+Ein `429 Insufficient Balance` oder ein
+temporär nicht nutzbarer Ollama-Backend-Call lösen dagegen automatisch
+den konfigurierten Fallback aus (siehe oben). Erst wenn auch der Fallback
+scheitert, wird gequeued oder ein Fehler zurückgegeben. Das ist ein
+erwartbarer Upstream-/Konfigurationszustand, kein Flask-Crash.
 
 **Auth:** Gleicher Bearer-Token wie `/chat` (`@require_token`).  
 `@require_provider_access` ist **deaktiviert** — der Decorator sucht `provider` 
