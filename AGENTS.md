@@ -1340,3 +1340,32 @@ container has `openai 1.109.1` which doesn't have this issue).
 `openai 1.54.0` + `httpx 0.28.1` incompatibility (`proxies` kwarg removed
 in httpx 0.28). These pass in the container (`openai 1.109.1`). Not caused
 by this change — confirmed by stashing and running on clean `main`.
+---
+
+### Tool Call Fixes — Queue, /chat, 7 providers, streaming per-index (2026-07-25, Cline)
+
+**Scope:** Tool calls (`tools` in request body) were silently dropped in 4 scenarios, causing intermittent failures in tool-using clients (news-agent, Pi, etc.).
+
+**Fixes (commit `6b86ab7`):**
+
+1. **Queue path** (`dispatcher.py`): `tools` now serialized into queue payload JSON and forwarded on drain. Previously, queued tool-requests became plain chat.
+
+2. **`/chat` endpoint** (`api/chat_api.py`): `tools` extracted from body and passed to `dispatch()`. Previously silently discarded.
+
+3. **7 providers** accepted `tools` in `create_message()` signature but did not forward to upstream API: `opencode`, `zai`, `cline`, `ollama_cloud`, `openai_client`, `custom`, `mammouth`. All now have `if tools: payload/kwargs['tools'] = tools` guards.
+
+4. **Streaming per-index decomposition** (`api/openai_api.py`): Tool calls in SSE streaming are now emitted as one chunk per call with incremental `index`, matching strict OpenAI parser expectations (was: all calls in one chunk).
+
+**New rule §3.13:** Providers that accept the `tools` parameter must forward it to their upstream API call. The `BaseClient` docstring already says "Provider ohne Support ignorieren stillschweigend" — but accepting and then silently dropping it misleads fallback routing.
+
+**Tests:** 379/379 passed (no regression).
+
+**Deployed on oracle-vm:** Image `localhost/ai-provider:6b86ab7` built with `build.sh`, container recreated with `sudo docker compose up -d --force-recreate ai-provider`. Verified:
+- `/health` → 200 `status=ok`
+- `/v1/models` → 55 models
+- `opencode/deepseek-v4-flash-free` with `tools` → 200 (tools forwarded, model chose text response)
+- SSE streaming → correct chunk sequence: `role → content → finish_reason → [DONE]`
+- `Admin-test-token` works only locally; live smoke uses `SERVICE_TOKEN` from env
+
+**Server drift stashed:** `providers/openrouter.py` had an uncommitted change on the server (stashed as `WIP on main: efbd843`).
+
