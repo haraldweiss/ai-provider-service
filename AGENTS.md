@@ -1369,3 +1369,33 @@ by this change — confirmed by stashing and running on clean `main`.
 
 **Server drift stashed:** `providers/openrouter.py` had an uncommitted change on the server (stashed as `WIP on main: efbd843`).
 
+---
+
+### Thinking-Loop-Schutz im News-Agent (2026-07-25, Cline)
+
+**Scope:** Schwache/lokale Modelle (3B, 7B, tiny, phi, etc.) neigen zu
+Tool-Call-Schleifen ohne Fortschritt. Drei Maßnahmen im `agents/news/runner.py`.
+
+**Neue Helfer:**
+- `_is_weak_model(model)` — erkennt schwache Modelle an Name-Signaturen
+- `_max_total_tokens()` — env `NEWS_AGENT_MAX_TOKENS` (Default 64.000 Tokens)
+
+**Maßnahme 1 — Repetition Detection:**
+Nach 3 identischen Tool-Call-Sets in Folge (`current_calls == last_tool_calls`)
+werden die Tools NICHT ausgeführt. Stattdessen wird eine Force-Stop-Nachricht
+als User-Turn eingespielt und der Loop re-dispatcht ohne Tool-Execution.
+
+**Maßnahme 2 — Token-Budget:**
+Vor jedem Dispatch prüft `total_tokens_used >= max_total_tokens`.
+Bei Überschreitung: `RuntimeError` mit Token-Verbrauch statt stillem Endlos-Loop.
+Tracking über `usage.input_tokens + usage.output_tokens` pro Iteration.
+
+**Maßnahme 3 — Weak-Model-Limit:**
+`_is_weak_model(primary_model)` → `max_iter` gedeckelt auf
+`NEWS_AGENT_WEAK_MAX_ITERATIONS` (Default 15).
+
+**Return-Dict** erweitert um `total_tokens_used`.
+
+**Kein Deploy auf oracle-vm nötig** — der News-Agent läuft als `flask news-agent`
+im Container; bei nächstem Docker-Neubau (oder `docker restart ai-provider`) aktiv.
+
