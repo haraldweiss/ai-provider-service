@@ -496,8 +496,9 @@ setzen es auf `null`, der Abschlusschunk auf z.B. `"stop"` oder
 `delta.content=""`, damit strengere OpenAI-kompatible Stream-Parser den Stream
 nicht als "ended without finish_reason" verwerfen.
 
-**Tool calls:** OpenAI-kompatible `tools` werden an Provider mit Tool-Support
-durchgereicht. Lokales `ollama` erhält sie über `/api/chat` und echte
+**Tool calls:** OpenAI-kompatible `tools` werden an alle Provider mit Tool-Support
+durchgereicht — sowohl via `/v1/chat/completions` als auch via `/chat`.
+Lokales `ollama` erhält sie über `/api/chat` und echte
 Ollama-Toolcalls werden als OpenAI-`message.tool_calls` bzw. Streaming-
 `delta.tool_calls` zurückgegeben. Einige lokale Modelle geben stattdessen
 DeepSeek/DSML-Toolcall-Markup im Text aus; der Gateway konvertiert dieses
@@ -510,14 +511,25 @@ zurückgeben, oder Claude-artige XML-Tags wie
 Toolnamen werden in strukturierte Toolcalls umgewandelt, unbekannte Tools
 bleiben Text. DSML wird tolerant geparst (Wrapper optional, JSON-Codefences in
 Parametern erlaubt, ASCII-DSML-Tagvariante akzeptiert), aber ebenfalls nur für
-angebotene Tools. XML-Text-Toolcalls muessen wohlgeformt sein; Attribute und
-direkte Child-Tags werden als Argumente uebernommen. Modelle ohne sauberen
+angebotene Tools. XML-Text-Toolcalls müssen wohlgeformt sein; Attribute und
+direkte Child-Tags werden als Argumente übernommen. Modelle ohne sauberen
 Toolcall-Support können weiterhin andere Tool-Syntax als Text halluzinieren;
 Clients sollten nur strukturierte `tool_calls` als ausführbare Aktionen
 behandeln. Wenn Ollama im nativen Toolmodus mit einem lokalen Modell einen
 Grammar-400 wie `Value looks like object, but can't find closing '}'`
 zurückgibt, retryt der Gateway den gleichen Ollama-Call ohne native `tools` und
 lässt die DSML/JSON-Text-Konvertierung greifen.
+
+**Tool-Call-Weiterleitung (Fix 2026-07-25):** Alle 7 OpenAI-kompatiblen Provider
+(`opencode`, `zai`, `cline`, `ollama_cloud`, `openai_client`, `custom`,
+`mammouth`) leiten `tools` jetzt an die upstream API weiter.
+Der `/chat`-Endpoint extrahiert `tools` aus dem Body, und auch Queued-Requests
+verlieren ihre Tool-Definitionen nicht mehr (serialisiert im Queue-Payload).
+
+**Streaming-Tool-Calls (Fix 2026-07-25):** Im SSE-Streaming werden Tool-Calls
+pro Einzelchunk mit inkrementellem `index` ausgegeben — strengere OpenAI-Parser
+erwarten dies. Chunk-Sequenz: `role` → `content` (optional) → `tool_calls`
+(einer pro Call, mit `index`) → `finish_reason` → `[DONE]`.
 
 **OpenAI-Content-Parts:** `messages[].content` darf ein String oder eine
 OpenAI-kompatible Content-Part-Liste sein, z.B.
