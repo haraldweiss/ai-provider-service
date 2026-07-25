@@ -45,8 +45,19 @@ def execute_tool(name: str, payload: dict, dry_run: bool = False) -> Any:
         return {'error': f'tool failed: {type(e).__name__}: {e}'}
 
 
+def _is_weak_model(model: str) -> bool:
+    """Erkenne schwache/lokale Modelle, die zu Thinking-Loops neigen."""
+    weak = [':1b', ':3b', ':7b', ':latest', 'llama3.2', 'mistral', 'tiny', 'small', 'phi']
+    return any(p in model.lower() for p in weak)
+
+
 def _max_iterations() -> int:
     return int(os.getenv('NEWS_AGENT_MAX_ITERATIONS', '40'))
+
+
+def _max_total_tokens() -> int:
+    """Gesamt-Token-Budget über alle Iterationen. Schützt vor Cost-Spikes."""
+    return int(os.getenv('NEWS_AGENT_MAX_TOKENS', '64000'))
 
 
 def _model_for(provider: str) -> str:
@@ -68,6 +79,11 @@ def run_news_agent(dry_run: bool = False) -> dict:
     fallback_model = _model_for(fallback) if fallback else None
     max_iter = _max_iterations()
 
+    # Maßnahme 4: Weak-Model-Limit — schwache Modelle bekommen weniger Iterationen
+    if _is_weak_model(primary_model):
+        max_iter = min(max_iter, int(os.getenv('NEWS_AGENT_WEAK_MAX_ITERATIONS', '15')))
+        logger.info('Weak model %s detected — capping iterations at %d', primary_model, max_iter)
+
     from agents.news.prompts import build_user_kickoff
     user_kickoff = build_user_kickoff()
 
@@ -80,7 +96,21 @@ def run_news_agent(dry_run: bool = False) -> dict:
     tool_counts: dict[str, int] = {}
     final_post: dict | None = None
 
+    # Maßnahme 1: Repetition Detection — gleicher Tool-Call in Folge
+    last_tool_calls: list[dict] | None = None
+    duplicate_count = 0
+    # Maßnahme 2: Token-Budget
+    total_tokens_used = 0
+    max_total_tokens = _max_total_tokens()
+
     for iteration in range(max_iter):
+        # Token-Budget-Check vor dem Dispatch
+        if total_tokens_used >= max_total_tokens:
+            raise RuntimeError(
+                f'Token budget exhausted after {iteration} iterations '
+                f'({total_tokens_used}/{max_total_tokens} tokens)'
+            )
+
         result_envelope = dispatch(
             user_id='news-agent',
             provider_id=primary,
@@ -94,6 +124,11 @@ def run_news_agent(dry_run: bool = False) -> dict:
         )
         msg = result_envelope['result']
         stop_reason = msg.get('stop_reason', 'end_turn')
+
+        # Token-Verbrauch tracken
+        usage = msg.get('usage', {}) or {}
+        total_tokens_used += (usage.get('input_tokens', 0) or 0) + (usage.get('output_tokens', 0) or 0)
+        logger.debug('Iteration %d — total_tokens_used=%d/%d', iteration, total_tokens_used, max_total_tokens)
 
         # Append the assistant turn to the conversation.
         # Skip empty text blocks — Anthropic rejects them on the next turn
@@ -116,6 +151,7 @@ def run_news_agent(dry_run: bool = False) -> dict:
             duration = time.monotonic() - start
             logger.info(f'news-agent run complete: iterations={iteration} '
                         f'tool_counts={tool_counts} duration={duration:.1f}s '
+                        f'total_tokens={total_tokens_used} '
                         f'via={result_envelope.get("via")} '
                         f'fallback_used={result_envelope.get("fallback_used")}')
             return {
@@ -123,13 +159,41 @@ def run_news_agent(dry_run: bool = False) -> dict:
                 'final_stop_reason': stop_reason,
                 'tool_counts': tool_counts,
                 'duration_seconds': duration,
+                'total_tokens_used': total_tokens_used,
                 'final_post': final_post,
                 'via': result_envelope.get('via'),
                 'fallback_used': result_envelope.get('fallback_used'),
             }
 
+        # Maßnahme 1: Repetition Detection
+        current_calls = msg.get('tool_calls', []) or []
+        if current_calls and current_calls == last_tool_calls:
+            duplicate_count += 1
+            logger.warning(
+                'Repetition detected (%d/3): tool_calls=%s', duplicate_count, current_calls,
+            )
+        else:
+            duplicate_count = 0
+        last_tool_calls = current_calls
+
+        if duplicate_count >= 3:
+            logger.warning(
+                'Tool-loop break after %d iterations: same calls %s repeated 3x — '
+                'forcing stop without tool execution',
+                iteration, current_calls,
+            )
+            # Tools NICHT ausführen — stattdessen Force-Stop-Nachricht einspielen
+            duplicate_count = 0
+            last_tool_calls = None
+            messages.append({'role': 'user', 'content': (
+                'You have been calling the same tools repeatedly without making progress. '
+                'Stop using tools now and provide your final summary based on '
+                'what you already know. Do not include any tool_use blocks in your response.'
+            )})
+            continue  # Re-dispatch: Modell bekommt die Force-Stop-Nachricht
+
         tool_results = []
-        for call in msg.get('tool_calls', []) or []:
+        for call in current_calls:
             tool_counts[call['name']] = tool_counts.get(call['name'], 0) + 1
             tr = execute_tool(call['name'], call.get('input', {}), dry_run=dry_run)
             if call['name'] == 'publish_to_wordpress' and isinstance(tr, dict):
@@ -142,7 +206,10 @@ def run_news_agent(dry_run: bool = False) -> dict:
             })
         messages.append({'role': 'user', 'content': tool_results})
 
-    raise RuntimeError(f'Tool-Loop did not converge after {max_iter} iterations')
+    raise RuntimeError(
+        f'Tool-Loop did not converge after {max_iter} iterations '
+        f'({total_tokens_used}/{max_total_tokens} tokens)'
+    )
 
 
 def main() -> int:
