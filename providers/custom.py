@@ -34,6 +34,8 @@ class CustomClient(BaseClient):
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
         payload = {'model': model, 'messages': messages, 'max_tokens': max_tokens}
+        if tools:
+            payload['tools'] = tools
         r = requests.post(
             f'{self.endpoint}/v1/chat/completions',
             json=payload, headers=self._headers(), timeout=self.timeout,

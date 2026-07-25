@@ -26,9 +26,10 @@ class OpenAIClient(BaseClient):
             return []
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
-        r = self.client.chat.completions.create(
-            model=model, messages=messages, max_tokens=max_tokens
-        )
+        kwargs = dict(model=model, messages=messages, max_tokens=max_tokens)
+        if tools:
+            kwargs['tools'] = tools
+        r = self.client.chat.completions.create(**kwargs)
         return {
             'content': [{'text': r.choices[0].message.content}],
             'usage': {

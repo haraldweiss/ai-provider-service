@@ -49,6 +49,8 @@ class ClineClient(BaseClient):
             'messages': messages,
             'max_tokens': max(16, max_tokens),  # Cline min 16
         }
+        if tools:
+            body['tools'] = tools
         with httpx.Client(timeout=120) as hc:
             r = hc.post(
                 f'{self._base_url}/chat/completions',

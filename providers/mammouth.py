@@ -28,6 +28,8 @@ class MammouthClient(BaseClient):
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
         payload = {'model': model, 'messages': messages, 'max_tokens': max_tokens}
+        if tools:
+            payload['tools'] = tools
         r = requests.post(f'{self.endpoint}/chat/completions', json=payload, timeout=self.timeout)
         r.raise_for_status()
         data = r.json()

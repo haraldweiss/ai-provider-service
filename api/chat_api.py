@@ -70,6 +70,7 @@ def chat():
             model=body.get('model', '') or '',
             messages=body['messages'],
             max_tokens=parse_max_tokens(body.get('max_tokens'), default=600),
+            tools=body.get('tools') if isinstance(body.get('tools'), list) else None,
             fallback_provider_override=fallback_provider,
             fallback_model_override=body.get('fallback_model'),
             fallback_config_override=body.get('fallback_config'),

@@ -370,6 +370,7 @@ def dispatch(
             payload=json.dumps({
                 'provider': provider_id, 'model': model,
                 'messages': messages, 'max_tokens': max_tokens,
+                'tools': tools,
             }),
             status='pending',
             expires_at=datetime.now(timezone.utc) + timedelta(hours=queue_ttl_h),
@@ -426,6 +427,7 @@ def drain_queue_for_provider(provider_id: str, max_items: int = 50) -> dict:
                 q.user_id, q.primary_provider,
                 payload.get('model'), payload.get('messages', []),
                 payload.get('max_tokens', 600),
+                tools=payload.get('tools'),
                 origin_app=None,  # Queued requests lose origin until payload schema extends.
             )
             q.result = json.dumps({'result': result, 'via': q.primary_provider, 'fallback_used': False})

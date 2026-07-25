@@ -62,6 +62,8 @@ class OllamaCloudClient(BaseClient):
             'stream': False,
             'options': {'num_predict': max_tokens},
         }
+        if tools:
+            payload['tools'] = tools
         try:
             response = requests.post(
                 f'{self.base_url}/api/chat', json=payload,

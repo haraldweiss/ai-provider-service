@@ -323,15 +323,21 @@ def chat_completions():
             chunk = _openai_stream_chunk(model, '')
             yield f'data: {json.dumps(chunk)}\n\n'
 
-            # Content/tool chunk (full response — backend is sync)
+            # Content chunk (full response — backend is sync)
             if text:
                 content_chunk = _openai_stream_chunk(model, text)
                 yield f'data: {json.dumps(content_chunk)}\n\n'
+
+            # Tool call chunks — one per call with incremental index
+            # required by strict OpenAI-compatible parsers
             if tool_calls:
-                tool_chunk = _openai_stream_chunk(
-                    model, tool_calls=_openai_tool_call_deltas(tool_calls),
-                )
-                yield f'data: {json.dumps(tool_chunk)}\n\n'
+                for index, call in enumerate(tool_calls):
+                    delta_call = dict(call)
+                    delta_call['index'] = index
+                    tool_chunk = _openai_stream_chunk(
+                        model, tool_calls=[delta_call],
+                    )
+                    yield f'data: {json.dumps(tool_chunk)}\n\n'
 
             # Final chunk with usage
             finish = _openai_stream_chunk(model, '', finish_reason=finish_reason)

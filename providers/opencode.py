@@ -180,9 +180,10 @@ class OpencodeClient(BaseClient):
         self._check_free_only(clean)
 
         try:
-            r = self.client.chat.completions.create(
-                model=clean, messages=messages, max_tokens=max_tokens
-            )
+            kwargs = dict(model=clean, messages=messages, max_tokens=max_tokens)
+            if tools:
+                kwargs['tools'] = tools
+            r = self.client.chat.completions.create(**kwargs)
             text = _extract_content(r.choices[0])
             return {
                 'content': [{'text': text}],
@@ -213,7 +214,8 @@ class OpencodeClient(BaseClient):
                         clean, fallback_model,
                     )
                     r2 = self.client.chat.completions.create(
-                        model=fallback_model, messages=messages, max_tokens=max_tokens
+                        model=fallback_model, messages=messages,
+                        max_tokens=max_tokens, tools=tools if tools else None,
                     )
                     text2 = _extract_content(r2.choices[0])
                     _send_notification(
