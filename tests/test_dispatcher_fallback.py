@@ -232,3 +232,94 @@ def test_dispatch_keeps_original_model_if_no_fallback_model_override(app):
 
         # _execute wird mit dem original model aufgerufen
         assert mock_exec.call_args.args[2] == 'qwen:latest'
+
+
+def test_dispatch_retries_fallback_on_429_rate_limit(app):
+    """429 vom Primary-Provider löst Fallback aus (statt ProviderRequestError zu werfen)."""
+    from dispatcher import ProviderRequestError, dispatch
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+         patch('dispatcher._execute') as mock_exec:
+        # Erster Aufruf: 429 (Primary)
+        # Zweiter Aufruf: Erfolg (Fallback)
+        mock_exec.side_effect = [
+            ProviderRequestError('ollama', 429),
+            {'content': [{'text': 'ok'}], 'usage': {'input_tokens': 5, 'output_tokens': 3}},
+        ]
+
+        result = dispatch(
+            user_id='user-1', provider_id='ollama', model='qwen:latest',
+            messages=[{'role': 'user', 'content': 'hi'}],
+            fallback_provider_override='claude',
+            fallback_model_override='claude-haiku',
+        )
+
+    assert mock_exec.call_count == 2
+    assert result['fallback_used'] is True
+    assert result['via'] == 'claude'
+    assert result['model'] == 'claude-haiku'
+
+
+def test_dispatch_still_blocked_on_400_bad_request(app):
+    """400 vom Primary wird NICHT gefallbackt (request-spezifischer Fehler)."""
+    from dispatcher import ProviderRequestError, dispatch
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+         patch('dispatcher._execute') as mock_exec:
+        mock_exec.side_effect = ProviderRequestError('ollama', 400)
+
+        with pytest.raises(ProviderRequestError) as error:
+            dispatch(
+                user_id='user-1', provider_id='ollama', model='qwen:latest',
+                messages=[{'role': 'user', 'content': 'hi'}],
+                fallback_provider_override='claude',
+            )
+
+    assert error.value.status_code == 400
+    assert mock_exec.call_count == 1  # Nur Primary probiert
+
+
+def test_dispatch_queues_when_both_primary_and_fallback_return_429(app):
+    """Wenn Primary + Fallback beide 429 geben, wird gequeued (oder ProviderUnavailableError)."""
+    from dispatcher import ProviderRequestError, dispatch, ProviderUnavailableError
+    from storage.models import ProviderConfig
+    from database import db
+
+    # ProviderConfig mit queue, aber ohne fallback (Default-Werte reichen)
+    pc = ProviderConfig(
+        user_id='user-6', provider_id='ollama',
+        queue_when_unavailable=True, queue_ttl_hours=24,
+    )
+    pc.set_config({})
+    db.session.add(pc)
+    db.session.commit()
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+         patch('dispatcher._execute') as mock_exec:
+        mock_exec.side_effect = ProviderRequestError('ollama', 429)
+
+        result = dispatch(
+            user_id='user-6', provider_id='ollama', model='qwen:latest',
+            messages=[{'role': 'user', 'content': 'hi'}],
+            # Kein Fallback-Override — fällt auf DB-Config (die keinen fallback hat)
+        )
+
+    assert result.get('queued') is True
+    assert 'queue_id' in result
+
+
+def test_dispatch_fallback_429_no_queue_raises_error(app):
+    """Wenn Primary + Fallback 429 geben und kein Queue konfiguriert -> ProviderUnavailableError."""
+    from dispatcher import ProviderRequestError, dispatch, ProviderUnavailableError
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+         patch('dispatcher._execute') as mock_exec:
+        mock_exec.side_effect = ProviderRequestError('ollama', 429)
+
+        with pytest.raises(ProviderUnavailableError):
+            dispatch(
+                user_id='user-7', provider_id='ollama', model='qwen:latest',
+                messages=[{'role': 'user', 'content': 'hi'}],
+                fallback_provider_override='openai',
+            )
+

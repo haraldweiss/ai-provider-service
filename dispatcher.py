@@ -32,6 +32,12 @@ class ProviderRequestError(RuntimeError):
         super().__init__(f'Provider {provider_id} rejected the request (HTTP {status_code})')
 
 
+# 4xx status codes that should trigger fallback (transient/balance-related).
+# Non-retryable 4xx (e.g. 400 bad request, 422 unprocessable) describe the
+# request itself and would likely fail the same way on any provider.
+_RETRYABLE_4XX = frozenset({402, 429})
+
+
 def _client_error_status(error: Exception) -> Optional[int]:
     """Return an upstream 4xx status without depending on a provider SDK."""
     for source in (error, getattr(error, 'response', None)):
@@ -316,8 +322,15 @@ def dispatch(
                 'result': result, 'via': provider_id, 'model': model,
                 'fallback_used': False,
             }
-        except ProviderRequestError:
-            raise
+        except ProviderRequestError as e:
+            if e.status_code in _RETRYABLE_4XX:
+                logger.info(
+                    'Primary %s returned HTTP %d for user=%s — trying fallback',
+                    provider_id, e.status_code, user_id,
+                )
+                # weiter mit Fallback / Queue
+            else:
+                raise
         except Exception as e:
             logger.info('Primary %s failed for user=%s: %s', provider_id, user_id, type(e).__name__)
             # weiter mit Fallback / Queue
@@ -334,8 +347,15 @@ def dispatch(
                 'fallback_used': True, 'primary_provider': provider_id,
                 'primary_model': model,
             }
-        except ProviderRequestError:
-            raise
+        except ProviderRequestError as e:
+            if e.status_code in _RETRYABLE_4XX:
+                logger.warning(
+                    'Fallback %s also returned HTTP %d for user=%s',
+                    fallback, e.status_code, user_id,
+                )
+                # weiter mit Queue / Error
+            else:
+                raise
         except Exception as e:
             logger.warning(
                 'Fallback %s also failed for user=%s: %s', fallback, user_id, type(e).__name__,
