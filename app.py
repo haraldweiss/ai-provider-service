@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError
 from config import Config
 from database import db
 import worker
+from api.notifications import init_notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ def create_app() -> Flask:
     from api.webdav_api import webdav_bp
     from api.settings_ui import settings_ui_bp
     from api.openai_api import openai_bp
+    from api.images_api import images_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
