@@ -9,6 +9,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 ## Features
 
 - **9 Provider** out of the box: Claude, Ollama, oMLX, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM), Cline (api.cline.bot)
+- **Region-Lock Filter**: China-only z.ai Endpoint (`zai/glm-*`) wird per Default von `/v1/models` ausgeschlossen und blockt direkte Dispatch-Calls. GLM-Modelle via globale Gateways (opencode, cline, ollama) bleiben verfügbar. Konfigurierbar via `EXCLUDE_REGION_LOCKED_MODELS` Env-Var.
 - **Server-Key-Allowlist** für zentrale Provider-Keys (Claude, z.ai): der zentrale Key ist nur für gelistete User nutzbar; z.ai ist per Default auf `ADMIN_USER_ID` beschränkt — alle anderen brauchen einen eigenen Key (auch für die kostenlosen GLM-Flash-Modelle)
 - **Per-User-Konfiguration** mit Fernet-verschlüsselten API-Keys
 - **Fallback-Provider**: bei Nicht-Erreichbarkeit automatisch auf z.B. Claude umschalten
@@ -18,6 +19,8 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 - **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist
 - **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider; opencode ohne persönlichen Key nur Free-Modelle
 - **Health-Monitoring**: Background-Worker pollt alle Provider regelmäßig
+- **Image Generation**: OpenAI-kompatible `/v1/images/generations` via OpenRouter
+- **Grant-Request Workflow**: User können Provider-Zugriff selbst beantragen, Admins reviewen via `/admin/grant-requests`
 - **CORS-Handling** zentral (für Browser-direkt-Aufrufe)
 - **Bearer-Token-Auth** für Konsumenten-Apps
 
@@ -455,7 +458,7 @@ GET /v1/models
 
  POST /v1/chat/completions
    Body (OpenAI-Format): {
-     "model": "zai/glm-4.5",
+     "model": "ollama/qwen3.6:latest",
      "messages": [{"role": "user", "content": "..."}],
      "stream": true,       // SSE streaming
      "max_tokens": 4096    // or OpenAI's current max_completion_tokens
@@ -469,6 +472,14 @@ Key-pflichtige Provider ohne persönlichen oder erlaubten Server-Key werden
 ebenfalls ausgelassen; `hidden_providers` + `availability_hint` geben Clients
 einen neutralen Hinweis, dass nach Hinterlegen eines passenden API-Keys mehr
 Modelle verfügbar sind.
+
+**Region-Lock Filter:** Der China-only z.ai Endpoint (`zai/glm-*`) wird per
+Default von `/v1/models` ausgeschlossen und blockt direkte Dispatch-Calls mit
+400 "Model region-locked". GLM-Modelle via globale Gateways (opencode, cline,
+ollama) bleiben verfügbar. Konfigurierbar via `EXCLUDE_REGION_LOCKED_MODELS`
+Env-Var (Provider-scoped: `zai/glm-5` blockt nur `zai/glm-5`, nicht
+`opencode/glm-5`).
+
 **Free-only Provider:** Ohne persönlichen opencode-API-Key werden bei opencode
 nur Free-Modelle gelistet (ca. 5 statt 52). OpenRouter ist ohne persönlichen Key
 ebenfalls sichtbar, listet dann aber nur dynamisch erkannte Free-Modelle.
@@ -484,7 +495,7 @@ verfügbar sind (z.B. `ollama/ornith:latest`).
  | `ollama/qwen3.6:latest` | Lokales Ollama |
  | `ollama/ornith:latest` | Lokales Ollama |
  | `opencode/deepseek-v4-flash-free` | opencode Free-Modell (mit System-Key) |
- | `zai/glm-4.5` | z.ai, wenn konfiguriert und Account gedeckt |
+ | `opencode/glm-5.1` | GLM via opencode (global gateway) |
  | `claude/claude-sonnet-4-6-20250514` | Claude, wenn konfiguriert und API-Key gesetzt |
  | `cline/anthropic/claude-sonnet-4-6` | Cline (api.cline.bot), wenn konfiguriert und API-Key gesetzt |
 
@@ -557,12 +568,12 @@ registriert den Service automatisch.
 
 Beispiel (non-streaming):
 ```bash
- curl -s https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4.5","messages":[{"role":"user","content":"Hallo"}],"stream":false}'
+ curl -s https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"opencode/glm-5.1","messages":[{"role":"user","content":"Hallo"}],"stream":false}'
 ```
 
 Beispiel (streaming):
 ```bash
- curl -sN https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"zai/glm-4.5","messages":[{"role":"user","content":"Hallo"}],"stream":true}'
+ curl -sN https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"opencode/glm-5.1","messages":[{"role":"user","content":"Hallo"}],"stream":true}'
 ```
 
 ### Pi-Einrichtung
@@ -576,15 +587,66 @@ Damit Pi den Service als OpenAI-kompatiblen Provider nutzen kann:
    SERVICE_TOKEN=<gleicher Token wie im ai-provider-service .env>
    AI_PROVIDER_SERVICE_URL=http://localhost:8767  # oder https://service.domain.de/ai-provider
    ```
- 3. **Modelle** sind dann als `ai-provider-service/...` in Pi wählbar:
-    - `--model ai-provider-service/zai/glm-4.5` — GLM-4.5
-    - `--model ai-provider-service/zai/glm-4.5-air` — GLM-4.5 Air
-    - `--model ai-provider-service/ollama/qwen3.6:latest` — Lokales Ollama
-    - `--model ai-provider-service/claude/claude-sonnet-4-6-20250514` — Claude
+  3. **Modelle** sind dann als `ai-provider-service/...` in Pi wählbar:
+     - `--model ai-provider-service/opencode/glm-5.1` — GLM via opencode (global gateway)
+     - `--model ai-provider-service/ollama/qwen3.6:latest` — Lokales Ollama
+     - `--model ai-provider-service/claude/claude-sonnet-4-6-20250514` — Claude
 
 **Hinweis:** Der Service läuft auf dem **oracle-vm** hinter Apache Reverse-Proxy.
 Die URL ist `https://ai-provider-service.wolfinisoftware.de/`. Bei lokalem
 Betrieb (`http://localhost:8767`) kann die Extension direkt verbinden.
+
+### Image Generation (OpenRouter)
+
+```
+GET /v1/images/models
+  → Liste image-fähiger Modelle mit Preis/Qualität-Sortierung
+    Query-Parameter: sort=price|quality, order=asc|desc
+
+POST /v1/images/generations
+  Body: {
+    "model": "openai/dall-e-3",
+    "prompt": "A cat wearing a hat",
+    "n": 1,
+    "size": "1024x1024"
+  }
+  → OpenAI-kompatible Response mit b64_json als Data-URI
+```
+
+Image-Generation wird via OpenRouter `/images` Endpoint proxyt. Kosten werden
+in `UsageEvent` für KI-Usage-Tracker geloggt. Die Response enthält `b64_json`
+als Data-URI (MIME-Type preserved, damit Clients z.B. image/jpeg korrekt
+identifizieren).
+
+### Grant-Request + Notifications
+
+User können Provider-Zugriff selbst beantragen, Admins können Anfragen reviewen:
+
+```
+# User self-service (public, kein Admin-Token nötig)
+POST /grant-requests
+  Body: { "user_id": "...", "provider_id": "claude", "reason": "..." }
+  → 201 Created
+
+GET /grant-requests?user_id=<id>
+  → Eigene Grant-Requests mit Status (pending/approved/denied)
+
+# Admin review
+GET /admin/grant-requests[?status=pending]
+  → Alle Grant-Requests für Admin-Review
+
+PATCH /admin/grant-requests/<id>
+  Body: { "action": "approve"|"deny", "note": "..." }
+  → Approve erstellt/reactiviert ProviderGrant; Deny markiert als abgelehnt
+
+GET /admin/pending-counts
+  → { "pending_grant_requests": N, "unread_notifications": M }
+```
+
+**Notifications:** `NotificationService` (in `api/notifications.py`) sendet
+In-App-Benachrichtigungen + optionale E-Mails bei Grant-Reviews, neuen Usern,
+etc. Konfigurierbar via `NOTIFY_ON_GRANT_REQUEST` und `NOTIFY_ON_USER_REGISTER`
+Env-Vars.
 
 ### Queue
 
@@ -752,6 +814,11 @@ DELETE /admin/grants/<id>      → 204 (soft-delete)
 POST   /admin/users/<user_id>/token   → 201 + plaintext token (shown once)
 DELETE /admin/users/<user_id>/token   → 204 (also invalidates UI sessions)
 GET    /admin/overview         → {users: [...]}
+
+# Grant-Request Review (WIP)
+GET    /admin/grant-requests[?status=pending|approved|denied]
+PATCH  /admin/grant-requests/<id>   {action: "approve"|"deny", note?}
+GET    /admin/pending-counts   → {pending_grant_requests, unread_notifications}
 ```
 
 ## Markdown memory (Phase 1)
