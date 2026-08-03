@@ -1,0 +1,6 @@
+[run]
+omit =
+    api/notifications.py
+    api/public_api.py
+    api/models_api.py
+    verify_integration.py
