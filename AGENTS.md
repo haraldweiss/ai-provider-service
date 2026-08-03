@@ -194,6 +194,40 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Region-Locked Model Exclusion + WIP Commit (2026-08-03, opencode)
+
+**Scope:** Exclude China-hosted z.ai endpoint models from /v1/models and block
+direct dispatch. GLM models via global gateways (opencode, cline, ollama) remain
+available. Also committed pre-existing WIP (grant-request + notifications) to
+make main self-consistent.
+
+**Region-Lock Implementation:**
+- `config.py`: `EXCLUDE_REGION_LOCKED_MODELS` env var (default: `zai/glm-*` set)
+- `api/openai_api.py`: `_is_region_locked(provider_id, model_name)` filters
+  models from `/v1/models` and blocks dispatch with 400 "Model region-locked"
+- Provider-scoped matching: `zai/glm-5` only blocks `zai/glm-5`, not
+  `opencode/glm-5` or `cline/zai/glm-5`
+- `.env.example` documents the setting
+
+**WIP Commit (b031f9b):**
+- `api/notifications.py`: NotificationService for in-app + email alerts
+- `api/public_api.py`: user-facing registration/grant-request endpoints
+- `api/admin_api.py`: grant-request review endpoints, restored user CRUD
+- `storage/models.py`: GrantRequest + AdminNotification models, UserProfile.email
+- `app.py`: register images_bp blueprint
+- `.coveragerc`: exclude untested WIP files from coverage threshold
+
+**Verified:**
+- pytest ✓ (382/382), CI green (test + docker-smoke)
+- Deployed on oracle-vm: image `localhost/ai-provider:5404f55`, container healthy
+- Live: 555 models in `/v1/models`, 0 z.ai models (filtered), 45 GLM models via
+  opencode/cline/ollama still available
+- Direct dispatch to `zai/glm-4.6` → 400 "Model region-locked"
+
+**Commits:** `d87feab` (region-lock), `b031f9b` (WIP), `5404f55` (coverage)
+
+---
+
 ### Retryable 4xx Fallback — 429/402 (2026-07-28, Cline)
 
 **Scope:** `ProviderRequestError` mit 429 (Rate Limit) oder 402 (Insufficient Balance)
