@@ -98,6 +98,7 @@ def create_app() -> Flask:
     app.register_blueprint(webdav_bp)
     app.register_blueprint(settings_ui_bp)
     app.register_blueprint(openai_bp)
+    app.register_blueprint(images_bp)
 
     from cli import (grants_bootstrap_command, update_opencode_pricing_command,
                      summary_job_command, vault_render_command, vault_backup_command,

@@ -207,6 +207,79 @@ class ProviderGrant(db.Model):
         }
 
 
+
+class GrantRequest(db.Model):
+    """User self-service grant request: user wants access to a provider.
+
+    Workflow:
+    1. User requests access via POST /grant-requests (public endpoint)
+    2. Admin reviews via GET /admin/grant-requests
+    3. Admin approves (creates ProviderGrant) or denies via PATCH /admin/grant-requests/<id>
+    4. User can check status via GET /grant-requests
+    """
+    __tablename__ = 'grant_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(255), nullable=False, index=True)
+    provider_id = db.Column(db.String(32), nullable=False)
+    reason = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(16), default='pending', nullable=False, index=True)  # pending | approved | denied
+    requested_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    reviewed_by = db.Column(db.String(255), nullable=True)
+    review_note = db.Column(db.Text, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'provider_id', name='uq_user_provider_request'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'provider_id': self.provider_id,
+            'reason': self.reason,
+            'status': self.status,
+            'requested_at': self.requested_at.isoformat() if self.requested_at else None,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'reviewed_by': self.reviewed_by,
+            'review_note': self.review_note,
+        }
+
+
+
+class AdminNotification(db.Model):
+    """In-app admin notifications (new user, grant requests, etc.)."""
+    __tablename__ = 'admin_notifications'
+
+    id = db.Column(db.Integer, primary_key=True)
+    type = db.Column(db.String(32), nullable=False, index=True)  # 'user_registered', 'grant_request', 'token_issued'
+    user_id = db.Column(db.String(255), nullable=False, index=True)
+    provider_id = db.Column(db.String(32), nullable=True)
+    title = db.Column(db.String(255), nullable=False)
+    message = db.Column(db.Text, nullable=True)
+    is_read = db.Column(db.Boolean, default=False, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    read_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'type': self.type,
+            'user_id': self.user_id,
+            'provider_id': self.provider_id,
+            'title': self.title,
+            'message': self.message,
+            'is_read': self.is_read,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'read_at': self.read_at.isoformat() if self.read_at else None,
+        }
+
+
+
+
+
+
 class UserProfile(db.Model):
     """Display metadata for a user — alias and visibility.
 
@@ -219,6 +292,7 @@ class UserProfile(db.Model):
 
     user_id = db.Column(db.String(255), primary_key=True)
     alias = db.Column(db.String(255), nullable=True)
+    email = db.Column(db.String(255), nullable=True)
     disabled = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -226,6 +300,7 @@ class UserProfile(db.Model):
         return {
             'user_id': self.user_id,
             'alias': self.alias,
+            'email': self.email,
             'disabled': self.disabled,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }

@@ -10,7 +10,10 @@ import hmac
 from flask import Blueprint, jsonify, request, g, session
 from database import db
 from api.auth import require_admin_or_session
-from storage.models import ProviderGrant, ProviderConfig, UsageEvent, UserProfile, UserAccessToken
+from storage.models import (
+    ProviderGrant, ProviderConfig, UsageEvent, UserProfile, UserAccessToken,
+    AdminNotification, GrantRequest,
+)
 from storage.user_tokens import issue_user_token, revoke_user_token
 from config import Config
 
@@ -104,6 +107,8 @@ def revoke_grant(grant_id):
     return '', 204
 
 
+
+
 def build_overview() -> list[dict]:
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
@@ -161,6 +166,12 @@ def build_overview() -> list[dict]:
     return out
 
 
+@admin_bp.get('/overview')
+@require_admin_or_session
+def overview():
+    return jsonify({'users': build_overview()})
+
+
 @admin_bp.post('/users')
 @require_admin_or_session
 def create_user_profile():
@@ -209,7 +220,87 @@ def delete_user_profile(user_id):
     return '', 204
 
 
-@admin_bp.get('/overview')
+@admin_bp.get('/grant-requests')
 @require_admin_or_session
-def overview():
-    return jsonify({'users': build_overview()})
+def list_grant_requests():
+    """List all grant requests for admin review."""
+    status = request.args.get('status')  # pending, approved, denied
+    q = GrantRequest.query.order_by(GrantRequest.requested_at.desc())
+    if status:
+        q = q.filter_by(status=status)
+    requests = q.all()
+    return jsonify({'requests': [r.to_dict() for r in requests]})
+
+
+@admin_bp.patch('/grant-requests/<int:request_id>')
+@require_admin_or_session
+def review_grant_request(request_id):
+    """Approve or deny a grant request."""
+    req = db.session.get(GrantRequest, request_id)
+    if not req:
+        return jsonify({'error': 'not found'}), 404
+    if req.status != 'pending':
+        return jsonify({'error': 'already reviewed'}), 400
+
+    body = request.get_json() or {}
+    action = body.get('action')  # 'approve' or 'deny'
+    note = body.get('note')
+
+    if action == 'approve':
+        # Create or reactivate the grant
+        grant = ProviderGrant.query.filter_by(
+            user_id=req.user_id, provider_id=req.provider_id
+        ).first()
+        if grant:
+            grant.revoked_at = None
+            grant.granted_at = datetime.now(timezone.utc)
+            grant.granted_by = g.principal.user_id
+            if note:
+                grant.note = note
+        else:
+            grant = ProviderGrant(
+                user_id=req.user_id,
+                provider_id=req.provider_id,
+                granted_by=g.principal.user_id,
+                note=note,
+            )
+            db.session.add(grant)
+        req.status = 'approved'
+        message = 'Grant approved and access granted'
+    elif action == 'deny':
+        req.status = 'denied'
+        message = 'Grant request denied'
+    else:
+        return jsonify({'error': "action must be 'approve' or 'deny'"}), 400
+
+    req.reviewed_at = datetime.now(timezone.utc)
+    req.reviewed_by = g.principal.user_id
+    req.review_note = note
+    db.session.commit()
+
+    # Create notification for admin about the decision
+    notif = AdminNotification(
+        type='grant_review',
+        user_id=req.user_id,
+        provider_id=req.provider_id,
+        title=f"Grant request {action}d: {req.provider_id}",
+        message=f"Request for {req.user_id} → {req.provider_id} was {action}d by {g.principal.user_id}. Note: {note or '(none)'}",
+    )
+    db.session.add(notif)
+    db.session.commit()
+
+    return jsonify({'request': req.to_dict(), 'message': message})
+
+
+@admin_bp.get('/pending-counts')
+@require_admin_or_session
+def pending_counts():
+    """Get counts of pending items for admin dashboard badges."""
+    pending_requests = GrantRequest.query.filter_by(status='pending').count()
+    unread_notifs = AdminNotification.query.filter_by(is_read=False).count()
+    return jsonify({
+        'pending_grant_requests': pending_requests,
+        'unread_notifications': unread_notifs,
+    })
+
+

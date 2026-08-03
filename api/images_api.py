@@ -215,6 +215,7 @@ def image_generations():
     if size:
         payload['size'] = size
 
+    logger.info(f'Image generation request: model={model} n={n} size={size} prompt_tokens={len(prompt.split())}')
     start = time.time()
     try:
         resp = requests.post(
@@ -244,6 +245,7 @@ def image_generations():
         _log_image_usage(user_id, model, None, None, None, 'error', str(e))
         return jsonify({'error': {'message': str(e), 'type': 'server_error'}}), 500
 
+    logger.info(f'Image generation completed: model={model} images={len(res.get("data", []))} cost={res.get("usage",{}).get("cost","?")}')
     images = []
     for item in res.get('data', []):
         b64 = item.get('b64_json', '')
