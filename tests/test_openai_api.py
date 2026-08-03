@@ -612,3 +612,89 @@ def test_streaming_chat_completions_emits_finish_reason_on_every_choice(
         None,
         'stop',
     ]
+
+
+def test_list_models_excludes_region_locked(app, client, monkeypatch):
+    """Region-locked models (e.g. China-only GLM) are hidden from /v1/models."""
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    monkeypatch.setattr(openai_api, 'PROVIDER_REGISTRY', {
+        'zai': {
+            'name': 'z.ai (GLM)',
+            'system': True,
+            'requires': [],
+            'optional': [],
+        },
+    })
+
+    def fake_load_config(user_id, provider_id):
+        return {}
+
+    class FakeZaiClient:
+        def get_models(self):
+            return ['glm-4.5-flash', 'glm-4.6', 'glm-5.1']
+
+    def fake_get_client(provider_id, cfg):
+        return FakeZaiClient()
+
+    monkeypatch.setattr(openai_api, '_load_config', fake_load_config, raising=False)
+    monkeypatch.setattr(openai_api, 'get_client', fake_get_client, raising=False)
+    monkeypatch.setattr(openai_api.health_tracker, 'is_healthy', lambda provider_id: True)
+
+    r = client.get('/v1/models', headers={'Authorization': 'Bearer admin-test-token'})
+
+    assert r.status_code == 200
+    model_ids = [m['id'] for m in r.json['data']]
+    # All zai/* models are region-locked (China-hosted endpoint)
+    assert model_ids == []
+
+
+def test_chat_completions_rejects_region_locked_model(app, client, monkeypatch):
+    """Direct dispatch to a region-locked model is rejected with 400."""
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    monkeypatch.setattr(openai_api, 'PROVIDER_REGISTRY', {
+        'zai': {
+            'name': 'z.ai (GLM)',
+            'system': True,
+            'requires': [],
+            'optional': [],
+        },
+    })
+
+    def fake_get_client(provider_id, cfg):
+        raise AssertionError('region-locked model must never reach a client')
+
+    monkeypatch.setattr(openai_api, 'get_client', fake_get_client, raising=False)
+
+    r = client.post('/v1/chat/completions', headers={'Authorization': 'Bearer admin-test-token'},
+                    json={
+                        'model': 'zai/glm-4.6',
+                        'messages': [{'role': 'user', 'content': 'hello'}],
+                    })
+
+    assert r.status_code == 400
+    assert 'region-locked' in r.json['error']['message']
+
+
+def test_is_region_locked_scoped_to_provider():
+    from api.openai_api import _is_region_locked
+
+    # z.ai is the China-hosted endpoint -> locked
+    assert _is_region_locked('zai', 'glm-4.6')
+    assert _is_region_locked('zai', 'glm-5-turbo')
+    assert _is_region_locked('zai', 'glm-4.5-flash')
+    # Same GLM model via a global gateway stays available
+    assert not _is_region_locked('opencode', 'glm-4.5-flash')
+    assert not _is_region_locked('openrouter', 'glm-5.1')
+    # Unrelated models unaffected
+    assert not _is_region_locked('ollama', 'qwen3.6:latest')
+    assert not _is_region_locked('opencode', 'deepseek-v4-flash-free')

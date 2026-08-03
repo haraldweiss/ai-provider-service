@@ -21,8 +21,34 @@ from dispatcher import (
 from providers import PROVIDER_REGISTRY, get_client
 from flask import g
 import health_tracker
+from config import Config
 
 logger = logging.getLogger(__name__)
+
+# Models matching these prefixes are excluded (region-locked / China-only).
+# Configured via EXCLUDE_REGION_LOCKED_MODELS env var.
+_EXCLUDED_PREFIXES = tuple(Config.EXCLUDE_REGION_LOCKED_MODELS)
+
+
+def _is_region_locked(provider_id: str, model_name: str) -> bool:
+    """Return True if the model is served by a region-locked endpoint.
+
+    Entries may be `provider/prefix` (scoped to that provider) or a bare
+    prefix (applies to all providers). GLM models reachable via global
+    gateways (opencode/openrouter) are NOT blocked — only the China-hosted
+    z.ai endpoint entries in the default config.
+    """
+    mid = f'{provider_id}/{model_name}'.lower()
+    ml = model_name.lower()
+    for rule in _EXCLUDED_PREFIXES:
+        rule_l = rule.lower()
+        if '/' in rule_l:
+            if mid.startswith(rule_l):
+                return True
+        elif ml.startswith(rule_l):
+            return True
+    return False
+
 
 openai_bp = Blueprint('openai', __name__)
 
@@ -81,6 +107,9 @@ def _available_model_rows(user_id: str) -> list[dict]:
             continue
         for model_name in models:
             if not model_name:
+                continue
+            if _is_region_locked(provider_id, model_name):
+                logger.debug('Skipping region-locked model %s/%s', provider_id, model_name)
                 continue
             mid = _model_id(provider_id, str(model_name))
             if mid in seen:
@@ -266,6 +295,11 @@ def chat_completions():
         return jsonify({'error': {'message': str(e), 'type': 'invalid_request'}}), 400
 
     provider_id, model_name, origin_app = _parse_model(model)
+
+    if _is_region_locked(provider_id, model_name):
+        return jsonify({
+            'error': {'message': f'Model region-locked: {model}', 'type': 'invalid_request'},
+        }), 400
 
     if provider_id not in PROVIDER_REGISTRY:
         return jsonify({

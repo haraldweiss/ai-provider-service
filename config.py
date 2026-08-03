@@ -69,6 +69,17 @@ class Config:
 
     # Flask sessions (admin UI cookie)
     SECRET_KEY = os.getenv('SECRET_KEY', '')
+    # Email notifications (admin alerts)
+    SMTP_HOST = os.getenv('SMTP_HOST', '')
+    SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
+    SMTP_USER = os.getenv('SMTP_USER', '')
+    SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+    SMTP_FROM = os.getenv('SMTP_FROM', '')
+    SMTP_TLS = os.getenv('SMTP_TLS', 'true').lower() == 'true'
+    ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', '')
+    NOTIFY_ON_GRANT_REQUEST = os.getenv('NOTIFY_ON_GRANT_REQUEST', 'true').lower() == 'true'
+    NOTIFY_ON_USER_REGISTER = os.getenv('NOTIFY_ON_USER_REGISTER', 'true').lower() == 'true'
+
 
     # Admin UI auto-auth via X-Forwarded-User (set by Apache Basic Auth).
     # Must be explicitly enabled.  The source address must also be in the
@@ -88,6 +99,18 @@ class Config:
     SUMMARY_MAX_NOTES_PER_DAY = int(os.getenv('SUMMARY_MAX_NOTES_PER_DAY', '200'))
     MEMORY_FREE_MODELS = [
         m.strip() for m in os.getenv('MEMORY_FREE_MODELS', '').split(',') if m.strip()
+    ]
+
+    # Region-locked model exclusion — comma-separated entries. Each entry may
+    # be a bare model prefix (applies to every provider) or a `provider/prefix`
+    # pair (applies only to that provider). Hidden from /v1/models and blocked
+    # from dispatch. Default excludes the z.ai (Zhipu) China-hosted endpoint
+    # models; GLM models served via global gateways (opencode/openrouter)
+    # remain available. Set EXCLUDE_REGION_LOCKED_MODELS= to disable.
+    EXCLUDE_REGION_LOCKED_MODELS = [
+        m.strip() for m in os.getenv('EXCLUDE_REGION_LOCKED_MODELS',
+            'zai/glm-5,zai/glm-4.7,zai/glm-4.6,zai/glm-4.5,zai/glm-4-32b,'
+            'zai/glm-5v,zai/glm-4.6v,zai/glm-4.5v,zai/glm-ocr').split(',') if m.strip()
     ]
 
     @classmethod
