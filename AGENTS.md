@@ -1433,3 +1433,21 @@ Tracking über `usage.input_tokens + usage.output_tokens` pro Iteration.
 **Kein Deploy auf oracle-vm nötig** — der News-Agent läuft als `flask news-agent`
 im Container; bei nächstem Docker-Neubau (oder `docker restart ai-provider`) aktiv.
 
+### Security: cryptography Bleichenbacher Oracle Fix (2026-08-03, Pi)
+
+**Scope:** Dependabot #1 — PKCS#7 `EnvelopedData` decryption in
+`cryptography >= 44.0.0, < 50.0.0` exposes a Bleichenbacher oracle through
+distinguishable errors and timing.
+
+**Fix:** Bumped pin in `requirements.txt` from `>=49.0.0,<50.0` to
+`>=50.0.0,<51.0`. No code changes needed — Fernet usage in
+`storage/encryption.py` is unaffected by the 50.0.0 release (only the PKCS#7
+decryption path changed).
+
+**Deployed on oracle-vm:** Image `localhost/ai-provider:612f4af` built with
+`build.sh`, container recreated. `docker exec ai-provider python3 -c
+'import cryptography; print(cryptography.__version__)'` → `50.0.0`.
+`/health` → `status: ok`.
+
+**Verification:** pytest 381/382 (1 pre-existing OpenRouter failure, unrelated).
+

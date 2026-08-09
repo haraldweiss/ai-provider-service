@@ -857,3 +857,11 @@ CLI:
   (z.B. Bewerbungstracker `ApiCall`-Tabelle).
 - **Anthropic-Models statisch:** kein offizielles `/models`-Endpoint —
   wird in `providers/claude.py:KNOWN_MODELS` gepflegt.
+
+## Security
+
+- **cryptography >= 50.0.0** (2026-08-03): Bleichenbacher-Oracle in PKCS#7
+  `EnvelopedData` Decryption (`>= 44.0.0, < 50.0.0`) behoben — Pin in
+  `requirements.txt` auf `>=50.0.0,<51.0` angehoben. Keine Code-Änderung
+  nötig (Fernet-Nutzung in `storage/encryption.py` nicht betroffen).
+  Deployed auf oracle-vm (Image `localhost/ai-provider:612f4af`).
