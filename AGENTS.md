@@ -194,6 +194,52 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Multimodal (vision) support — image_url content now forwarded to providers (2026-08-13)
+
+**Problem:** Open WebUI (chat.wolfinisoftware.de) could not analyze images. An
+attached image in chat produced a wrong/empty answer from every vision model
+(qwen3-vl, GLM-V), because the image bytes never reached the model.
+
+**Root cause:** `api/openai_api.py` → `_normalize_message_content()` flattened
+every message `content` list to a **text-only** string via
+`_content_part_text()`, discarding `{type: image_url, ...}` parts. Downstream
+providers (cline/openrouter/zai) forward `messages` verbatim (OpenAI SDK /
+httpx) and would have handled `image_url` fine — the image was dropped before
+it got to them.
+
+**Fix (`api/openai_api.py`):**
+- Added `_content_part_is_image()` — recognizes `image_url`, `image`, and
+  `input_image` parts (plus a bare `image` field).
+- `_normalize_message_content()` now returns a **content list** (text part +
+  preserved image parts) when image parts are present; keeps the legacy
+  text-string flatten for text-only messages so prompt-based providers and
+  audit logging (`dispatcher._join_messages`) are unchanged.
+
+**CAUTION:** the deployed `localhost/ai-provider:latest` (image id `41d02f5c…`) is a
+fresh build that contains this fix and is *not* tagged with the commit hash (the
+`deploy.sh` build tags `latest` only). Use `docker compose up -d`'s running image
+or re-tag if you need to correlate image → code later.
+
+**Verified:**
+- pytest ✓ (new unit + integration tests in `tests/test_openai_api.py`:
+  preservation of image_url/image/input_image parts, text-only unchanged,
+  dispatch receives image part end-to-end). Pre-existing unrelated failure
+  `test_opencode_raises_without_api_key` confirmed failing on `main` too.
+- Live on oracle-vm: `docker exec ai-provider grep -n _IMAGE_TYPES /app/api/openai_api.py`
+  → line 192 present; container healthy.
+- **E2E vision now correct:** `openrouter/nvidia/nemotron-nano-12b-v2-vl:free`
+  answered **"Red"** for a solid-64×64 red PNG via `/v1/chat/completions`
+  (`localhost:8767`), `content='Red\n'`. Before the fix it hallucinated
+  ("Blue" for red), because the image was dropped.
+- **Upstream caveat:** `cline/qwen/qwen3-vl-8b-instruct` (api.cline.bot) returns
+  **empty content** (200) / intermittent 500 for image requests once the image is
+  forwarded. Not this service's bug — cline's upstream. Prefer OpenRouter vision
+  (`openrouter/*-vl:free`) in Open WebUI.
+
+**Commits:** `d5bd476` (Fix: forward image_url content parts so vision/multimodal analysis works) on `main`.
+
+---
+
 ### Region-Locked Model Exclusion + WIP Commit (2026-08-03, opencode)
 
 **Scope:** Exclude China-hosted z.ai endpoint models from /v1/models and block

@@ -698,3 +698,121 @@ def test_is_region_locked_scoped_to_provider():
     # Unrelated models unaffected
     assert not _is_region_locked('ollama', 'qwen3.6:latest')
     assert not _is_region_locked('opencode', 'deepseek-v4-flash-free')
+
+
+# ─── Multimodal (vision) content normalization ───────────────────────────────
+
+
+def test_normalize_message_content_plain_text_unchanged():
+    from api.openai_api import _normalize_message_content
+
+    # Plain string content passes through untouched.
+    assert _normalize_message_content('hello') == 'hello'
+    assert _normalize_message_content(None) == ''
+    # Text-only list is flattened to a string (legacy behaviour preserved).
+    assert _normalize_message_content([
+        {'type': 'text', 'text': 'foo'},
+        {'type': 'text', 'text': 'bar'},
+    ]) == 'foo\nbar'
+
+
+def test_normalize_message_content_preserves_image_url_part():
+    from api.openai_api import _normalize_message_content
+
+    data_url = 'data:image/png;base64,iVBORw0KGgo=='
+    content = [
+        {'type': 'text', 'text': 'What colour is this?'},
+        {'type': 'image_url', 'image_url': {'url': data_url, 'detail': 'high'}},
+    ]
+    result = _normalize_message_content(content)
+
+    # Must return a content list (not a flattened string) when images are present.
+    assert isinstance(result, list)
+    assert {'type': 'text', 'text': 'What colour is this?'} in result
+    assert {'type': 'image_url', 'image_url': {'url': data_url, 'detail': 'high'}} in result
+
+
+def test_normalize_message_content_preserves_mixed_image_types():
+    from api.openai_api import _normalize_message_content, _content_part_is_image
+
+    data_url = 'data:image/png;base64,iVBORw0KGgo=='
+    content = [
+        {'type': 'text', 'text': 'describe'},
+        {'type': 'image_url', 'image_url': {'url': data_url}},       # OpenAI format
+        {'type': 'image', 'image': 'aGVsbG8='},                      # Ollama-style base64
+        {'type': 'input_image', 'image_url': {'url': data_url}},     # Claude-style
+    ]
+    result = _normalize_message_content(content)
+
+    assert isinstance(result, list)
+    assert all(_content_part_is_image(p) for p in result[1:])
+    assert result[0] == {'type': 'text', 'text': 'describe'}
+    # Image parts are preserved verbatim (no data loss).
+    assert result[1] == {'type': 'image_url', 'image_url': {'url': data_url}}
+
+
+def test_normalize_message_content_ignores_unsupported_parts():
+    from api.openai_api import _normalize_message_content
+
+    data_url = 'data:image/png;base64,iVBORw0KGgo=='
+    content = [
+        {'type': 'text', 'text': 'hi'},
+        {'type': 'image_url', 'image_url': {'url': data_url}},
+        {'type': 'tool_result', 'content': 'some tool output'},
+        'raw string part',
+    ]
+    result = _normalize_message_content(content)
+
+    assert isinstance(result, list)
+    # Tool/unknown parts are dropped; text + image are kept.
+    types = [p.get('type') for p in result]
+    assert types == ['text', 'image_url']
+
+
+def test_chat_completions_passes_image_content_to_dispatch(app, client, monkeypatch):
+    """Image_url content parts must survive normalization and reach dispatch.
+
+    Regression test for the vision bug: /v1/chat/completions stripped image
+    parts to a text-only string, so multimodal models never saw the image.
+    """
+    from config import Config
+    import api.openai_api as openai_api
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    Config.ADMIN_USER_ID = 'harald'
+
+    captured = {}
+
+    def mock_dispatch(*args, **kwargs):
+        captured['messages'] = kwargs.get('messages')
+        return {
+            'result': {'content': 'red', 'usage': {'input_tokens': 5, 'output_tokens': 1}},
+            'via': 'test-provider',
+            'fallback_used': False,
+        }
+
+    monkeypatch.setattr(openai_api, 'dispatch', mock_dispatch, raising=False)
+
+    r = client.post('/v1/chat/completions',
+                    headers={'Authorization': 'Bearer admin-test-token'},
+                    json={
+                        'model': 'openrouter/nvidia/nemotron-nano-12b-v2-vl:free',
+                        'messages': [{
+                            'role': 'user',
+                            'content': [
+                                {'type': 'text', 'text': 'What colour?'},
+                                {'type': 'image_url',
+                                 'image_url': {'url': 'data:image/png;base64,QUJD', 'detail': 'low'}},
+                            ],
+                        }],
+                    })
+
+    assert r.status_code == 200
+    assert r.json['choices'][0]['message']['content'] == 'red'
+    # The image part must be present in the messages handed to dispatch.
+    msg = captured['messages'][0]
+    assert isinstance(msg['content'], list)
+    assert any(
+        p.get('type') == 'image_url' and p.get('image_url', {}).get('url', '').startswith('data:image')
+        for p in msg['content']
+    )

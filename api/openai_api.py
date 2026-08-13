@@ -189,6 +189,9 @@ def _openai_tool_call_deltas(tool_calls: list[dict]) -> list[dict]:
     return deltas
 
 
+_IMAGE_TYPES = ('image_url', 'image', 'input_image')
+
+
 def _content_part_text(part) -> str:
     if isinstance(part, str):
         return part
@@ -199,15 +202,57 @@ def _content_part_text(part) -> str:
     return ''
 
 
-def _normalize_message_content(content) -> str:
+def _content_part_is_image(part) -> bool:
+    """Detect multimodal image content parts.
+
+    Open WebUI / OpenAI-compatible clients send image content as list items of
+    type ``image_url`` (with ``image_url.url`` = data-URL), some clients use
+    ``image`` (Ollama-style base64) or Claude-style ``input_image``. A dict that
+    carries one of those types — or a bare ``image`` field — is treated as an
+    image part and preserved so it reaches the model.
+    """
+    if not isinstance(part, dict):
+        return False
+    ptype = part.get('type')
+    if isinstance(ptype, str) and ptype in _IMAGE_TYPES:
+        return True
+    if ptype is None and 'image' in part:
+        return True
+    return False
+
+
+def _normalize_message_content(content) -> str | list[dict]:
+    """Normalize a message's ``content`` for downstream providers.
+
+    Legacy behaviour: a list of content parts is flattened to a plain string of
+    its text segments (so prompt-based providers and audit logging get text).
+
+    Multimodal (vision) behaviour: if the list contains image parts, they are
+    preserved alongside the text so image analysis reaches the model via the
+    OpenAI SDK (which forwards ``image_url`` parts to the upstream API). Returns
+    a content list in that case; a plain string otherwise.
+    """
     if isinstance(content, str):
         return content
     if content is None:
         return ''
     if isinstance(content, list):
-        return '\n'.join(
-            text for text in (_content_part_text(part) for part in content) if text
-        )
+        text_parts: list[str] = []
+        image_parts: list[dict] = []
+        for part in content:
+            if _content_part_is_image(part):
+                image_parts.append(part)
+            else:
+                text = _content_part_text(part)
+                if text:
+                    text_parts.append(text)
+        if not image_parts:
+            return '\n'.join(text_parts)
+        parts: list[dict] = []
+        if text_parts:
+            parts.append({'type': 'text', 'text': '\n'.join(text_parts)})
+        parts.extend(image_parts)
+        return parts
     return str(content)
 
 

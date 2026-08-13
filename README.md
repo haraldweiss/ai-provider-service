@@ -20,6 +20,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 - **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider; opencode ohne persönlichen Key nur Free-Modelle
 - **Health-Monitoring**: Background-Worker pollt alle Provider regelmäßig
 - **Image Generation**: OpenAI-kompatible `/v1/images/generations` via OpenRouter
+- **Vision (Multimodal)**: `/v1/chat/completions` forwards `image_url`/`image`/`input_image` content parts to the model — attach an image and pick a vision-capable model (e.g. `cline/qwen/qwen3-vl-8b-instruct`) to analyze it. Text-only messages keep the legacy string form.
 - **Grant-Request Workflow**: User können Provider-Zugriff selbst beantragen, Admins reviewen via `/admin/grant-requests`
 - **CORS-Handling** zentral (für Browser-direkt-Aufrufe)
 - **Bearer-Token-Auth** für Konsumenten-Apps
