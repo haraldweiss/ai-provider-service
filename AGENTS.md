@@ -236,7 +236,7 @@ or re-tag if you need to correlate image → code later.
   forwarded. Not this service's bug — cline's upstream. Prefer OpenRouter vision
   (`openrouter/*-vl:free`) in Open WebUI.
 
-**Commits:** `d5bd476` (Fix: forward image_url content parts so vision/multimodal analysis works) on `main`.
+**Commits:** `cd13327` (Fix: forward image_url content parts so vision/multimodal analysis works) on `main`.
 
 ---
 
