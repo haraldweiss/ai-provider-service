@@ -790,6 +790,11 @@ Täglich ausführen (06:00 UTC, Host-Crontab gegen den Container):
 0 6 * * * docker exec ai-provider flask check-cline-catalog >> /var/log/ai-provider-cline-check.log 2>&1
 ```
 
+**Status:** Auf oracle-vm installiert (root crontab) beim Deploy 2026-08-16
+(`1330f07`). Die `.snapshot`/`.prev`-Dateien liegen neben
+`pricing_overrides_cline.json` (im Container `/app/...`); der erste Lauf seeder
+die Baseline, danach mailt der Job nur bei tatsächlichen Änderungen.
+
 
 ### Tokens
 

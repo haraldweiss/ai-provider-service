@@ -187,7 +187,7 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 | DB | SQLite in Docker volume `bewerbungen_data` → `/app/data/storage.db`; host copy/backup at `/opt/ai-provider-data/storage.db` |
 | Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + host/Compose bridge (see §3.3). Current container env uses `host.docker.internal` endpoints, including ports `11441`, `11434`, and `11440`. Server check: `ss -tln \| grep 1144\\|1143` and `curl 127.0.0.1:<port>/api/tags` |
 | Vault | `VAULT_PATH=/app/data/vault` (container env; `MEMORY_ENABLED=true`). Cache; regen via `flask vault-render --rebuild` inside the container. |
-| Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT). The old IONOS systemd timers (summary @02:30, vault-render /10min) are gone — any such jobs now run inside the container, not as host timers. |
+| Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT). The old IONOS systemd timers (summary @02:30, vault-render /10min) are gone — any such jobs now run inside the container, not as host timers. Host root crontab (oracle-vm) also runs daily jobs against the container: `0 5` `flask refresh-free-models`, `0 6` `flask update-zai-pricing` and `0 6` `flask check-cline-catalog` (Cline model-change notification, added 2026-08-16). Server repo git fetch needs `sudo` (pack-object permission quirk); use `sudo git fetch origin && git merge --ff-only origin/main`. |
 | Apache | Host `httpd` reverse-proxies `:8767` → `ai-admin.wolfinisoftware.de` and `ai-provider-service.wolfinisoftware.de/` (`/etc/httpd/conf.d/`) |
 
 ---
@@ -213,19 +213,41 @@ raw_decode`, kein Node im Container nötig):
   (Rotation nach `.prev`), diffet gegen den letzten Stand und mailt bei jeder
   Modell-/Preis-Änderung an `harald.weiss@wolfinisoftware.de`.
 
-**ClinePass-Dedup angewendet (auf `main`, Datei in-worktree editiert):** User hat
-ClinePass → die 10 `cline-pass/*` open-weight Varianten bleiben, die **24 bezahlten
-non-pass Duplikate** wurden entfernt (free `:free`/`$0` bleiben). 513 → **489** served
-IDs. Der Dedup lauft über `_meta.clinepass_models` (trailing model segment,
-case-insensitive), `_meta.last_apply` + `_meta.last_updated` dokumentieren den Stand.
+**ClinePass-Dedup angewendet:** User hat ClinePass → die 10 `cline-pass/*`
+open-weight Varianten bleiben, die **24 bezahlten non-pass Duplikate** wurden
+entfernt (free `:free`/`$0` bleiben). 513 → **489** served IDs. Der Dedup läuft
+über `_meta.clinepass_models` (trailing model segment, case-insensitive),
+`_meta.last_apply` + `_meta.last_updated` dokumentieren den Stand.
 
-**Verifiziert:** pytest 398/398 (1 pre-existing `test_opencode_raises_without_api_key`,
-fällt schon auf `main`); CLI-Smoke realer Katalog (report + daily-check first/second/
-change run); Docker-safe Parse (raw_decode, 2.99MB, konsumiert 100%).
+**Verifiziert:** pytest 398/398 (1 pre-existing
+`test_opencode_raises_without_api_key`, fällt schon auf `main`); CLI-Smoke realer
+Katalog (report + daily-check first/second/change run); Docker-safe Parse
+(raw_decode, 2.99MB, konsumiert 100%).
 
-**Offen:** Host-Cron auf oracle-vm noch NICHT eingerichtet
-(`0 6 * * * docker exec ai-provider flask check-cline-catalog >> /var/log/...`).
-Deploy: Image via `build.sh` bauen, Container recreaten, `/v1/models` live-checken.
+**DEPLOYED auf oracle-vm (2026-08-16), running == committed (`1330f07`):**
+- `main` fast-forward via `sudo git fetch origin && git merge --ff-only origin/main`.
+  Server hatte vorher uncommitteten Drift (Vision-Fix `api/openai_api.py` + Docs);
+  per Blob-Hash als byte-identisch/subsumiert mit committed `main` verifiziert und
+  als `stash@{0}` ("deploy-2026-08-16: redundant vision+docs drift") konserviert —
+  droppbar.
+- Image `localhost/ai-provider:1330f07` (+ `:latest`, id `22fa1fd43036`) via
+  `sudo ./build.sh 1330f07` gebaut; Container recreated
+  (`sudo docker compose up -d --force-recreate ai-provider`, Netz
+  `ai-provider-service_default`). `docker ps`: healthy; `/health` → `status: ok`
+  (cline healthy).
+- `/v1/models`: **total 533, cline 489** (vorher 513), `cline-pass` 10 — Dedup live.
+- **Snapshot geseedet** im Container (`/app/pricing_overrides_cline.json.snapshot`,
+  489 IDs); 2. Run `check-cline-catalog` → `+0,-0,~0` "no model changes"
+  (idempotent, kein Spam-Mail).
+- **Daily-Cron installiert** (root crontab oracle-vm):
+  `0 6 * * * docker exec ai-provider flask check-cline-catalog >> /var/log/ai-provider-cline-check.log 2>&1`
+- Der frühere Vision-Hotfix (`api/openai_api.py`, nur drift auf dem Server) ist
+  damit jetzt sauber committed + deployed.
+
+**Offen:** nichts für diese Session. Künftige Katalog-Änderungen meldet der
+06:00-Cron per Mail (an `harald.weiss@wolfinisoftware.de`); manuelle Pflege mit
+`flask update-cline-catalog` (report-first, `--apply` nur nach Review).
+
 
 ### Multimodal (vision) support — image_url content now forwarded to providers (2026-08-13)
 
