@@ -1,10 +1,10 @@
 {
   "_meta": {
     "description": "Cline model pricing overrides for ai-provider-service",
-    "last_updated": "2026-07-12",
-    "total_models": 513,
+    "last_updated": "2026-08-16T17:36+00:00",
+    "total_models": 489,
     "clinepass_count": 10,
-    "free_count": 34,
+    "free_count": 45,
     "clinepass_models": [
       "cline-pass/deepseek-v4-flash",
       "cline-pass/deepseek-v4-pro",
@@ -54,7 +54,36 @@
       "zai/glm-4.6v-flash"
     ],
     "note_clinepass": "Diese Modelle sind im ClinePass-Abo ($9.99/Monat) ohne Zusatzkosten enthalten",
-    "note_free": "Diese Modelle sind kostenlos (mit Limits)"
+    "note_free": "Diese Modelle sind kostenlos (mit Limits)",
+    "last_apply": {
+      "at": "2026-08-16T17:36+00:00",
+      "dropped_pass_dups": [
+        "cline::MiniMaxAI/MiniMax-M3",
+        "cline::Qwen/Qwen3.7-Max",
+        "cline::XiaomiMiMo/MiMo-V2.5-Pro",
+        "cline::accounts/fireworks/models/deepseek-v4-flash",
+        "cline::accounts/fireworks/models/deepseek-v4-pro",
+        "cline::accounts/fireworks/models/minimax-m3",
+        "cline::alibaba/qwen3.7-max",
+        "cline::alibaba/qwen3.7-plus",
+        "cline::deepseek-ai/DeepSeek-V4-Flash",
+        "cline::deepseek-ai/DeepSeek-V4-Pro",
+        "cline::deepseek/deepseek-v4-flash",
+        "cline::deepseek/deepseek-v4-pro",
+        "cline::minimax/minimax-m3",
+        "cline::moonshotai/Kimi-K2.6",
+        "cline::moonshotai/Kimi-K2.7-Code",
+        "cline::moonshotai/kimi-k2.6",
+        "cline::moonshotai/kimi-k2.7-code",
+        "cline::qwen/qwen3.7-max",
+        "cline::qwen/qwen3.7-plus",
+        "cline::xiaomi/mimo-v2.5",
+        "cline::xiaomi/mimo-v2.5-pro",
+        "cline::z-ai/glm-5.2",
+        "cline::zai-org/GLM-5.2",
+        "cline::zai/glm-5.2"
+      ]
+    }
   },
   "cline::JetBrains/Mellum2-12B-A2.5B-Instruct": {
     "in": 0.05,
@@ -73,10 +102,6 @@
     "out": 1.2
   },
   "cline::MiniMaxAI/MiniMax-M2.7": {
-    "in": 0.3,
-    "out": 1.2
-  },
-  "cline::MiniMaxAI/MiniMax-M3": {
     "in": 0.3,
     "out": 1.2
   },
@@ -176,25 +201,9 @@
     "in": 0.5,
     "out": 3.0
   },
-  "cline::Qwen/Qwen3.7-Max": {
-    "in": 1.25,
-    "out": 3.75
-  },
   "cline::XiaomiMiMo/MiMo-V2-Flash": {
     "in": 0.1,
     "out": 0.3
-  },
-  "cline::XiaomiMiMo/MiMo-V2.5-Pro": {
-    "in": 1.0,
-    "out": 3.0
-  },
-  "cline::accounts/fireworks/models/deepseek-v4-flash": {
-    "in": 0.14,
-    "out": 0.28
-  },
-  "cline::accounts/fireworks/models/deepseek-v4-pro": {
-    "in": 1.74,
-    "out": 3.48
   },
   "cline::accounts/fireworks/models/glm-5p1": {
     "in": 1.4,
@@ -221,10 +230,6 @@
     "out": 4.0
   },
   "cline::accounts/fireworks/models/minimax-m2p7": {
-    "in": 0.3,
-    "out": 1.2
-  },
-  "cline::accounts/fireworks/models/minimax-m3": {
     "in": 0.3,
     "out": 1.2
   },
@@ -321,12 +326,12 @@
     "out": 6.0
   },
   "cline::alibaba/qwen3-next-80b-a3b-instruct": {
-    "in": 0.15,
-    "out": 1.2
+    "in": 0.5,
+    "out": 2
   },
   "cline::alibaba/qwen3-next-80b-a3b-thinking": {
-    "in": 0.15,
-    "out": 1.2
+    "in": 0.5,
+    "out": 6
   },
   "cline::alibaba/qwen3-vl-instruct": {
     "in": 0.4,
@@ -351,14 +356,6 @@
   "cline::alibaba/qwen3.6-plus": {
     "in": 0.5,
     "out": 3.0
-  },
-  "cline::alibaba/qwen3.7-max": {
-    "in": 1.25,
-    "out": 3.75
-  },
-  "cline::alibaba/qwen3.7-plus": {
-    "in": 0.4,
-    "out": 1.6
   },
   "cline::amazon/nova-2-lite-v1": {
     "in": 0.3,
@@ -483,10 +480,6 @@
   "cline::anthropic/claude-sonnet-4.6": {
     "in": 3.0,
     "out": 15.0
-  },
-  "cline::anthropic/claude-sonnet-5": {
-    "in": 2.0,
-    "out": 10.0
   },
   "cline::arcee-ai/trinity-large-preview": {
     "in": 0.25,
@@ -616,14 +609,6 @@
     "in": 0.28,
     "out": 0.4
   },
-  "cline::deepseek-ai/DeepSeek-V4-Flash": {
-    "in": 0.14,
-    "out": 0.28
-  },
-  "cline::deepseek-ai/DeepSeek-V4-Pro": {
-    "in": 1.74,
-    "out": 3.48
-  },
   "cline::deepseek-ai/deepseek-v3.1-maas": {
     "in": 0.6,
     "out": 1.7
@@ -633,8 +618,8 @@
     "out": 1.68
   },
   "cline::deepseek/deepseek-chat": {
-    "in": 0.2002,
-    "out": 0.8001
+    "in": 0.14,
+    "out": 0.28
   },
   "cline::deepseek/deepseek-chat-v3-0324": {
     "in": 0.24,
@@ -675,14 +660,6 @@
   "cline::deepseek/deepseek-v3.2-thinking": {
     "in": 0.62,
     "out": 1.85
-  },
-  "cline::deepseek/deepseek-v4-flash": {
-    "in": 0.14,
-    "out": 0.28
-  },
-  "cline::deepseek/deepseek-v4-pro": {
-    "in": 0.435,
-    "out": 0.87
   },
   "cline::essentialai/Rnj-1-Instruct": {
     "in": 0.15,
@@ -960,10 +937,6 @@
     "in": 0.6,
     "out": 2.4
   },
-  "cline::minimax/minimax-m3": {
-    "in": 0.3,
-    "out": 1.2
-  },
   "cline::mistral/codestral": {
     "in": 0.3,
     "out": 0.9
@@ -1124,14 +1097,6 @@
     "in": 0.6,
     "out": 3.0
   },
-  "cline::moonshotai/Kimi-K2.6": {
-    "in": 0.95,
-    "out": 4.0
-  },
-  "cline::moonshotai/Kimi-K2.7-Code": {
-    "in": 0.94,
-    "out": 4.0
-  },
   "cline::moonshotai/kimi-k2": {
     "in": 0.57,
     "out": 2.3
@@ -1151,14 +1116,6 @@
   "cline::moonshotai/kimi-k2.5": {
     "in": 0.6,
     "out": 3.0
-  },
-  "cline::moonshotai/kimi-k2.6": {
-    "in": 0.95,
-    "out": 4.0
-  },
-  "cline::moonshotai/kimi-k2.7-code": {
-    "in": 0.95,
-    "out": 4.0
   },
   "cline::moonshotai/kimi-k2.7-code-highspeed": {
     "in": 1.9,
@@ -1744,14 +1701,6 @@
     "in": 0.325,
     "out": 1.95
   },
-  "cline::qwen/qwen3.7-max": {
-    "in": 1.25,
-    "out": 3.75
-  },
-  "cline::qwen/qwen3.7-plus": {
-    "in": 0.32,
-    "out": 1.28
-  },
   "cline::rekaai/reka-edge": {
     "in": 0.1,
     "out": 0.1
@@ -1789,16 +1738,16 @@
     "out": 0.3
   },
   "cline::stepfun-ai/Step-3.7-Flash": {
-    "in": 0.2,
-    "out": 1.15
+    "in": 0.185,
+    "out": 1.11
   },
   "cline::stepfun/step-3.5-flash": {
-    "in": 0.09,
+    "in": 0.1,
     "out": 0.3
   },
   "cline::stepfun/step-3.7-flash": {
-    "in": 0.2,
-    "out": 1.15
+    "in": 0.185,
+    "out": 1.11
   },
   "cline::tencent/hy3": {
     "in": 0.14,
@@ -1904,14 +1853,6 @@
     "in": 1.0,
     "out": 3.0
   },
-  "cline::xiaomi/mimo-v2.5": {
-    "in": 0.14,
-    "out": 0.28
-  },
-  "cline::xiaomi/mimo-v2.5-pro": {
-    "in": 0.435,
-    "out": 0.87
-  },
   "cline::z-ai/glm-4-32b": {
     "in": 0.1,
     "out": 0.1
@@ -1956,10 +1897,6 @@
     "in": 0.966,
     "out": 3.036
   },
-  "cline::z-ai/glm-5.2": {
-    "in": 0.9,
-    "out": 3.08
-  },
   "cline::z-ai/glm-5v-turbo": {
     "in": 1.2,
     "out": 4.0
@@ -1994,10 +1931,6 @@
   },
   "cline::zai-org/GLM-5.1": {
     "in": 1.4,
-    "out": 4.4
-  },
-  "cline::zai-org/GLM-5.2": {
-    "in": 1.39,
     "out": 4.4
   },
   "cline::zai-org/glm-4.7-maas": {
@@ -2037,26 +1970,22 @@
     "out": 2.2
   },
   "cline::zai/glm-4.7-flash": {
+    "in": 0,
+    "out": 0
+  },
+  "cline::zai/glm-4.7-flashx": {
     "in": 0.07,
     "out": 0.4
   },
-  "cline::zai/glm-4.7-flashx": {
-    "in": 0.06,
-    "out": 0.4
-  },
   "cline::zai/glm-5": {
-    "in": 0.95,
-    "out": 3.15
+    "in": 1,
+    "out": 3.2
   },
   "cline::zai/glm-5-turbo": {
     "in": 1.2,
     "out": 4.0
   },
   "cline::zai/glm-5.1": {
-    "in": 1.3,
-    "out": 4.3
-  },
-  "cline::zai/glm-5.2": {
     "in": 1.4,
     "out": 4.4
   },
@@ -2107,5 +2036,9 @@
   "cline::~x-ai/grok-latest": {
     "in": 2.0,
     "out": 6.0
+  },
+  "cline::anthropic/claude-sonnet-5": {
+    "in": 2.0,
+    "out": 10.0
   }
 }
