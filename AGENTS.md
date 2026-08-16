@@ -194,6 +194,39 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Cline Modell-Sync: `update-cline-catalog` + täglicher `check-cline-catalog` (2026-08-16)
+
+**Scope:** Cline (api.cline.bot) hat keinen öffentlichen `/models`-Endpoint; die
+gezeigte Modellliste + Kosten kommen aus `pricing_overrides_cline.json`, das aus
+Clines OSS-Katalog (`sdk/packages/llms/src/catalog/catalog.generated.ts`) kuratiert
+wird. Zwei neue Commands in `cli.py` (pure-Python Parse mit `json.JSONDecoder.
+raw_decode`, kein Node im Container nötig):
+
+- **`flask update-cline-catalog`** — fetcht den Katalog, parst ihn, **berichtet**
+  ClinePass-Dedup + Preis-/Verfügbarkeits-Änderungen. Schreibt NUR mit `--apply`.
+  **Wichtig:** die Catalog-Keys sind interne Provider-Keys (`alibaba`, `minimax`,
+  `deepseek`), die served Display-Präfixe (`Qwen/...`, `MiniMaxAI/...`,
+  `JetBrains/...`) sind NICHT 1:1 — naive Regenerierung würde ~4700 Modelle
+  inkl. bedrock/vertex/ollama/llmstudio injizieren und die Modellliste brechen.
+- **`flask check-cline-catalog`** — täglicher Job (analog opencode Free-Model-
+  Refresh): snapshotet die gepflegte Liste nach `pricing_overrides_cline.json.snapshot`
+  (Rotation nach `.prev`), diffet gegen den letzten Stand und mailt bei jeder
+  Modell-/Preis-Änderung an `harald.weiss@wolfinisoftware.de`.
+
+**ClinePass-Dedup angewendet (auf `main`, Datei in-worktree editiert):** User hat
+ClinePass → die 10 `cline-pass/*` open-weight Varianten bleiben, die **24 bezahlten
+non-pass Duplikate** wurden entfernt (free `:free`/`$0` bleiben). 513 → **489** served
+IDs. Der Dedup lauft über `_meta.clinepass_models` (trailing model segment,
+case-insensitive), `_meta.last_apply` + `_meta.last_updated` dokumentieren den Stand.
+
+**Verifiziert:** pytest 398/398 (1 pre-existing `test_opencode_raises_without_api_key`,
+fällt schon auf `main`); CLI-Smoke realer Katalog (report + daily-check first/second/
+change run); Docker-safe Parse (raw_decode, 2.99MB, konsumiert 100%).
+
+**Offen:** Host-Cron auf oracle-vm noch NICHT eingerichtet
+(`0 6 * * * docker exec ai-provider flask check-cline-catalog >> /var/log/...`).
+Deploy: Image via `build.sh` bauen, Container recreaten, `/v1/models` live-checken.
+
 ### Multimodal (vision) support — image_url content now forwarded to providers (2026-08-13)
 
 **Problem:** Open WebUI (chat.wolfinisoftware.de) could not analyze images. An

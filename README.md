@@ -767,6 +767,30 @@ oracle-vm via Host-Crontab gegen den Docker-Container:
 0 6 * * * docker exec ai-provider flask update-zai-pricing >> /var/log/ai-provider-zai-pricing.log 2>&1
 ```
 
+### Cline Modell-Sync + Tägliche Änderungs-Benachrichtigung
+
+Cline (api.cline.bot) hat keinen öffentlichen `/models`-Endpoint (auth-walled), daher
+wird die gezeigte/berechnete Modellliste manuell aus Clines OSS-Modellkatalog
+(`cline/cline`, `sdk/packages/llms/src/catalog/catalog.generated.ts`) gepflegt:
+
+- `flask update-cline-catalog` — fetcht den aktuellen OSS-Katalog, parst ihn
+  (pure-Python, kein Node nötig) und **berichtet** neue/geänderte Modelle und den
+  ClinePass-Dedup (non-pass Duplikate, die der Pass kostenlos abdeckt). **Nur mit
+  `--apply` wird die Datei geschrieben** — human-review first, da die Catalog-Keys
+  (interne Provider-Keys wie `alibaba`/`minimax`) von den served Display-Präfixen
+  (`Qwen/...`, `MiniMaxAI/...`) abweichen.
+- `flask check-cline-catalog` — täglicher Job (analog zum opencode Free-Model-
+  Refresh): snapshotet die gepflegte Modellliste nach `.snapshot` (Rotation nach
+  `.prev`), diffet gegen den letzten Stand und **mailt bei jeder Änderung** (neue/
+  entfernte Modelle, Preisänderungen) an `harald.weiss@wolfinisoftware.de`.
+
+Täglich ausführen (06:00 UTC, Host-Crontab gegen den Container):
+
+```cron
+0 6 * * * docker exec ai-provider flask check-cline-catalog >> /var/log/ai-provider-cline-check.log 2>&1
+```
+
+
 ### Tokens
 
 | Token | Role | `user_id` resolution |
