@@ -8,6 +8,8 @@ venv/
 .venv/
 .DS_Store
 *.log
+.coverage
+.coverage.*
 
 # AI tooling
 .claude/
