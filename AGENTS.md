@@ -29,12 +29,9 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 
 ## 2. Agent routing
 
-### opencode (Throughput-optimized)
+### opencode (default agent)
 - Good for: bulk refactors (type hints, strict mode), dead-code removal, lint cleanup, adding new provider integrations, test coverage
-- Avoid: production deploys, DB migrations, VPS config changes
-
-### Claude Code (Care-optimized)
-- Good for: production deploys (`docker restart ai-provider` on oracle-vm), DB schema migrations, reverse-SSH tunnel changes, Apache/SELinux config, security review of new endpoints or file ops
+- Production deploys, DB migrations, VPS config changes, reverse-SSH tunnel changes, Apache config, and security review of new endpoints/file ops are all in scope — there is no separate "care-optimized" agent anymore.
 
 ---
 
