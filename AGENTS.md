@@ -191,6 +191,37 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Mail-Client (Rust/Tauri) nutzt öffentliches Gateway + braucht CORS-Whitelist (2026-08-17, opencode)
+
+**Context:** Der `mail-client` (eigenes Rust/Tauri-Repo `/Users/haraldweiss/projects/mail-client`)
+wurde von lokalem Ollama auf das öffentliche Gateway
+`https://ai-provider-service.wolfinisoftware.de` umgestellt. Translation läuft im Browser/Webview
+über den PWA-`fetch`-Fallback in `src/lib/tauri.ts` (`translate_via_ai_provider`), der
+`{serviceUrl}/v1/chat/completions` (OpenAI-Format) mit `Authorization: Bearer` aufruft.
+
+**Symptom:** `TypeError: Load failed` in `translate`/`ui_translate`/`ai_provider_rust` bei
+Klick auf "Übersetzen". Ursache war **CORS**: das Gateway hatte die Mail-Client-Origins
+nicht in `ALLOWED_ORIGINS`.
+
+**Fix (deployed `localhost/ai-provider:e327628`-Linie, env-only, kein Code-Rebuild):**
+- `ALLOWED_ORIGINS` in `/etc/ai-provider/ai-provider.env` um `http://localhost:1420`
+  (Mail-Client Dev-Server) + `https://wolfinimail.wolfinisoftware.de` (Webmail) ergänzt,
+  danach `sudo docker compose up -d --force-recreate ai-provider`.
+- Verifiziert: Preflight + echter POST von `localhost:1420` mit gültigem `SERVICE_TOKEN`
+  + `ollama/qwen2.5:latest` → 200 + `Access-Control-Allow-Origin` + korrekte Übersetzung
+  ("Hallo Welt" → "Hello World").
+
+**Mail-Client-Repo (separat, lokal committed `9f54c3c`, NICHT gepusht/deployed):**
+- PWA-Fallback in `src/lib/tauri.ts` spiegelte das Rust-Command nicht (postete auf
+  `serviceUrl` ohne Pfad + non-OpenAI-Body). Begradigt auf `/v1/chat/completions`
+  + OpenAI-Body + Parse `choices[0].message.content`. Muss im Mail-Client neu gebaut/
+  restartet werden, damit der Fix wirkt.
+
+**Client-Konfig (Mail-Client):** `serviceUrl` = Basis-Gateway-URL
+(`https://ai-provider-service.wolfinisoftware.de`, kein `/chat`-Suffix),
+`serviceToken` = derselbe `SERVICE_TOKEN` wie im Gateway-Env, `model` = echtes Modell aus
+der gefetchten Liste (z.B. `ollama/qwen2.5:latest` — nacktes `qwen2.5` 404t auf Ollama).
+
 ### Admin-UI 500 `/admin/ui/users` — fehlende `user_profiles.email`-Spalte (2026-08-17, opencode)
 
 **Symptom:** `https://ai-admin.wolfinisoftware.de/admin/ui/users` lieferte **500**.
