@@ -30,6 +30,29 @@ def _safe_create_all(db_) -> None:
         logger.info('db.create_all race tolerated (table already exists): %s', e)
 
 
+def _ensure_user_profiles_email_column(db_) -> None:
+    """Self-heal schema drift: add the UserProfile.email column if missing.
+
+    The deployed model declares `email` (added in b031f9b) but an older,
+    persisted DB may lack the column, which makes any UserProfile query raise
+    OperationalError (no such column) and 500 the admin overview. SQLite can
+    only ADD columns, so create_all() will not fix this — patch it explicitly.
+    """
+    try:
+        inspector = db_.inspect(db_.engine)
+        if 'user_profiles' not in inspector.get_table_names():
+            return
+        existing = {c['name'] for c in inspector.get_columns('user_profiles')}
+        if 'email' not in existing:
+            with db_.engine.begin() as conn:
+                conn.execute(db_.text(
+                    'ALTER TABLE user_profiles ADD COLUMN email VARCHAR(255)'
+                ))
+            logger.info('schema self-heal: added user_profiles.email column')
+    except Exception as e:  # pragma: no cover - defensive, never fatal at boot
+        logger.warning('schema self-heal skipped for user_profiles.email: %s', e)
+
+
 def create_app() -> Flask:
     Config.validate()
     logging.basicConfig(
@@ -62,6 +85,7 @@ def create_app() -> Flask:
         from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile, UserAccessToken  # noqa: F401
         from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
         _safe_create_all(db)
+        _ensure_user_profiles_email_column(db)
         from storage.fts import ensure_fts
         ensure_fts()
 
