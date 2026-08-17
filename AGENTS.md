@@ -191,6 +191,35 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Admin-UI 500 `/admin/ui/users` — fehlende `user_profiles.email`-Spalte (2026-08-17, opencode)
+
+**Symptom:** `https://ai-admin.wolfinisoftware.de/admin/ui/users` lieferte **500**.
+Erster Verdacht (falsch): fehlendes `SECRET_KEY` — das ist im Env-File und im
+Container gesetzt.
+
+**Root cause:** Die persistente SQLite-DB (`/app/data/storage.db`) hatte auf
+`user_profiles` **keine `email`-Spalte**, obwohl das `UserProfile`-Model sie seit
+Commit `b031f9b` deklariert. `build_overview()` (von `/admin/ui/users` aufgerufen)
+macht `UserProfile.query.all()` → Select auf `user_profiles.email` →
+`sqlalchemy.exc.OperationalError: no such column: user_profiles.email` → 500.
+`create_all()` legt nur fehlende **Tabellen**, nie fehlende **Spalten** an — daher
+blieb der Drift unbemerkt.
+
+**Fix (`42311e7`):**
+- Einmalige DB-Migration auf oracle-vm: `ALTER TABLE user_profiles ADD COLUMN
+  email VARCHAR(255)` (DB-Backup vorher angelegt). Danach `build_overview()` → 13 User.
+- Idempotenter Startup-Self-Heal in `app.py`: `_ensure_user_profiles_email_column(db)`
+  prüft via Inspector, ob `email` fehlt, und fügt sie sonst selbständig hinzu —
+  verhindert das erneute Auftreten dieses Drifts beim nächsten Boot.
+
+**Verifiziert:** pytest `tests/test_admin_ui.py` + `tests/test_admin_api.py` → 34/34;
+live Container `localhost/ai-provider:e327628` (recreate via `build.sh e327628` +
+`sudo docker compose up -d --force-recreate ai-provider`): healthy; `/health` → 200;
+`/admin/ui/users` (authed Path) → 200 (21.130 Bytes). **running == committed (`e327628`).**
+
+**Lehre:** Bei Schema-Drift zwischen Model und alter persistenter DB reicht
+`create_all()` nicht — Spalten-Migrationen müssen explizit sein (oder via Self-Heal).
+
 ### Cline Modell-Sync: `update-cline-catalog` + täglicher `check-cline-catalog` (2026-08-16)
 
 **Scope:** Cline (api.cline.bot) hat keinen öffentlichen `/models`-Endpoint; die
