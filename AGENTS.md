@@ -1609,3 +1609,39 @@ decryption path changed).
 
 **Verification:** pytest 381/382 (1 pre-existing OpenRouter failure, unrelated).
 
+### Ollama `--load-mode` 500 auf Cold-Loads — llama-server-Symlink repariert (2026-08-18)
+
+**Symptom:** `ollama/qwen3.8` (und `qwen3.6`, sowie jedes Modell bei einem
+*Cold*-Load) lieferte über das Gateway `500 Internal Server Error:
+llama-server process has terminated: exit status 1: error: invalid argument:
+--load-mode`. `qwen 2.5` schien zu funktionieren; der Fehler war aber
+intermittierend (nur solange das Modell im Keepalive-Fenster warm war).
+
+**Root cause:** Der tägliche `~/.local/bin/ollama-llama-server-fix.sh` hatte
+Ollamas gebündelten `llama-server` per Symlink auf homebrew `llama.cpp` **Build
+9960** gelegt. Dieser Build kennt das `--load-mode`-Flag nicht; Ollama 0.32.14
+übergibt `--load-mode none` aber bei *jedem* Cold-Load → Binary lehnt ab → 500.
+Bestätigt in `~/Library/Logs/ollama.err`:
+`cmd=".../ollama/0.32.14/libexec/lib/ollama/llama-server ... --load-mode none ..."`
+→ `error: invalid argument: --load-mode`.
+
+**Fix (lokal auf dem Mac, kein Repo-Code):**
+1. Symlink von Ollamas `llama-server` auf
+   `/Applications/Ollama.app/Contents/Resources/llama-server` umgebogen
+   (unterstützt `--load-mode` + alle von 0.32.14 übergebenen Flags), danach
+   `ollama serve` (launchd `com.haraldweiss.ollama`) via
+   `launchctl kickstart -k` neu gestartet.
+2. `ollama-llama-server-fix.sh` gehärtet: es bevorzugt jetzt ein
+   `--load-mode`-fähiges Binary (neuester homebrew `llama.cpp`, falls fähig,
+   sonst der Ollama.app-Server) und linkt **nie** wieder ein Binary ohne
+   `--load-mode`-Support — verhindert, dass der nächste tägliche Cron-Lauf oder
+   ein Ollama-Update den Fehler still re-introduziert.
+
+**Verifiziert:** Cold-`curl /api/chat` an `localhost:11434` für `qwen3.8` **und**
+`qwen3.6` → **HTTP 200** (zuvor 500); **0** neue
+`invalid argument: --load-mode`-Zeilen in `~/Library/Logs/ollama.err`.
+Gateway routet via bestehendem Tunnel auf diesen Mac → `ollama/qwen3.8` läuft
+wieder korrekt durch `ai-provider-service` (kein Gateway-Code-Change nötig).
+Optional: `brew upgrade llama.cpp` (9960 → 10470) liefert einen fähigen
+separaten Build, den das Script dann automatisch bevorzugt.
+
