@@ -294,6 +294,25 @@ def _result_from_ollama_data(
     }
 
 
+def _ollama_name_matches(available: str, requested: str) -> bool:
+    """Tag-insensitive ollama model-name match for predictive routing.
+
+    `/api/tags` reports the full name incl. a digest tag (e.g. 'mistral-nemo-cc:latest'),
+    while callers often pass the bare name without the tag ('mistral-nemo-cc'). The
+    model map is keyed by available name; if we did an exact lookup a bare request would
+    never match and we would fall into blind round-robin across all pool endpoints —
+    burning time on hosts that 404 for that model. Match exactly, or when the requested
+    name is bare also accept any ':tag' variant hosted there; a tagged request otherwise
+    matches only itself (or the ':latest' form)."""
+    if not available or not requested:
+        return False
+    if available == requested:
+        return True
+    if ':' not in requested:
+        return available.startswith(requested + ':')
+    return available == requested + ':latest'
+
+
 def _resolve_endpoints(config: dict | None) -> List[str]:
     """Endpoint priority: config['api_endpoints'] (list) > config['api_endpoint']
     (single) > Config.OLLAMA_URLS (comma-separated env) > Config.OLLAMA_URL (single).
@@ -379,7 +398,12 @@ class OllamaClient(BaseClient):
         does not exist anywhere)."""
         if not model:
             return []
-        return [ep for ep in self.endpoints if model in OllamaClient._endpoint_models.get(ep, set())]
+        matched = []
+        for ep in self.endpoints:
+            available = OllamaClient._endpoint_models.get(ep, set())
+            if any(_ollama_name_matches(avail, model) for avail in available):
+                matched.append(ep)
+        return matched
 
     def _pick_order(self, model: Optional[str] = None) -> List[str]:
         """Return endpoints in the order we should try them this request.

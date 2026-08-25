@@ -406,3 +406,31 @@ def test_create_message_retries_without_native_tools_after_ollama_tool_grammar_e
         'input': {'cmd': 'git status'},
     }]
     assert result['stop_reason'] == 'tool_use'
+
+def test_endpoints_hosting_matches_bare_name_to_tagged_map(monkeypatch):
+    """A bare model name like `mistral-nemo-cc` must route to the endpoint whose
+    /api/tags map reports `mistral-nemo-cc:latest` (tag-insensitive predictive routing).
+    Regression for the AI-categorizer 120s-timeout incident (blind round-robin)."""
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoints': [
+        'http://mini:11434', 'http://studio:11434', 'http://oracle:11441', 'http://m3:11434',
+    ]})
+    OllamaClient._endpoint_models = {
+        'http://mini:11434': {'dev-coder:latest'},
+        'http://studio:11434': {'ornith:latest'},
+        'http://oracle:11441': {'llama3.2:3b'},
+        'http://m3:11434': {'mistral-nemo-cc:latest', 'qwen3.6:latest'},
+    }
+    try:
+        # bare request -> only the host that has the model (M3) is eligible
+        assert client._endpoints_hosting('mistral-nemo-cc') == ['http://m3:11434']
+        # tagged request matches directly too
+        assert client._endpoints_hosting('mistral-nemo-cc:latest') == ['http://m3:11434']
+        # other models still resolve to their own host
+        assert client._endpoints_hosting('dev-coder') == ['http://mini:11434']
+        assert client._endpoints_hosting('llama3.2:3b') == ['http://oracle:11441']
+        # unknown model -> we do not know where it lives
+        assert client._endpoints_hosting('does-not-exist') == []
+    finally:
+        OllamaClient._endpoint_models = {}
