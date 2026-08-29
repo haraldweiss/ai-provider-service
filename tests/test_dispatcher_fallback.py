@@ -323,3 +323,68 @@ def test_dispatch_fallback_429_no_queue_raises_error(app):
                 fallback_provider_override='openai',
             )
 
+
+
+def test_is_model_unavailable_detects_hints():
+    """_is_model_unavailable matches opencode's 'Model is unavailable' / 'not supported'."""
+    from dispatcher import _is_model_unavailable
+
+    assert _is_model_unavailable('Error from provider (Console): Upstream request failed: Model is unavailable.')
+    assert _is_model_unavailable('Model "x" is not supported')
+    assert not _is_model_unavailable('Bad request: missing required field')
+    assert not _is_model_unavailable('')
+
+
+def test_execute_raises_model_unavailable_for_unservable_model(app):
+    """opencode 400 'Model is unavailable' → ProviderModelUnavailableError (retryable)."""
+    from dispatcher import ProviderModelUnavailableError, _execute
+
+    class SdkStatusError(RuntimeError):
+        status_code = 400
+
+    client = Mock()
+    client.create_message.side_effect = SdkStatusError(
+        'Error from provider (Console): Upstream request failed: Model is unavailable.'
+    )
+    with patch('dispatcher._load_config', return_value={}), \
+         patch('dispatcher.get_client', return_value=client), \
+         patch('dispatcher.health_tracker.set_status') as set_status:
+        with pytest.raises(ProviderModelUnavailableError) as error:
+            _execute(
+                user_id='harald', provider_id='opencode', model='deepseek-v4-flash-free',
+                messages=[{'role': 'user', 'content': 'test'}], max_tokens=16,
+            )
+
+    assert error.value.status_code == 400
+    # Retryable error must NOT mark the provider unhealthy (it routes to fallback).
+    assert not any(
+        call.args[:2] == ('opencode', False) for call in set_status.call_args_list
+    )
+
+
+def test_dispatch_falls_back_on_model_unavailable_400(app):
+    """A model-unavailable 400 from the primary must trigger the configured fallback."""
+    from dispatcher import ProviderModelUnavailableError, dispatch
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=True), \
+         patch('dispatcher._execute') as mock_exec:
+        mock_exec.side_effect = [
+            ProviderModelUnavailableError('opencode', 400),
+            {'content': [{'text': 'ok'}], 'usage': {}},
+        ]
+
+        result = dispatch(
+            user_id='harald', provider_id='opencode', model='deepseek-v4-flash-free',
+            messages=[{'role': 'user', 'content': 'hi'}],
+            fallback_provider_override='openrouter',
+            fallback_model_override='openrouter/cohere/north-mini-code:free',
+        )
+
+        assert mock_exec.call_count == 2
+        fallback_call = mock_exec.call_args_list[1]
+        assert fallback_call.args[1] == 'openrouter'
+        assert fallback_call.args[2] == 'openrouter/cohere/north-mini-code:free'
+        assert result['fallback_used'] is True
+        assert result['via'] == 'openrouter'
+        assert result['model'] == 'openrouter/cohere/north-mini-code:free'
+        assert result.get('primary_model') == 'deepseek-v4-flash-free'

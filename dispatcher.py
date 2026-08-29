@@ -32,9 +32,34 @@ class ProviderRequestError(RuntimeError):
         super().__init__(f'Provider {provider_id} rejected the request (HTTP {status_code})')
 
 
+class ProviderModelUnavailableError(ProviderRequestError):
+    """Upstream model not servable (e.g. opencode 'Model is unavailable').
+
+    Treated as retryable by dispatch(): a different model on the configured
+    fallback provider usually works, so routing to the fallback is worthwhile.
+    """
+
+
+# Substrings marking an upstream "this model cannot be served" 4xx. A request
+# for such a model fails identically on the same provider, but a *different*
+# model on the configured fallback provider typically works -- so it is worth
+# retrying via the fallback (unlike a generic 400 bad-request).
+_MODEL_UNAVAILABLE_HINTS = ('model is unavailable', 'model unavailable')
+
+
+def _is_model_unavailable(message: str) -> bool:
+    """True when the upstream error indicates the requested model is gone/unservable."""
+    low = (message or '').lower()
+    if any(hint in low for hint in _MODEL_UNAVAILABLE_HINTS):
+        return True
+    return 'model' in low and 'not supported' in low
+
+
 # 4xx status codes that should trigger fallback (transient/balance-related).
 # Non-retryable 4xx (e.g. 400 bad request, 422 unprocessable) describe the
 # request itself and would likely fail the same way on any provider.
+# Exception: a *model-unavailable* 400 (see _is_model_unavailable) is retryable
+# because the configured fallback serves a different model/provider.
 _RETRYABLE_4XX = frozenset({402, 429})
 
 
@@ -261,6 +286,10 @@ def _execute(
                 user_id, provider_id, model, None, None,
                 'error', error_message=f'HTTP {status_code}', origin_app=origin_app,
             )
+            # A model-unavailable 400 means this specific model cannot be served
+            # upstream; route to the configured fallback instead of failing.
+            if status_code == 400 and _is_model_unavailable(str(e)):
+                raise ProviderModelUnavailableError(provider_id, status_code) from e
             raise ProviderRequestError(provider_id, status_code) from e
         error_type = type(e).__name__
         health_tracker.set_status(provider_id, False, reason=error_type, persistent=True)
@@ -323,10 +352,10 @@ def dispatch(
                 'fallback_used': False,
             }
         except ProviderRequestError as e:
-            if e.status_code in _RETRYABLE_4XX:
+            if e.status_code in _RETRYABLE_4XX or isinstance(e, ProviderModelUnavailableError):
                 logger.info(
-                    'Primary %s returned HTTP %d for user=%s — trying fallback',
-                    provider_id, e.status_code, user_id,
+                    'Primary %s returned %s for user=%s — trying fallback',
+                    provider_id, type(e).__name__, user_id,
                 )
                 # weiter mit Fallback / Queue
             else:
