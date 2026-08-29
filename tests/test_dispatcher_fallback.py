@@ -383,8 +383,42 @@ def test_dispatch_falls_back_on_model_unavailable_400(app):
         assert mock_exec.call_count == 2
         fallback_call = mock_exec.call_args_list[1]
         assert fallback_call.args[1] == 'openrouter'
-        assert fallback_call.args[2] == 'openrouter/cohere/north-mini-code:free'
+        # The openrouter/ prefix is stripped before the downstream client
+        # (consistent with how the primary model is stripped by _parse_model).
+        assert fallback_call.args[2] == 'cohere/north-mini-code:free'
         assert result['fallback_used'] is True
         assert result['via'] == 'openrouter'
-        assert result['model'] == 'openrouter/cohere/north-mini-code:free'
+        assert result['model'] == 'cohere/north-mini-code:free'
         assert result.get('primary_model') == 'deepseek-v4-flash-free'
+
+
+def test_dispatch_strips_provider_prefix_from_db_fallback_model(app):
+    """A DB-configured fallback_model carrying a provider prefix (e.g.
+    'ollama/qwen3-coder:latest') must be stripped to the bare model name
+    ('qwen3-coder:latest') before it reaches the downstream client, exactly
+    like the primary model is stripped by _parse_model() in the API layer.
+    Without this, ollama receives 'ollama/qwen3-coder:latest' and 404s."""
+    from dispatcher import dispatch
+    from storage.models import ProviderConfig
+
+    pc = ProviderConfig(
+        user_id='user-pfx', provider_id='opencode',
+        fallback_provider='ollama',
+        fallback_model='ollama/qwen3-coder:latest',
+    )
+    pc.set_config({})
+    db.session.add(pc)
+    db.session.commit()
+
+    with patch('dispatcher.health_tracker.is_healthy', return_value=False), \
+         patch('dispatcher._execute') as mock_exec:
+        mock_exec.return_value = {'content': [], 'usage': {}}
+
+        dispatch(
+            user_id='user-pfx', provider_id='opencode', model='deepseek-v4-flash-free',
+            messages=[{'role': 'user', 'content': 'hi'}],
+        )
+
+        # primary skipped (unhealthy) → fallback to ollama with stripped model
+        assert mock_exec.call_args.args[1] == 'ollama'
+        assert mock_exec.call_args.args[2] == 'qwen3-coder:latest'

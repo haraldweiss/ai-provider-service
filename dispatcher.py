@@ -366,13 +366,21 @@ def dispatch(
 
     # 2) Fallback versuchen
     if fallback:
+        # The configured/override fallback_model may carry a provider prefix
+        # (e.g. "ollama/qwen3-coder:latest") like a top-level request model.
+        # The API layer strips that prefix from the primary model via
+        # _parse_model(); the fallback model is passed verbatim, so strip it
+        # here to hand the downstream client the bare model name.
+        clean_fallback_model = fallback_model
+        if isinstance(fallback_model, str) and fallback and fallback_model.startswith(fallback + '/'):
+            clean_fallback_model = fallback_model[len(fallback) + 1:]
         try:
             logger.info('Trying fallback %s (model=%s) for user=%s',
-                        fallback, fallback_model, user_id)
-            result = _execute(user_id, fallback, fallback_model, messages, max_tokens,
+                        fallback, clean_fallback_model, user_id)
+            result = _execute(user_id, fallback, clean_fallback_model, messages, max_tokens,
                               fallback_cfg, origin_app=origin_app, tools=tools)
             return {
-                'result': result, 'via': fallback, 'model': fallback_model,
+                'result': result, 'via': fallback, 'model': clean_fallback_model,
                 'fallback_used': True, 'primary_provider': provider_id,
                 'primary_model': model,
             }
