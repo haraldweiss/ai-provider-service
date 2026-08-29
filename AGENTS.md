@@ -115,15 +115,33 @@ This rule applies to **every AI agent** working in this repo. When a skill exist
 
 ---
 
-### 3.11 HTTP 429/402 trigger fallback, not hard errors
+### 3.11 HTTP 429/402 and model-unavailable 400 trigger fallback, not hard errors
 
 - `dispatch()` treats `ProviderRequestError` with status code 402 (Payment Required)
   or 429 (Too Many Requests) as **retryable** — the request falls through to the
   configured fallback provider instead of being returned as an error to the client.
-- All other 4xx codes (400, 401, 403, 422, etc.) continue to propagate as hard
-  errors without fallback — they describe a malformed or unauthorized request that
-  would fail identically on any provider.
-- `_RETRYABLE_4XX = frozenset({402, 429})` in `dispatcher.py`.
+- A `400` whose upstream message indicates the **specific model cannot be served**
+  (e.g. opencode's `Model is unavailable`, or `<model> not supported`) is ALSO
+  retryable. `dispatcher._execute()` raises `ProviderModelUnavailableError`
+  (a `ProviderRequestError` subclass) for that case, and `dispatch()` routes it to
+  the fallback the same way as 402/429. This matters because upstream free models
+  get dropped (deepseek-v4-flash-free) and then fail every request with a hard 400
+  instead of falling back.
+- All OTHER 4xx codes (400 without a model-unavailable hint, 401, 403, 422, etc.)
+  continue to propagate as hard errors without fallback — they describe a malformed
+  or unauthorized request that would fail identically on any provider.
+- `_RETRYABLE_4XX = frozenset({402, 429})` in `dispatcher.py`. The model-unavailable
+  400 is caught separately via `isinstance(e, ProviderModelUnavailableError)` in the
+  primary and fallback `except` blocks. `_is_model_unavailable(msg)` detects the
+  hints; matching is provider-agnostic (message substring), so it works for any
+  provider that returns a "model unavailable / not supported" 400.
+- **Prefix gotcha (fallback_model):** a configured/override `fallback_model` may
+  carry a provider prefix (e.g. `ollama/qwen3-coder:latest`) like a top-level
+  request model. The API layer strips that prefix from the *primary* model via
+  `_parse_model()` before `dispatch()`; the *fallback* model is passed verbatim, so
+  `dispatch()` must strip a leading `<fallback_provider>/` prefix itself — otherwise
+  the ollama/OpenAI client receives `ollama/qwen3-coder:latest` and 404s with
+  `model not found`. (Fixed 2026-08-29; see §7.)
 - The opencode client has an additional intra-provider free-model failover that
   runs before the dispatch-level fallback: on `Insufficient Balance`, it tries
   `{model}-free` first, then all discovered free models, before raising an error.
@@ -1645,3 +1663,50 @@ wieder korrekt durch `ai-provider-service` (kein Gateway-Code-Change nötig).
 Optional: `brew upgrade llama.cpp` (9960 → 10470) liefert einen fähigen
 separaten Build, den das Script dann automatisch bevorzugt.
 
+### 2026-08-29 — opencode model-unavailable 400 now falls back (deepseek-v4-flash-free)
+
+**Trigger:** User reported `opencode/deepseek-v4-flash-free` was unavailable
+("Model is unavailable"). opencode.ai returns a hard **HTTP 400** for dropped free
+models; previously only 402/429 were treated as retryable, so a permanently-broken
+upstream model failed the request instead of falling back.
+
+**Root cause:** `_RETRYABLE_4XX = frozenset({402, 429})` excluded 400. The DB
+fallback (`ProviderConfig.fallback_provider`/`fallback_model`, keyed by
+`(user_id, provider_id)`) exists, but it was only consulted for 402/429.
+
+**Fix (`dispatcher.py`):**
+1. New `ProviderModelUnavailableError(ProviderRequestError)` raised by `_execute()`
+   when a 400's message contains a model-unavailable hint (`model is unavailable`,
+   `model unavailable`, or `model ... not supported`). Provider-agnostic (substring
+   match), so it covers any provider returning that 400.
+2. `dispatch()`'s primary and fallback `except ProviderRequestError` blocks now also
+   catch `isinstance(e, ProviderModelUnavailableError)` and continue to the fallback.
+3. **Prefix strip fix:** the fallback block now strips a leading
+   `<fallback_provider>/` prefix from `fallback_model` before `_execute()` — the
+   API layer strips that prefix from the *primary* model via `_parse_model()`, but
+   the *fallback* model was passed verbatim, so ollama/OpenAI clients received
+   e.g. `ollama/qwen3-coder:latest` and 404'd with `model not found`.
+
+**DB config (oracle-vm container `/app/data/storage.db`):** added
+`ProviderConfig(user_id='harald', provider_id='opencode',
+fallback_provider='ollama', fallback_model='ollama/qwen3-coder:latest')`. The
+`config_encrypted` is `encrypt(json.dumps({"api_key": OPENCODE_API_KEY,
+"_free_only": True}))` so `harald`'s opencode access is unchanged. `qwen3-coder`
+is on all 3 Macs (WG0 pool), so the fallback survives a single Mac outage.
+
+**Tests:** `test_dispatcher_fallback.py` gained `test_is_model_unavailable_detects_hints`,
+`test_execute_raises_model_unavailable_for_unservable_model`,
+`test_dispatch_falls_back_on_model_unavailable_400`, and
+`test_dispatch_strips_provider_prefix_from_db_fallback_model` (18 pass).
+
+**Verified live (oracle-vm):** `POST /v1/chat/completions` with
+`model=opencode/deepseek-v4-flash-free` → opencode 400 "Model is unavailable" →
+`Primary opencode returned ProviderModelUnavailableError … trying fallback` →
+`Trying fallback ollama (model=qwen3-coder:latest)` → HTTP 200, content `OK`.
+
+**Commits:** `e44d76e` (route model-unavailable 400 to fallback) and `46b3e1b`
+(strip provider prefix from fallback_model), both on `main`, pushed.
+
+**Open follow-up:** if opencode returns an *empty* 200 (rate-limit recovery flake,
+no error), the fallback cannot engage because 200 is not an error — the user gets
+an empty response. That is an opencode.ai quality issue, not a dispatcher bug.
