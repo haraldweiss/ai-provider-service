@@ -151,6 +151,45 @@ This rule applies to **every AI agent** working in this repo. When a skill exist
 
 ---
 
+### 3.12 Provider app attribution headers are mandatory
+
+All provider clients must send app identification headers where the provider supports them. This enables usage tracking, rankings, and proper attribution on the provider side.
+
+**Required headers by provider:**
+
+| Provider | Headers | Status |
+|----------|---------|--------|
+| **OpenCode** | `x-opencode-session: ai-provider-service` | **Required** (ab 09/06, sonst Errors) |
+| **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service` | Optional (but recommended) |
+| **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (but recommended) |
+| **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (for request tracking) |
+| **Anthropic/Claude** | None (uses system prompt analysis for detection) | N/A |
+| **Z.AI** | None documented | N/A |
+| **Ollama/oMLX** | N/A (local providers) | N/A |
+
+**Implementation requirements:**
+
+1. **OpenCode** (`providers/opencode.py`): Must include `x-opencode-session` in all requests. Starting 2026-09-06, requests without this header will error.
+2. **Cline** (`providers/cline.py`): Should include `HTTP-Referer` and `X-Title` for app attribution in Cline's rankings.
+3. **OpenRouter** (`providers/openrouter.py`): Should include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` for app attribution.
+4. **OpenAI** (`providers/openai_client.py`): May include `X-Client-Request-Id` for request tracking (optional).
+
+**Adding a new provider:**
+
+When integrating a new provider, check their documentation for app attribution or identification headers. If they support it:
+- Add the headers to the provider client's HTTP requests
+- Use consistent values: `https://ai-provider-service.wolfinisoftware.de` for URLs, `ai-provider-service` for names
+- Document the headers in this section
+
+**Why this matters:**
+
+- **OpenCode**: Will reject requests without `x-opencode-session` starting 09/06
+- **OpenRouter/Cline**: App appears in their rankings and leaderboards, driving awareness
+- **Debugging**: Providers can identify and troubleshoot our traffic more easily
+- **Compliance**: Some providers require identification for certain access tiers
+
+---
+
 ## 4. Verification standards
 
 Record in commit body. Examples:

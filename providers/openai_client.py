@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+import uuid
 from providers.base import BaseClient
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,11 @@ class OpenAIClient(BaseClient):
             raise ValueError("OpenAI: api_key erforderlich")
         from openai import OpenAI
         org = config.get('organization_id') or None
-        self.client = OpenAI(api_key=api_key, organization=org)
+        self.client = OpenAI(
+            api_key=api_key,
+            organization=org,
+            default_headers={'X-Client-Request-Id': str(uuid.uuid4())}
+        )
 
     def get_models(self) -> list[str]:
         try:
@@ -29,6 +34,8 @@ class OpenAIClient(BaseClient):
         kwargs = dict(model=model, messages=messages, max_tokens=max_tokens)
         if tools:
             kwargs['tools'] = tools
+        # Add unique request ID for tracking
+        kwargs['extra_headers'] = {'X-Client-Request-Id': str(uuid.uuid4())}
         r = self.client.chat.completions.create(**kwargs)
         return {
             'content': [{'text': r.choices[0].message.content}],
