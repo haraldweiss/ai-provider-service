@@ -81,10 +81,20 @@ def _make_openai_client(api_key: str | None, base_url: str) -> OpenAI:
     OpenRouter allows anonymous access for free models, but the OpenAI SDK
     requires an api_key to be set. Use a placeholder when none is configured
     so the client can be instantiated for anonymous/free-model use.
+    
+    Includes app attribution headers for OpenRouter rankings.
     """
     if not api_key:
         api_key = 'sk-anonymous'
-    return OpenAI(api_key=api_key, base_url=base_url)
+    return OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        default_headers={
+            'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
+            'X-OpenRouter-Title': 'ai-provider-service',
+            'X-OpenRouter-Categories': 'ai-gateway',
+        }
+    )
 
 
 class OpenRouterClient(BaseClient):
