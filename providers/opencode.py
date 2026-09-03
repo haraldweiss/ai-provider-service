@@ -129,7 +129,11 @@ class OpencodeClient(BaseClient):
         if not api_key:
             raise ValueError("Opencode: api_key oder OPENCODE_API_KEY erforderlich")
         base_url = config.get('api_endpoint') or Config.OPENCODE_BASE_URL
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client = OpenAI(
+            api_key=api_key, 
+            base_url=base_url,
+            default_headers={'x-opencode-session': 'ai-provider-service'}
+        )
         self._free_models: list[str] | None = None
 
     def get_models(self) -> list[str]:
@@ -159,7 +163,11 @@ class OpencodeClient(BaseClient):
         if not api_key:
             logger.warning('OPENCODE_API_KEY not set, cannot refresh free models')
             return []
-        client = OpenAI(api_key=api_key, base_url=Config.OPENCODE_BASE_URL)
+        client = OpenAI(
+            api_key=api_key, 
+            base_url=Config.OPENCODE_BASE_URL,
+            default_headers={'x-opencode-session': 'ai-provider-service'}
+        )
         return refresh_free_models(client)
 
     def _check_free_only(self, model: str) -> None:
