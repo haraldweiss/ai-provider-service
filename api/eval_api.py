@@ -70,19 +70,71 @@ def list_runs():
 @eval_bp.route('/eval/run', methods=['POST'])
 @require_admin
 def start_run():
+    import threading
     data = request.get_json(force=True) if request.data else {}
     categories = data.get('categories')
     model_ids = data.get('model_ids')
     max_models = data.get('max_models')
 
     try:
-        run = run_evaluation(
-            categories=categories,
-            model_ids=model_ids,
-            max_models=max_models,
+        from storage.models import EvalTask, EvalRun
+        from eval.runner import discover_available_models
+        from database import db
+        import uuid
+        
+        query = EvalTask.query.filter_by(is_active=True)
+        if categories:
+            query = query.filter(EvalTask.category.in_(categories))
+        tasks = query.all()
+        if not tasks:
+            return jsonify({'error': 'No active eval tasks found'}), 400
+
+        available = discover_available_models()
+        if model_ids:
+            available = [m for m in available if m['model_id'] in model_ids]
+        if max_models:
+            available = available[:max_models]
+
+        if not available:
+            return jsonify({'error': 'No available models found for evaluation'}), 400
+
+        run = EvalRun(
+            id=str(uuid.uuid4()),
+            status='pending',
+            total_models=len(available),
+            total_tasks=len(tasks),
         )
-        return jsonify({'run': run.to_dict()}), 202
-    except ValueError as e:
+        db.session.add(run)
+        db.session.commit()
+
+        def run_async():
+            from app import create_app
+            app = create_app()
+            with app.app_context():
+                from eval.runner import _evaluate_model
+                run_obj = EvalRun.query.get(run.id)
+                run_obj.status = 'running'
+                db.session.commit()
+                
+                try:
+                    for model_info in available:
+                        _evaluate_model(run_obj, model_info, tasks, Config.ADMIN_USER_ID)
+                        run_obj.completed_models += 1
+                        db.session.commit()
+                    run_obj.status = 'completed'
+                except Exception as e:
+                    run_obj.status = 'failed'
+                    run_obj.error_message = str(e)[:1000]
+                
+                from datetime import datetime, timezone
+                run_obj.finished_at = datetime.now(timezone.utc)
+                db.session.commit()
+
+        thread = threading.Thread(target=run_async, daemon=True)
+        thread.start()
+
+        return jsonify({'run': run.to_dict(), 'message': 'Evaluation started in background'}), 202
+    except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 
