@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from flask import Blueprint, jsonify, request
 from api.auth import require_admin, require_token
+from config import Config
 from database import db
 from storage.models import EvalTask, EvalRun, EvalResult
 from eval.runner import run_evaluation, get_leaderboard, get_recommendations
