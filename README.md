@@ -9,6 +9,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 ## Features
 
 - **9 Provider** out of the box: Claude, Ollama, oMLX, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM), Cline (api.cline.bot)
+- **Provider App Attribution Headers**: Alle Provider-Clients senden App-Identifikations-Header für Rankings, Tracking und Compliance (siehe Abschnitt "Provider App Attribution Headers" unten)
 - **Region-Lock Filter**: China-only z.ai Endpoint (`zai/glm-*`) wird per Default von `/v1/models` ausgeschlossen und blockt direkte Dispatch-Calls. GLM-Modelle via globale Gateways (opencode, cline, ollama) bleiben verfügbar. Konfigurierbar via `EXCLUDE_REGION_LOCKED_MODELS` Env-Var.
 - **Server-Key-Allowlist** für zentrale Provider-Keys (Claude, z.ai): der zentrale Key ist nur für gelistete User nutzbar; z.ai ist per Default auf `ADMIN_USER_ID` beschränkt — alle anderen brauchen einen eigenen Key (auch für die kostenlosen GLM-Flash-Modelle)
 - **Per-User-Konfiguration** mit Fernet-verschlüsselten API-Keys
@@ -24,6 +25,92 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 - **Grant-Request Workflow**: User können Provider-Zugriff selbst beantragen, Admins reviewen via `/admin/grant-requests`
 - **CORS-Handling** zentral (für Browser-direkt-Aufrufe)
 - **Bearer-Token-Auth** für Konsumenten-Apps
+
+## Provider App Attribution Headers
+
+Alle Provider-Clients senden App-Identifikations-Header an die Provider-APIs. Dies ermöglicht:
+- **Rankings & Visibility**: Unsere App erscheint in Provider-Leaderboards (OpenRouter, Cline)
+- **Usage Tracking**: Provider können unseren Traffic besser identifizieren und unterstützen
+- **Compliance**: Manche Provider erfordern Identifikation für bestimmte Access-Tiers
+- **Debugging**: Erleichtert Troubleshooting mit Provider-Support
+
+### Implementierte Headers nach Provider
+
+| Provider | Header | Status |
+|----------|--------|--------|
+| **OpenCode** | `x-opencode-session: ai-provider-service` | **Pflicht** (ab 09/06, sonst Errors) |
+| **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service` | Optional (empfohlen) |
+| **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (empfohlen) |
+| **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (Request-Tracking) |
+| **Anthropic/Claude** | Keine (Erkennung via System-Prompt-Analyse) | N/A |
+| **Z.AI** | Keine dokumentiert | N/A |
+| **Ollama/oMLX** | N/A (lokale Provider) | N/A |
+
+### OpenCode (Pflicht ab 2026-09-06)
+
+OpenCode erfordert den `x-opencode-session` Header in allen Requests. Requests ohne diesen Header werden ab dem 09.06.2026 abgelehnt.
+
+**Implementierung** (`providers/opencode.py`):
+```python
+self.client = OpenAI(
+    api_key=api_key,
+    base_url=base_url,
+    default_headers={'x-opencode-session': 'ai-provider-service'}
+)
+```
+
+### Cline (Optional)
+
+Cline akzeptiert `HTTP-Referer` und `X-Title` für App-Attribution in Rankings.
+
+**Implementierung** (`providers/cline.py`):
+```python
+headers = {
+    'Authorization': f'Bearer {api_key}',
+    'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
+    'X-Title': 'ai-provider-service'
+}
+```
+
+### OpenRouter (Optional)
+
+OpenRouter bietet umfangreiche App-Attribution für Rankings und Analytics.
+
+**Implementierung** (`providers/openrouter.py`):
+```python
+self.client = OpenAI(
+    api_key=api_key,
+    base_url=base_url,
+    default_headers={
+        'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
+        'X-OpenRouter-Title': 'ai-provider-service',
+        'X-OpenRouter-Categories': 'ai-gateway'
+    }
+)
+```
+
+**App-Seite**: `https://openrouter.ai/apps?url=ai-provider-service.wolfinisoftware.de`
+
+### OpenAI (Optional)
+
+OpenAI unterstützt `X-Client-Request-Id` für Request-Tracking und Debugging.
+
+**Implementierung** (`providers/openai_client.py`):
+```python
+import uuid
+headers = {
+    'Authorization': f'Bearer {api_key}',
+    'X-Client-Request-Id': str(uuid.uuid4())
+}
+```
+
+### Neue Provider hinzufügen
+
+Wenn du einen neuen Provider integrierst:
+1. Prüfe die Provider-Dokumentation auf App-Attribution-Header
+2. Falls unterstützt, füge die Header im Provider-Client hinzu
+3. Verwende konsistente Werte: `https://ai-provider-service.wolfinisoftware.de` für URLs, `ai-provider-service` für Namen
+4. Dokumentiere die Header in diesem README und in `AGENTS.md` §3.12
 
 ## Architektur
 
