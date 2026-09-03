@@ -804,3 +804,123 @@ def refresh_free_models_command():
 
     if not refreshed:
         raise click.Abort()
+
+
+@click.command('eval-seed-tasks')
+def eval_seed_tasks_command():
+    """Seed default evaluation tasks across categories."""
+    from storage.models import EvalTask
+
+    defaults = [
+        {
+            'category': 'coding',
+            'name': 'python-function',
+            'prompt': 'Write a Python function called `is_palindrome` that takes a string and returns True if it is a palindrome (ignoring case and spaces). Include a docstring.',
+            'grading_criteria': 'Correct logic, handles edge cases, includes docstring',
+            'expected_keywords': 'def,is_palindrome,return',
+            'min_length': 50,
+        },
+        {
+            'category': 'coding',
+            'name': 'bug-fix',
+            'prompt': 'Fix the bug in this Python code:\n\n```python\ndef find_max(lst):\n    max_val = 0\n    for item in lst:\n        if item > max_val:\n            max_val = item\n    return max_val\n```\n\nThe function should handle negative numbers correctly.',
+            'grading_criteria': 'Identifies the bug (initializing max_val to 0), provides correct fix',
+            'expected_keywords': 'max_val,None,negative',
+            'min_length': 30,
+        },
+        {
+            'category': 'translation',
+            'name': 'de-to-en',
+            'prompt': 'Translate the following German text to English:\n\n"Die künstliche Intelligenz hat in den letzten Jahren erhebliche Fortschritte gemacht, insbesondere im Bereich der natürlichen Sprachverarbeitung."',
+            'grading_criteria': 'Accurate translation preserving meaning and tone',
+            'expected_keywords': 'artificial,intelligence,natural,language,processing',
+            'min_length': 20,
+        },
+        {
+            'category': 'summarization',
+            'name': 'short-summary',
+            'prompt': 'Summarize the following in 2-3 sentences:\n\n"Python is a high-level, general-purpose programming language. Its design philosophy emphasizes code readability with the use of significant indentation. Python was conceived in the late 1980s by Guido van Rossum at Centrum Wiskunde & Informatica (CWI) in the Netherlands as a successor to the ABC programming language, which was inspired by SETL. It was released in 1991."',
+            'grading_criteria': 'Captures key facts: what Python is, who created it, when, and its design goals',
+            'expected_keywords': 'Python,programming,Guido,readability',
+            'min_length': 30,
+            'max_length': 500,
+        },
+        {
+            'category': 'reasoning',
+            'name': 'logic-puzzle',
+            'prompt': 'A farmer has a fox, a chicken, and a bag of grain. He needs to cross a river in a boat that can only carry him and one item at a time. If left alone, the fox will eat the chicken, and the chicken will eat the grain. How does the farmer get all three across safely? Explain step by step.',
+            'grading_criteria': 'Correct sequence: chicken first, return alone, take fox/grain, bring chicken back, take the remaining item, return for chicken',
+            'expected_keywords': 'chicken,first,fox,grain,back,across',
+            'min_length': 50,
+        },
+        {
+            'category': 'instruction-following',
+            'name': 'json-output',
+            'prompt': 'Return a JSON object with exactly these keys: "name" (your model name), "capabilities" (array of 3 things you can do), "version" (a version string). Return ONLY valid JSON, no markdown fences.',
+            'grading_criteria': 'Valid JSON with all required keys, no markdown formatting',
+            'expected_keywords': 'name,capabilities,version',
+            'min_length': 20,
+        },
+        {
+            'category': 'creative',
+            'name': 'haiku',
+            'prompt': 'Write a haiku about programming. A haiku has exactly 3 lines with 5-7-5 syllables.',
+            'grading_criteria': 'Three lines, programming theme, approximately 5-7-5 syllable structure',
+            'min_length': 15,
+            'max_length': 200,
+        },
+    ]
+
+    created = 0
+    for task_data in defaults:
+        existing = EvalTask.query.filter_by(
+            category=task_data['category'],
+            name=task_data['name'],
+        ).first()
+        if existing:
+            continue
+        task = EvalTask(**task_data)
+        db.session.add(task)
+        created += 1
+
+    db.session.commit()
+    click.echo(f'Seeded {created} eval tasks ({len(defaults)} total defaults)')
+
+
+@click.command('eval-run')
+@click.option('--category', '-c', multiple=True, help='Filter tasks by category')
+@click.option('--model', '-m', 'models', multiple=True, help='Filter models (provider/model)')
+@click.option('--max-models', type=int, default=None, help='Cap number of models')
+def eval_run_command(category, models, max_models):
+    """Run model evaluation against available models."""
+    from eval.runner import run_evaluation, get_leaderboard
+
+    categories = list(category) if category else None
+    model_ids = list(models) if models else None
+
+    click.echo('Starting evaluation run...')
+    try:
+        run = run_evaluation(
+            categories=categories,
+            model_ids=model_ids,
+            max_models=max_models,
+        )
+    except ValueError as e:
+        click.echo(f'Error: {e}', err=True)
+        raise click.Abort()
+
+    click.echo(f'Run {run.id}: {run.status}')
+    click.echo(f'  Models: {run.total_models}, Tasks: {run.total_tasks}')
+
+    if run.status == 'completed':
+        click.echo('\nLeaderboard:')
+        board = get_leaderboard(run_id=run.id)
+        for i, entry in enumerate(board[:20], 1):
+            click.echo(
+                f'  {i:2d}. {entry["model_id"]:50s} '
+                f'score={entry["avg_score"]:.2f} '
+                f'grade={entry["grade"]:10s} '
+                f'latency={entry.get("avg_latency_ms", "?")}ms'
+            )
+    elif run.error_message:
+        click.echo(f'Error: {run.error_message}', err=True)

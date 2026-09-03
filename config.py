@@ -107,6 +107,10 @@ class Config:
     # from dispatch. Default excludes the z.ai (Zhipu) China-hosted endpoint
     # models; GLM models served via global gateways (opencode/openrouter)
     # remain available. Set EXCLUDE_REGION_LOCKED_MODELS= to disable.
+    EVAL_JUDGE_PROVIDER = os.getenv('EVAL_JUDGE_PROVIDER', 'opencode')
+    EVAL_JUDGE_MODEL = os.getenv('EVAL_JUDGE_MODEL', 'big-pickle')
+    EVAL_REQUEST_DELAY = os.getenv('EVAL_REQUEST_DELAY', '2.5')  # seconds between requests (rate limit protection)
+
     EXCLUDE_REGION_LOCKED_MODELS = [
         m.strip() for m in os.getenv('EXCLUDE_REGION_LOCKED_MODELS',
             'zai/glm-5,zai/glm-4.7,zai/glm-4.6,zai/glm-4.5,zai/glm-4-32b,'

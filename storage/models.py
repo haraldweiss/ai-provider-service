@@ -280,6 +280,116 @@ class AdminNotification(db.Model):
 
 
 
+class EvalTask(db.Model):
+    """Evaluation task definition — a prompt + grading criteria for a specific category."""
+    __tablename__ = 'eval_tasks'
+
+    id = db.Column(db.Integer, primary_key=True)
+    category = db.Column(db.String(64), nullable=False, index=True)
+    name = db.Column(db.String(128), nullable=False)
+    prompt = db.Column(db.Text, nullable=False)
+    grading_criteria = db.Column(db.Text, nullable=True)
+    expected_keywords = db.Column(db.Text, nullable=True)
+    min_length = db.Column(db.Integer, nullable=True)
+    max_length = db.Column(db.Integer, nullable=True)
+    weight = db.Column(db.Float, default=1.0, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'category': self.category,
+            'name': self.name,
+            'prompt': self.prompt,
+            'grading_criteria': self.grading_criteria,
+            'expected_keywords': self.expected_keywords,
+            'min_length': self.min_length,
+            'max_length': self.max_length,
+            'weight': self.weight,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class EvalRun(db.Model):
+    """A single evaluation run — evaluates all active tasks against available models."""
+    __tablename__ = 'eval_runs'
+
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    status = db.Column(db.String(16), default='pending', nullable=False, index=True)
+    total_models = db.Column(db.Integer, default=0, nullable=False)
+    total_tasks = db.Column(db.Integer, default=0, nullable=False)
+    completed_models = db.Column(db.Integer, default=0, nullable=False)
+    completed_tasks = db.Column(db.Integer, default=0, nullable=False)
+    started_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    finished_at = db.Column(db.DateTime, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'status': self.status,
+            'total_models': self.total_models,
+            'total_tasks': self.total_tasks,
+            'completed_models': self.completed_models,
+            'completed_tasks': self.completed_tasks,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'finished_at': self.finished_at.isoformat() if self.finished_at else None,
+            'error_message': self.error_message,
+        }
+
+
+class EvalResult(db.Model):
+    """Per-model, per-task evaluation result with scores."""
+    __tablename__ = 'eval_results'
+
+    id = db.Column(db.Integer, primary_key=True)
+    run_id = db.Column(db.String(36), db.ForeignKey('eval_runs.id'), nullable=False, index=True)
+    model_id = db.Column(db.String(128), nullable=False, index=True)
+    provider_id = db.Column(db.String(32), nullable=False)
+    model_name = db.Column(db.String(128), nullable=False)
+    task_id = db.Column(db.Integer, db.ForeignKey('eval_tasks.id'), nullable=False)
+    category = db.Column(db.String(64), nullable=False, index=True)
+    response_text = db.Column(db.Text, nullable=True)
+    accuracy_score = db.Column(db.Float, nullable=True)
+    quality_score = db.Column(db.Float, nullable=True)
+    latency_ms = db.Column(db.Integer, nullable=True)
+    input_tokens = db.Column(db.Integer, nullable=True)
+    output_tokens = db.Column(db.Integer, nullable=True)
+    cost_usd = db.Column(db.Numeric(10, 6), nullable=True)
+    composite_score = db.Column(db.Float, nullable=True)
+    grade = db.Column(db.String(16), nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    judged_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        db.UniqueConstraint('run_id', 'model_id', 'task_id', name='uq_run_model_task'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'run_id': self.run_id,
+            'model_id': self.model_id,
+            'provider_id': self.provider_id,
+            'model_name': self.model_name,
+            'task_id': self.task_id,
+            'category': self.category,
+            'response_text': self.response_text,
+            'accuracy_score': self.accuracy_score,
+            'quality_score': self.quality_score,
+            'latency_ms': self.latency_ms,
+            'input_tokens': self.input_tokens,
+            'output_tokens': self.output_tokens,
+            'cost_usd': float(self.cost_usd) if self.cost_usd is not None else None,
+            'composite_score': self.composite_score,
+            'grade': self.grade,
+            'error_message': self.error_message,
+            'judged_at': self.judged_at.isoformat() if self.judged_at else None,
+        }
+
+
 class UserProfile(db.Model):
     """Display metadata for a user — alias and visibility.
 

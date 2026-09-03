@@ -82,7 +82,10 @@ def create_app() -> Flask:
     db.init_app(app)
     with app.app_context():
         # Models importieren, damit Tables registriert werden.
-        from storage.models import ProviderConfig, RequestQueue, UsageEvent, ProviderGrant, UserProfile, UserAccessToken  # noqa: F401
+        from storage.models import (  # noqa: F401
+            ProviderConfig, RequestQueue, UsageEvent, ProviderGrant,
+            UserProfile, UserAccessToken, EvalTask, EvalRun, EvalResult,
+        )
         from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
         _safe_create_all(db)
         _ensure_user_profiles_email_column(db)
@@ -106,6 +109,7 @@ def create_app() -> Flask:
     from api.settings_ui import settings_ui_bp
     from api.openai_api import openai_bp
     from api.images_api import images_bp
+    from api.eval_api import eval_bp
 
     app.register_blueprint(providers_bp)
     app.register_blueprint(configs_bp)
@@ -123,11 +127,13 @@ def create_app() -> Flask:
     app.register_blueprint(settings_ui_bp)
     app.register_blueprint(openai_bp)
     app.register_blueprint(images_bp)
+    app.register_blueprint(eval_bp)
 
     from cli import (grants_bootstrap_command, update_opencode_pricing_command,
                      summary_job_command, vault_render_command, vault_backup_command,
                      refresh_free_models_command, update_zai_pricing_command,
-                     update_cline_catalog_command, check_cline_catalog_command)
+                     update_cline_catalog_command, check_cline_catalog_command,
+                     eval_seed_tasks_command, eval_run_command)
     app.cli.add_command(grants_bootstrap_command)
     app.cli.add_command(update_opencode_pricing_command)
     app.cli.add_command(summary_job_command)
@@ -137,6 +143,8 @@ def create_app() -> Flask:
     app.cli.add_command(update_zai_pricing_command)
     app.cli.add_command(update_cline_catalog_command)
     app.cli.add_command(check_cline_catalog_command)
+    app.cli.add_command(eval_seed_tasks_command)
+    app.cli.add_command(eval_run_command)
 
     @app.route('/')
     def index():
@@ -160,6 +168,11 @@ def create_app() -> Flask:
                 'GET  /queue/<id>',
                 'GET  /queue?user_id=<id>&status=<s>',
                 'DEL  /queue/<id>',
+                'GET  /eval/tasks',
+                'POST /eval/tasks',
+                'POST /eval/run',
+                'GET  /eval/leaderboard',
+                'GET  /recommend?category=<c>',
             ],
         })
 
