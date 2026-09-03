@@ -89,7 +89,7 @@ def start_run():
         if not tasks:
             return jsonify({'error': 'No active eval tasks found'}), 400
 
-        available = discover_available_models()
+        available = discover_available_models(Config.ADMIN_USER_ID)
         if model_ids:
             available = [m for m in available if m['model_id'] in model_ids]
         if max_models:
