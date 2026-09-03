@@ -113,13 +113,21 @@ def start_run():
             app = create_app()
             with app.app_context():
                 from eval.runner import _evaluate_model
+                from storage.models import EvalTask as EvalTaskAsync
+                
                 run_obj = EvalRun.query.get(run.id)
                 run_obj.status = 'running'
                 db.session.commit()
                 
+                # Reload tasks in this session
+                task_query = EvalTaskAsync.query.filter_by(is_active=True)
+                if categories:
+                    task_query = task_query.filter(EvalTaskAsync.category.in_(categories))
+                tasks_async = task_query.all()
+                
                 try:
                     for model_info in available:
-                        _evaluate_model(run_obj, model_info, tasks, Config.ADMIN_USER_ID)
+                        _evaluate_model(run_obj, model_info, tasks_async, Config.ADMIN_USER_ID)
                         run_obj.completed_models += 1
                         db.session.commit()
                     run_obj.status = 'completed'
