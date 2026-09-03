@@ -32,6 +32,14 @@ class ClineClient(BaseClient):
             raise ValueError("Cline: api_key erforderlich")
         self._base_url = config.get('api_endpoint') or Config.CLINE_BASE_URL or DEFAULT_BASE_URL
 
+    def _get_headers(self) -> dict:
+        """Return headers for Cline API requests including optional tracking headers."""
+        return {
+            'Authorization': f'Bearer {self._api_key}',
+            'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
+            'X-Title': 'ai-provider-service',
+        }
+
     def _models_from_override(self) -> list[str]:
         try:
             data = json.loads(_OVERRIDE_PATH.read_text())
@@ -55,7 +63,7 @@ class ClineClient(BaseClient):
             r = hc.post(
                 f'{self._base_url}/chat/completions',
                 json=body,
-                headers={'Authorization': f'Bearer {self._api_key}'},
+                headers=self._get_headers(),
             )
         r.raise_for_status()
         raw = r.json()
@@ -84,7 +92,7 @@ class ClineClient(BaseClient):
                 r = hc.post(
                     f'{self._base_url}/chat/completions',
                     json=body,
-                    headers={'Authorization': f'Bearer {self._api_key}'},
+                    headers=self._get_headers(),
                 )
             if r.status_code >= 500:
                 return False
