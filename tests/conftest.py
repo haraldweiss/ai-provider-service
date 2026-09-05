@@ -28,6 +28,17 @@ import providers.claude    # noqa: F401, E402
 import providers.ollama    # noqa: F401, E402
 import providers.zai       # noqa: F401, E402
 import pricing            # noqa: F401, E402
+import model_cache        # noqa: F401, E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_model_cache():
+    """Leert den /v1/models-Async-Cache vor+nach jedem Test, damit Tests,
+    die get_client/_load_config monkeypatchen, nicht durch Cache-Einträge
+    früherer Tests kontaminiert werden."""
+    model_cache.invalidate()
+    yield
+    model_cache.invalidate()
 
 
 @pytest.fixture(autouse=True)
