@@ -37,6 +37,11 @@ def set_status(provider_id: str, healthy: bool, reason: str = '',
             'previous_healthy': prev,
             'persistent': persistent,
         }
+        # Health-Transition (up↔down): gecachte /v1/models-Listen können
+        # Provider enthalten, die gerade weggefallen oder zurückgekommen sind.
+        if prev is not None and prev != healthy:
+            import model_cache
+            model_cache.invalidate()
 
 
 def get_status(provider_id: str) -> dict:

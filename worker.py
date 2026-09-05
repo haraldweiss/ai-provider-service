@@ -86,17 +86,47 @@ def _drain(app: Flask) -> None:
                     logger.warning(f'drain {pid} crashed: {e}')
 
 
+def _refresh_model_cache(app: Flask) -> None:
+    """Proaktiver Refresh des /v1/models-Caches für alle bereits gecachten User.
+
+    Neue Users erscheinen erst nach ihrem ersten (synchron gebauten) Request im
+    Cache — ab dann hält dieser Job die Liste frisch, ohne dass Requests auf
+    Provider-HTTP-Calls warten.
+    """
+    import model_cache
+    users = model_cache.cached_user_ids()
+    if not users:
+        return
+    from api.openai_api import _build_model_rows
+    with app.app_context():
+        for uid in users:
+            try:
+                model_cache.put(uid, _build_model_rows(uid))
+            except Exception as e:
+                logger.warning('model-cache refresh %s failed: %s', uid, e)
+
+
 def _run(app: Flask) -> None:
     hc_interval = Config.HEALTH_CHECK_INTERVAL_SEC
     qd_interval = Config.QUEUE_DRAIN_INTERVAL_SEC
     fm_interval = max(21600, hc_interval)  # free model refresh: min 6h
     sleep_sec = min(hc_interval, qd_interval)
+    # Model-Cache bei halber TTL refreschen, damit Requests nie gegen die
+    # laufende Ablaufzeit treffen (Worker-Poll driftet um sleep_sec).
+    # int()-Guard: Tests patchen Config als MagicMock, der keine
+    # verlässlichen Vergleiche/Arithmetik liefert.
+    try:
+        mc_ttl = int(Config.MODEL_CACHE_TTL_SEC)
+    except (TypeError, ValueError):
+        mc_ttl = 60
+    mc_interval = max(sleep_sec, mc_ttl // 2)
     # Guard against pathological config (e.g., zero intervals) where
     # interval // sleep_sec would raise ZeroDivisionError.
     hc_steps = max(1, hc_interval // sleep_sec) if sleep_sec > 0 else 1
     qd_steps = max(1, qd_interval // sleep_sec) if sleep_sec > 0 else 1
     fm_steps = max(1, fm_interval // sleep_sec) if sleep_sec > 0 else 1
-    logger.info(f'Worker startet, health-check={hc_interval}s, drain={qd_interval}s, free-model={fm_interval}s, sleep={sleep_sec}s')
+    mc_steps = max(1, mc_interval // sleep_sec) if sleep_sec > 0 else 1
+    logger.info(f'Worker startet, health-check={hc_interval}s, drain={qd_interval}s, free-model={fm_interval}s, model-cache={mc_interval}s, sleep={sleep_sec}s')
     tick = 0
     while not _stop_event.is_set():
         try:
@@ -114,6 +144,11 @@ def _run(app: Flask) -> None:
                 _refresh_free_models(app)
         except Exception as e:
             logger.exception(f'free-model refresh crashed: {e}')
+        try:
+            if tick % mc_steps == 0:
+                _refresh_model_cache(app)
+        except Exception as e:
+            logger.exception(f'model-cache refresh crashed: {e}')
         tick += 1
         for _ in range(sleep_sec):
             if _stop_event.is_set():

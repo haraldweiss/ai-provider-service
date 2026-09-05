@@ -248,6 +248,40 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### Async Model Cache für /v1/models (2026-09-05, Pi)
+
+**Was:** `GET /v1/models` führte pro Request synchron `get_models()`-HTTP-Calls
+über alle Provider aus (Ollama-Pool-Union über 3 Macs + Gateways). Jetzt cached
+`model_cache.py` die fertigen Rows pro `user_id` (TTL `MODEL_CACHE_TTL_SEC`,
+Default 60s, env-konfigurierbar, in-memory wie health_tracker → pro Gunicorn-
+Worker separat, unkritisch für Listen-Daten).
+
+**Pattern:** Cold-Miss = Request baut synchron (immer korrekt); der Worker
+(`worker._refresh_model_cache`) refresht alle bereits gecachten User bei halber
+TTL proaktiv. `health_tracker.set_status` invalidiert global bei up↔down-
+Transitions.
+
+**Caveats für Folge-Sessions:**
+- Provider-Config-Änderung (neuer API-Key) wirkt erst bis zu TTL/2 + TTL alt —
+  bewusst kein Invalidate-Hook in den Config-Endpoints (bewahre TTL-Kürze >
+  Hook-Komplexität). Bei Bedarf `model_cache.invalidate(user_id)` dort verdrahten.
+- `flask refresh-free-models` (Cron, separater Prozess) kann den In-Process-
+  Cache nicht invalidieren — der Worker-Refresh holt neue Free-Models binnen
+  TTL/2 nach.
+- Tests patchen `worker.Config` als MagicMock → der `int()`-Guard für
+  `MODEL_CACHE_TTL_SEC` in `worker._run` MUSS bleiben (sonst crasht die
+  `_run`-Thread-Simulation in `test_run_tick_scheduling`).
+- conftest hat autouse `_reset_model_cache` — Tests die `get_client`
+  monkeypatchen + `/v1/models` treffen, sonst stale Cache-Hits.
+
+**Verified:** pytest 455 passed (2 pre-existing failures auf clean main:
+`test_opencode_raises_without_api_key`,
+`test_models_endpoint_uses_openrouter_free_mode_without_user_key` — per
+git-stash validiert), ruff clean. Commit `78c91f6` auf Branch
+`perf/model-list-async-cache`. **NICHT deployed** — Deploy bei Bedarf:
+`./build.sh <sha> && sudo docker compose up -d --force-recreate ai-provider`.
+
+
 ### Mail-Client (Rust/Tauri) nutzt öffentliches Gateway + braucht CORS-Whitelist (2026-08-17, opencode)
 
 **Context:** Der `mail-client` (eigenes Rust/Tauri-Repo `/Users/haraldweiss/projects/mail-client`)

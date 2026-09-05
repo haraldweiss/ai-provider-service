@@ -21,6 +21,7 @@ from dispatcher import (
 from providers import PROVIDER_REGISTRY, get_client
 from flask import g
 import health_tracker
+import model_cache
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,22 @@ def _model_id(provider_id: str, model_name: str) -> str:
 
 
 def _available_model_rows(user_id: str) -> list[dict]:
+    """Liefert Model-Rows aus dem Async-Cache; Cold-Miss baut synchron.
+
+    Frische Einträge werden direkt bedient. Der Hintergrund-Worker (worker.py
+    → _refresh_model_cache) hält bereits gecachte User aktuell, damit Requests
+    nie auf Provider-HTTP-Calls warten müssen.
+    """
+    rows = model_cache.get(user_id)
+    if rows is not None:
+        return rows
+    rows = _build_model_rows(user_id)
+    model_cache.put(user_id, rows)
+    return rows
+
+
+def _build_model_rows(user_id: str) -> list[dict]:
+    """Network-bound: fragt get_models() bei allen konfigurierten Providern."""
     now = int(time.time())
     rows = []
     seen = set()

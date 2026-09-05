@@ -28,6 +28,9 @@ class Config:
     QUEUE_TTL_HOURS = int(os.getenv('QUEUE_TTL_HOURS', '24'))
     HEALTH_CHECK_INTERVAL_SEC = int(os.getenv('HEALTH_CHECK_INTERVAL_SEC', '30'))
     QUEUE_DRAIN_INTERVAL_SEC = int(os.getenv('QUEUE_DRAIN_INTERVAL_SEC', '60'))
+    # TTL für den /v1/models-Async-Cache (model_cache.py). Der Worker refresht
+    # gecachte User in diesem Intervall im Hintergrund.
+    MODEL_CACHE_TTL_SEC = int(os.getenv('MODEL_CACHE_TTL_SEC', '60'))
 
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
