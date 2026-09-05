@@ -19,6 +19,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
   - **HTTP 400/422** (Bad Request) → kein Fallback (request-spezifischer Fehler, würde überall scheitern)
 - **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist
 - **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider; opencode ohne persönlichen Key nur Free-Modelle
+- **Async Model Cache**: Die `/v1/models`-Liste wird pro User gecacht (TTL `MODEL_CACHE_TTL_SEC`, Default 60s). Der Background-Worker refresht gecachte User bei halber TTL proaktiv; Health-Transitions (Provider up↔down) invalidieren sofort. Erster Request eines Users baut die Liste synchron (Cold-Miss) — danach bedient der Cache, ohne dass Requests auf Provider-`get_models()`-HTTP-Calls warten.
 - **Health-Monitoring**: Background-Worker pollt alle Provider regelmäßig
 - **Image Generation**: OpenAI-kompatible `/v1/images/generations` via OpenRouter
 - **Vision (Multimodal)**: `/v1/chat/completions` forwards `image_url`/`image`/`input_image` content parts to the model — attach an image and pick a vision-capable model to analyze it. Verified working: `openrouter/nvidia/nemotron-nano-12b-v2-vl:free` (correctly described a test image). Note: `cline/qwen/qwen3-vl-8b-instruct` returns empty content / intermittent 500 once the image is forwarded (api.cline.bot upstream limitation, not this service). Text-only messages keep the legacy string form.
