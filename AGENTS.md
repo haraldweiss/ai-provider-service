@@ -277,9 +277,19 @@ Transitions.
 **Verified:** pytest 455 passed (2 pre-existing failures auf clean main:
 `test_opencode_raises_without_api_key`,
 `test_models_endpoint_uses_openrouter_free_mode_without_user_key` — per
-git-stash validiert), ruff clean. Commit `78c91f6` auf Branch
-`perf/model-list-async-cache`. **NICHT deployed** — Deploy bei Bedarf:
-`./build.sh <sha> && sudo docker compose up -d --force-recreate ai-provider`.
+git-stash validiert), ruff clean. PR **#28** gemerged (`52c456b` auf main),
+CI test + docker-smoke grün.
+
+**DEPLOYED auf oracle-vm (2026-09-05), running == committed (`52c456b`):**
+- Server-Repo ff auf `52c456b`; Image `localhost/ai-provider:52c456b`
+  (+`:latest`) via `sudo ./build.sh 52c456b`; Container recreated
+  (`sudo docker compose up -d --force-recreate ai-provider`) → **healthy**.
+- Worker-Log zeigt `model-cache=30s` (beide Gunicorn-Worker), keine Tracebacks.
+- **Live-Timing:** `/v1/models` Cold-Miss ~6.5s (erster Request pro Worker),
+  danach Cache-Hits in **5–12 ms** (~1000x). Jeder Gunicorn-Worker waermt
+  sich nach dem ersten Request selbst vor (Cache ist prozesslokal, wie
+  health_tracker).
+- 537 Modelle in `/v1/models`; public `/health` → 200.
 
 
 ### Mail-Client (Rust/Tauri) nutzt öffentliches Gateway + braucht CORS-Whitelist (2026-08-17, opencode)
