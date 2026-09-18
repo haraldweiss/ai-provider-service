@@ -20,6 +20,16 @@ logger = logging.getLogger(__name__)
 _MODEL_PREFIX_RE = re.compile(r'^(?:opencode-go/|opencode-)', re.IGNORECASE)
 _BALANCE_ERR_RE = re.compile(r'insufficient balance|CreditsError', re.IGNORECASE)
 
+# 2026-09-18: opencode.ai locked its free tier to the OpenCode app —
+# every free-model chat via this gateway gets
+# `403 FreeTierError: "OpenCode's free tier can only be used from within
+# OpenCode"`. Advertising the free models in /v1/models only produces
+# dead selections in pi / Open WebUI, so free-only mode hides them.
+# Paid models via a personal key are unaffected. Reversible via env:
+# OPENCODE_ADVERTISE_FREE_MODELS=1 restores the old behavior.
+def _free_models_advertised() -> bool:
+    return os.getenv('OPENCODE_ADVERTISE_FREE_MODELS', '').strip() == '1'
+
 NOTIFY_EMAIL = 'harald.weiss@wolfinisoftware.de'
 _FREE_CACHE_FILE = '/tmp/opencode_free_models.json'
 _FREE_CACHE_TTL = 86400
@@ -140,6 +150,12 @@ class OpencodeClient(BaseClient):
         try:
             all_models = sorted(m.id for m in self.client.models.list().data)
             if self._free_only:
+                if not _free_models_advertised():
+                    logger.info(
+                        'Opencode free-only mode: hiding %d free models '
+                        '(free tier client-locked upstream since 2026-09-18)',
+                        len(all_models))
+                    return []
                 free_set = set(self.get_free_models())
                 filtered = [m for m in all_models if m in free_set]
                 logger.info('Opencode free-only mode: %d/%d models shown',
