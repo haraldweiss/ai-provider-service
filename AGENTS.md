@@ -1793,3 +1793,32 @@ is on all 3 Macs (WG0 pool), so the fallback survives a single Mac outage.
 **Open follow-up:** if opencode returns an *empty* 200 (rate-limit recovery flake,
 no error), the fallback cannot engage because 200 is not an error — the user gets
 an empty response. That is an opencode.ai quality issue, not a dispatcher bug.
+
+### 2026-09-18 — opencode free models hidden from /v1/models (free tier client-locked)
+- **Trigger:** pi showed 403s on all `opencode/*` models; diagnosis (wolfini_de_web
+AGENTS.md §7 2026-09-18) proved upstream `403 FreeTierError: "OpenCode's free
+tier can only be used from within OpenCode"` — opencode.ai locked its free tier
+to the OpenCode app. The server key is fine (`GET /v1/models` → 200).
+- **Fix:** `OpencodeClient.get_models()` in free-only mode (system-key path) now
+returns `[]` unless `OPENCODE_ADVERTISE_FREE_MODELS=1` is set
+(`_free_models_advertised()` in `providers/opencode.py`). Personal-key clients
+(paid models) are unaffected. Reversible via env if the upstream policy lifts.
+- **Tests:** `tests/test_opencode_provider.py` +3 (hidden by default, restored via
+env, personal key unaffected). 9 passed; `test_opencode_raises_without_api_key`
+fails identically on clean main (pre-existing, also noted 2026-08-13).
+`test_openai_api` + `test_model_cache` + `test_provider_visibility` +
+`test_refresh_free_models_cli` → 42 passed.
+- **Deploy-evidence (§5.1.1):** rsync hit benign code-23 on `eval/` perms (same
+class as 2026-08-13) but transferred `providers/opencode.py`; `set -e` aborted
+before build, so build+restart ran via `./deploy.sh --skip-sync` + `sudo docker
+compose up -d` (env file is root-only, plain `opc` user gets permission denied —
+same as 2026-08-25). Image rebuilt 19:17:55 UTC (after commit `cac65a2`);
+container healthy; code live (`grep _free_models_advertised` = 2 in container);
+`/v1/models` → 200, **534 models, 0 `opencode/*`** (was 542/8); `/health` → 200;
+chat smoke `ollama/oracle-llama3.2:3b` → 200 "OK".
+- **Commits:** `cac65a2` (code+tests, on `main`, pushed) + this docs commit.
+README updated (Health-Filtering line, Free-only paragraph, model table).
+- **Open follow-ups:** (1) harald's DB fallback (`opencode` → `ollama/qwen3-coder`)
+only engages on 400-model-unavailable/402/429 — the FreeTier 403 still fails
+directly; extend `_RETRYABLE_4XX`/fallback for it if wanted. (2) Open WebUI
+workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.

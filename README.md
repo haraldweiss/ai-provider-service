@@ -18,7 +18,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
   - **HTTP 429/402** (Rate Limit / Insufficient Balance) → Fallback auf nächsten verfügbaren Provider
   - **HTTP 400/422** (Bad Request) → kein Fallback (request-spezifischer Fehler, würde überall scheitern)
 - **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist
-- **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider; opencode ohne persönlichen Key nur Free-Modelle
+- **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider; opencode erscheint nur mit persönlichem Key (Paid-Modelle) — die Free-Modelle sind seit 2026-09-18 versteckt, weil opencode.ai den Free-Tier nur noch innerhalb der OpenCode-App bedient (`OPENCODE_ADVERTISE_FREE_MODELS=1` stellt das alte Verhalten wieder her)
 - **Async Model Cache**: Die `/v1/models`-Liste wird pro User gecacht (TTL `MODEL_CACHE_TTL_SEC`, Default 60s). Der Background-Worker refresht gecachte User bei halber TTL proaktiv; Health-Transitions (Provider up↔down) invalidieren sofort. Erster Request eines Users baut die Liste synchron (Cold-Miss) — danach bedient der Cache, ohne dass Requests auf Provider-`get_models()`-HTTP-Calls warten.
 - **Health-Monitoring**: Background-Worker pollt alle Provider regelmäßig
 - **Image Generation**: OpenAI-kompatible `/v1/images/generations` via OpenRouter
@@ -569,8 +569,10 @@ ollama) bleiben verfügbar. Konfigurierbar via `EXCLUDE_REGION_LOCKED_MODELS`
 Env-Var (Provider-scoped: `zai/glm-5` blockt nur `zai/glm-5`, nicht
 `opencode/glm-5`).
 
-**Free-only Provider:** Ohne persönlichen opencode-API-Key werden bei opencode
-nur Free-Modelle gelistet (ca. 5 statt 52). OpenRouter ist ohne persönlichen Key
+**Free-only Provider:** Ohne persönlichen opencode-API-Key listet opencode seit
+2026-09-18 keine Modelle mehr (Free-Tier ist upstream auf die OpenCode-App
+gelockt; jeder Gateway-Call endet in 403 FreeTierError). Mit persönlichem Key
+sind die Paid-Modelle sichtbar. OpenRouter ist ohne persönlichen Key
 ebenfalls sichtbar, listet dann aber nur dynamisch erkannte Free-Modelle.
 `flask refresh-free-models` aktualisiert beide Free-Modell-Caches; OpenRouter
 fällt bei einem Refresh-Fehler auf den letzten Cache zurück. Lokale
@@ -583,8 +585,7 @@ verfügbar sind (z.B. `ollama/ornith:latest`).
  |---|---|
  | `ollama/qwen3.6:latest` | Lokales Ollama |
  | `ollama/ornith:latest` | Lokales Ollama |
- | `opencode/deepseek-v4-flash-free` | opencode Free-Modell (mit System-Key) |
- | `opencode/glm-5.1` | GLM via opencode (global gateway) |
+ | `opencode/glm-5.1` | GLM via opencode (global gateway, persönlicher Key; Free-Modelle seit 2026-09-18 versteckt) |
  | `claude/claude-sonnet-4-6-20250514` | Claude, wenn konfiguriert und API-Key gesetzt |
  | `cline/anthropic/claude-sonnet-4-6` | Cline (api.cline.bot), wenn konfiguriert und API-Key gesetzt |
 
