@@ -1822,3 +1822,43 @@ README updated (Health-Filtering line, Free-only paragraph, model table).
 only engages on 400-model-unavailable/402/429 — the FreeTier 403 still fails
 directly; extend `_RETRYABLE_4XX`/fallback for it if wanted. (2) Open WebUI
 workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.
+
+### 2026-09-21 — ai-admin login broke after network recreate: stale TRUSTED_PROXY_IPS → compose subnet pinned
+- **Trigger:** user reported `https://ai-admin.wolfinisoftware.de` "not secure"
+  and login not working. (The cert issue is wolfini_de_web §7 2026-09-21; this
+  entry covers the login half.)
+- **Root cause:** the admin UI auto-auths Apache Basic Auth via the
+  `X-Forwarded-User` header, but only when the immediate proxy peer is in
+  `Config.TRUSTED_PROXY_IPS`. Env had `TRUSTED_PROXY_IPS=172.20.0.1`, yet the
+  container (recreated 2026-09-18 by the opencode-deploy) now sits on
+  `ai-provider-service_default` = **172.18.0.0/16** (gw `172.18.0.1`). Docker
+  had reassigned the subnet, so `_proxy_peer_addr()` (`172.18.0.1`) no longer
+  matched → forwarded user rejected → `/admin/ui/users` 302'd to the app login
+  form, which rejects the Basic-Auth credentials. Confirmed via gunicorn access
+  log: peer logged as `172.18.0.1`, 302 to `/admin/ui/login`, and the user's
+  browser hitting `POST /admin/ui/login` twice (failed form logins).
+- **Fix:** pin the compose default network subnet so the gateway is stable at
+  the trusted address — `docker-compose.yml` now has
+  ```yaml
+  networks:
+    default:
+      ipam:
+        config:
+          - subnet: 172.20.0.0/16
+  ```
+  (matches `TRUSTED_PROXY_IPS=172.20.0.1`, no env change needed). Applied with
+  `docker compose up -d` (recreates network + container).
+- **Verified on oracle-vm:** network gw = `172.20.0.1`; container `Up (healthy)`;
+  `/health` → 200; `curl -H 'X-Forwarded-User: harald' :8767/admin/ui/users` →
+  **200** (was 302→login); without the header → 302 to login (unchanged);
+  `/v1/models` and public `ai-provider-service.wolfinisoftware.de/health` → 200.
+  Backup `/root/docker-compose.yml.bak-20260921084004`.
+- **Deploy-evidence (§5.1.1):** deployed `/opt/ai-provider-service/docker-compose.yml`
+  sha == repo sha after edit; `docker compose config` shows the pinned subnet;
+  gateway inspected as `172.20.0.1`.
+- **Note:** the VPS `/opt/ai-provider-service` checkout is behind `main`
+  (`2041bec` + dirty `providers/opencode.py`) — it was never `git pull`ed after
+  the 2026-09-18 `--skip-sync` deploy; the compose change was applied directly
+  and mirrored into the repo here. Do not remove the subnet pin.
+- **Commits:** compose+README+AGENTS on this branch → `Merge:` --no-ff → main → push.
+  Sibling doc: `wolfini_de_web` AGENTS.md §7 2026-09-21.
