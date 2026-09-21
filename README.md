@@ -900,9 +900,13 @@ The admin UI is served at `/admin/ui/`.
   (requires `TRUST_FORWARDED_USER=true` and an explicit `TRUSTED_PROXY_IPS`
   allowlist). For the production Docker network, set
   `TRUSTED_PROXY_IPS=172.20.0.1`; Apache reaches the container through that
-  bridge gateway rather than as loopback. Keep the allowlist limited to the
-  reverse-proxy source address(es); this check uses the original proxy peer,
-  not Apache's client-IP forwarding header. An authenticated request to
+  bridge gateway rather than as loopback. `docker-compose.yml` pins the compose
+  network subnet to `172.20.0.0/16` so this gateway address is stable across
+  container/network recreations — do not remove that pin, otherwise Docker may
+  hand out a different subnet (e.g. `172.18.0.1`) and the `X-Forwarded-User`
+  auto-login silently breaks, dropping users onto the separate login form.
+  Keep the allowlist limited to the reverse-proxy source address(es); this
+  check uses the original proxy peer, not Apache's client-IP forwarding header. An authenticated request to
   `/admin/ui/login` is redirected to the admin UI, so no second login step is
   needed.
 - **direct access** — log in with `ADMIN_USER_ID`/`ADMIN_PASSWORD` or

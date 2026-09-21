@@ -30,3 +30,15 @@ services:
       timeout: 20s
       retries: 3
       start_period: 20s
+
+# Pin the default bridge subnet so the gateway address is always 172.20.0.1.
+# The admin UI auto-authenticates Apache Basic Auth via the X-Forwarded-User
+# header, but only when the immediate proxy peer is in Config.TRUSTED_PROXY_IPS
+# (172.20.0.1). Without this pin Docker assigns an arbitrary free subnet (e.g.
+# 172.18.0.0/16) on every network recreate, which silently breaks the ai-admin
+# auto-login and drops users onto the separate app login form.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
