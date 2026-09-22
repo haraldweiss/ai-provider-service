@@ -135,3 +135,84 @@ def test_health_returns_false_on_failure(mock_openai):
     mock_openai.return_value.models.list.side_effect = Exception('API down')
     c = OpenRouterClient({'api_key': 'sk-test'})
     assert c.health() is False
+
+
+# --- 429 rate-limit retry -------------------------------------------------
+
+import httpx
+import openai
+import pytest
+
+
+def _rate_limit_error(retry_after: str | None = None) -> openai.RateLimitError:
+    request = httpx.Request('POST', 'https://openrouter.ai/api/v1/chat/completions')
+    headers = {'retry-after': retry_after} if retry_after else {}
+    response = httpx.Response(429, request=request, headers=headers, json={'error': 'rate limited'})
+    return openai.RateLimitError('rate limited', response=response, body=None)
+
+
+def _success_response(text: str = 'ok') -> MagicMock:
+    resp = MagicMock()
+    choice = MagicMock()
+    msg = MagicMock()
+    msg.content = text
+    choice.message = msg
+    resp.choices = [choice]
+    resp.usage = MagicMock(prompt_tokens=1, completion_tokens=1)
+    return resp
+
+
+@patch('providers.openrouter.time.sleep')
+@patch('providers.openrouter.OpenAI')
+def test_create_message_retries_after_429(mock_openai, mock_sleep):
+    from providers.openrouter import OpenRouterClient
+    create = mock_openai.return_value.chat.completions.create
+    create.side_effect = [_rate_limit_error(), _success_response('recovered')]
+
+    out = OpenRouterClient({'api_key': 'sk-test'}).create_message(
+        'some/free:model', [{'role': 'user', 'content': 'hi'}], 10
+    )
+
+    assert create.call_count == 2
+    assert out['content'][0]['text'] == 'recovered'
+    mock_sleep.assert_called_once()
+
+
+@patch('providers.openrouter.time.sleep')
+@patch('providers.openrouter.OpenAI')
+def test_create_message_honours_retry_after_header(mock_openai, mock_sleep):
+    from providers.openrouter import OpenRouterClient
+    create = mock_openai.return_value.chat.completions.create
+    create.side_effect = [_rate_limit_error(retry_after='7'), _success_response()]
+
+    OpenRouterClient({'api_key': 'sk-test'}).create_message(
+        'm', [{'role': 'user', 'content': 'hi'}], 10
+    )
+
+    mock_sleep.assert_called_once_with(7.0)
+
+
+@patch('providers.openrouter.time.sleep')
+@patch('providers.openrouter.OpenAI')
+def test_create_message_reraises_after_exhausting_retries(mock_openai, mock_sleep):
+    from providers.openrouter import OpenRouterClient
+    create = mock_openai.return_value.chat.completions.create
+    create.side_effect = _rate_limit_error()
+
+    with pytest.raises(openai.RateLimitError):
+        OpenRouterClient({'api_key': 'sk-test'}).create_message(
+            'm', [{'role': 'user', 'content': 'hi'}], 10
+        )
+
+    assert create.call_count == 3
+    assert mock_sleep.call_count == 2
+
+
+def test_retry_after_seconds_none_without_header():
+    from providers.openrouter import _retry_after_seconds
+    assert _retry_after_seconds(_rate_limit_error()) is None
+
+
+def test_retry_after_seconds_caps_huge_values():
+    from providers.openrouter import _retry_after_seconds
+    assert _retry_after_seconds(_rate_limit_error(retry_after='9999')) == 30.0
