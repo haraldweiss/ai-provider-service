@@ -621,6 +621,17 @@ Grammar-400 wie `Value looks like object, but can't find closing '}'`
 zurückgibt, retryt der Gateway den gleichen Ollama-Call ohne native `tools` und
 lässt die DSML/JSON-Text-Konvertierung greifen.
 
+**Tool-Argument-Normalisierung für Ollama (Fix 2026-09-22):** OpenAI-Clients
+(pi, Open WebUI, OpenAI-SDK) senden `messages[].tool_calls[].function.arguments`
+als JSON-*String* (OpenAI-Spec), Ollamas `/api/chat` erwartet aber ein
+JSON-*Objekt*. Der Gateway wandelt die Argumente deshalb vor dem Ollama-Call in
+ein Objekt um (best-effort `json.loads`, nicht parsebar/nicht-Objekt → `{}`),
+ohne die Caller-Messages zu mutieren. Ohne das schlug jede Folge-Runde mit
+Tool-Historie mit `Value looks like object, but can't find closing '}'` (HTTP
+400) fehl — Runde 1 (Modell gibt Toolcall aus) ging, Runde 2 nicht. Der
+obige „retry ohne native tools"-Pfad konnte das nicht heilen, weil der
+fehlerhafte Wert in `messages`, nicht in `tools` steht.
+
 **Tool-Call-Weiterleitung (Fix 2026-07-25):** Alle 7 OpenAI-kompatiblen Provider
 (`opencode`, `zai`, `cline`, `ollama_cloud`, `openai_client`, `custom`,
 `mammouth`) leiten `tools` jetzt an die upstream API weiter.
