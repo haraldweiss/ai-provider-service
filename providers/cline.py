@@ -5,7 +5,14 @@ Cline exposes an OpenAI-compatible Chat Completions API at
 
 Model IDs follow the ``provider/model`` form, e.g.
 ``anthropic/claude-sonnet-4-6``.
-GET /models returns 404 — model list falls back to pricing_overrides_cline.json.
+
+``GET /models`` returns the account's authoritative, currently servable model
+list (it is public and needs no key). The committed
+``pricing_overrides_cline.json`` is only a fallback: it is generated from
+Cline's OSS client catalog and contains IDs the API rejects with 404 (e.g.
+legacy ``Qwen/...``/``MiniMaxAI/...`` casing). Advertising the override list
+was why the model picker offered models that failed with
+``Provider cline rejected the request (HTTP 404)``.
 
 Response format: {"data": {"choices": [...], "usage": ...}, "success": true}
 """
@@ -13,6 +20,7 @@ Response format: {"data": {"choices": [...], "usage": ...}, "success": true}
 from __future__ import annotations
 import json
 import logging
+import time
 from pathlib import Path
 import httpx
 from providers.base import BaseClient
@@ -23,6 +31,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = 'https://api.cline.bot/api/v1'
 _OVERRIDE_PATH = Path(__file__).parent.parent / 'pricing_overrides_cline.json'
 _HEALTH_MODEL = 'openai/gpt-4o-mini'
+
+# In-process TTL cache for the live /models list; the gateway refreshes
+# /v1/models every MODEL_CACHE_TTL_SEC (default 60s), so this avoids an
+# outbound call on every refresh without hiding catalog changes for long.
+_LIVE_MODELS_TTL = 600
+_live_models_cache: dict = {'ts': 0.0, 'models': []}
 
 
 class ClineClient(BaseClient):
@@ -48,7 +62,35 @@ class ClineClient(BaseClient):
             logger.warning(f'Cline model override fallback failed: {e}')
             return []
 
+    def _models_from_api(self) -> list[str]:
+        """Fetch the live, servable model list from Cline's public /models."""
+        now = time.time()
+        if _live_models_cache['models'] and now - _live_models_cache['ts'] < _LIVE_MODELS_TTL:
+            return list(_live_models_cache['models'])
+        try:
+            with httpx.Client(timeout=20) as hc:
+                r = hc.get(f'{self._base_url}/models', headers=self._get_headers())
+            r.raise_for_status()
+            raw = r.json()
+            entries = raw.get('data', raw) if isinstance(raw, dict) else raw
+            ids = sorted(
+                m['id'] for m in entries
+                if isinstance(m, dict) and m.get('id')
+            )
+            if ids:
+                _live_models_cache['models'] = ids
+                _live_models_cache['ts'] = now
+                logger.info('Cline: %d models from live API', len(ids))
+                return ids
+            logger.warning('Cline /models returned no usable entries; using override file')
+        except Exception as e:
+            logger.warning('Cline /models fetch failed (%s); using override file', e)
+        return []
+
     def get_models(self) -> list[str]:
+        models = self._models_from_api()
+        if models:
+            return models
         return self._models_from_override()
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:

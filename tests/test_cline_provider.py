@@ -89,24 +89,44 @@ def test_create_message_returns_claude_format(mock_httpx_client):
     }
 
 
-def test_get_models_returns_sorted_ids_with_slashes():
-    """get_models() falls back to pricing_overrides_cline.json (513 models)."""
-    from providers.cline import ClineClient
-    c = ClineClient({'api_key': 'sk-test'})
-    models = c.get_models()
-    assert len(models) > 100  # catalog has 513 models
-    assert 'cline-pass/qwen3.7-plus' in models
-    assert 'anthropic/claude-sonnet-4-6' in models
-    assert 'openai/gpt-4o' in models
+@patch('providers.cline.httpx.Client')
+def test_get_models_uses_live_api(mock_httpx_client):
+    """get_models() prefers Cline's live /models list over the override file."""
+    from providers import cline as cline_mod
+    cline_mod._live_models_cache.update({'ts': 0.0, 'models': []})
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = {
+        'object': 'list',
+        'data': [
+            {'id': 'qwen/qwen3-235b-a22b'},
+            {'id': 'anthropic/claude-sonnet-4.5'},
+            {'id': 'minimax/minimax-m2'},
+        ],
+    }
+    inst = MagicMock()
+    inst.get.return_value = mock_response
+    mock_httpx_client.return_value.__enter__.return_value = inst
+
+    models = cline_mod.ClineClient({'api_key': 'sk-test'}).get_models()
+    assert models == [
+        'anthropic/claude-sonnet-4.5',
+        'minimax/minimax-m2',
+        'qwen/qwen3-235b-a22b',
+    ]
+    # The live list must NOT contain the stale override-only casing.
+    assert 'Qwen/Qwen3-235B-A22B' not in models
 
 
-def test_get_models_falls_back_to_override():
-    """get_models() always uses the override file (Cline has no /models endpoint)."""
-    from providers.cline import ClineClient
-    c = ClineClient({'api_key': 'sk-test'})
-    models = c.get_models()
-    assert len(models) > 100  # catalog has 513 models
-    assert 'cline-pass/qwen3.7-plus' in models
+@patch('providers.cline.httpx.Client')
+def test_get_models_falls_back_to_override_when_api_fails(mock_httpx_client):
+    """When /models is unreachable, the override file is still usable."""
+    from providers import cline as cline_mod
+    cline_mod._live_models_cache.update({'ts': 0.0, 'models': []})
+    mock_httpx_client.side_effect = Exception('API down')
+
+    models = cline_mod.ClineClient({'api_key': 'sk-test'}).get_models()
+    assert len(models) > 100
     assert 'anthropic/claude-sonnet-4-6' in models
     assert 'openai/gpt-4o' in models
 

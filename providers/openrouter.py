@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import time
+import openai
 from openai import OpenAI
 from providers.base import BaseClient
 from config import Config
@@ -19,6 +20,27 @@ logger = logging.getLogger(__name__)
 
 _FREE_CACHE_FILE = '/tmp/openrouter_free_models.json'
 _FREE_CACHE_TTL = 86400
+
+# Free-tier models are served from a shared upstream pool, so a 429 is usually
+# a momentary throttle rather than a hard failure. Retry a couple of times with
+# backoff (honouring Retry-After when OpenRouter sends it) before letting the
+# dispatcher fall back / surface the error.
+_RATE_LIMIT_ATTEMPTS = 3
+_RATE_LIMIT_BASE_DELAY = 2.0
+_RATE_LIMIT_MAX_DELAY = 30.0
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """Parse a Retry-After header from an OpenAI SDK error, if present."""
+    try:
+        headers = getattr(getattr(exc, 'response', None), 'headers', None)
+        if headers:
+            value = headers.get('retry-after') or headers.get('Retry-After')
+            if value:
+                return max(0.0, min(float(value), _RATE_LIMIT_MAX_DELAY))
+    except (TypeError, ValueError):
+        pass
+    return None
 
 
 def _is_free_model(api_model) -> bool:
@@ -140,7 +162,26 @@ class OpenRouterClient(BaseClient):
         if tools:
             kwargs['tools'] = tools
 
-        r = self.client.chat.completions.create(**kwargs)
+        r = None
+        for attempt in range(_RATE_LIMIT_ATTEMPTS):
+            try:
+                r = self.client.chat.completions.create(**kwargs)
+                break
+            except openai.RateLimitError as e:
+                if attempt >= _RATE_LIMIT_ATTEMPTS - 1:
+                    raise
+                delay = _retry_after_seconds(e)
+                if delay is None:
+                    delay = min(_RATE_LIMIT_BASE_DELAY * (2 ** attempt), _RATE_LIMIT_MAX_DELAY)
+                logger.warning(
+                    'OpenRouter 429 for %s — retry %d/%d in %.1fs',
+                    model, attempt + 1, _RATE_LIMIT_ATTEMPTS - 1, delay,
+                )
+                time.sleep(delay)
+
+        if r is None:  # pragma: no cover - loop always breaks or raises
+            raise RuntimeError('OpenRouter: no response after retries')
+
         choice = r.choices[0]
         msg = getattr(choice, 'message', None) or {}
         text = ''
