@@ -248,6 +248,19 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-09-22 — Ollama-Toolcalls: OpenAI-String-Argumente → Objekt (Multi-Turn-Tool-Calls gefixt)
+
+- **Trigger:** pi/web-Client meldete `Provider ollama rejected the request (HTTP 400)` nach einem `search_web`-Tool-Resultat (Wetter-Abfrage). Log: alle drei Pool-Endpoints (`10.10.0.4`, `10.10.0.2`, `host.docker.internal:11441`) antworteten mit `{"error":"Value looks like object, but can't find closing '}' symbol"}`; der bestehende „retry ohne native tools"-Pfad half nicht (er versuchte es und bekam erneut 400).
+- **Root cause:** `messages[].tool_calls[].function.arguments` kommt von OpenAI-Clients (pi, Open WebUI, OpenAI-SDK) als JSON-**String**, Ollamas `/api/chat` verlangt aber ein JSON-**Objekt**. Der Gateway reichte den String unverändert durch → Ollama verwarf den *gesamten* Request. Damit funktionierte Runde 1 (Modell emittiert den Toolcall), aber **jede Folge-Runde mit Tool-Historie** schlug auf allen lokalen Ollama-Modellen fehl. Der „ohne tools"-Retry konnte es nicht heilen, weil der fehlerhafte Wert in `messages` (nicht in `tools`) steht.
+- **Reproduktion (live, vor Fix):** identische History mit `arguments` als Objekt → **200**; als String (auch valides `"{}"`) → **400**; mit `oracle-llama3.2:3b` ebenso 400. Nach Fix: alle Varianten 200.
+- **Fix:** `providers/ollama.py` — neue Helper `_ollama_tool_arguments()` (string → `json.loads`, nicht parsebar/nicht-Objekt → `{}`) und `_ollama_messages()` (rebuildet nur Messages mit `tool_calls`, mutiert die Caller-Dicts nicht); `create_message()` sendet `_ollama_messages(messages)`. Spiegel des Output-seitigen `_openai_tool_calls()` in `api/openai_api.py`. Gilt auch für den `/chat`-Endpoint (gleicher Client).
+- **Verified (oracle-vm, running == committed `f8772e7`):**
+  - `pytest tests/test_ollama_provider.py` → **14 passed**; Full-Suite → **467 passed, 1 failed** (vorbestehend `test_opencode_raises_without_api_key`, auch auf clean `main` rot).
+  - Image `localhost/ai-provider:f8772e7` (+`:latest`) via `sudo ./build.sh f8772e7` gebaut (created `2026-09-22T10:28:57Z`); Container per `sudo docker compose up -d --force-recreate ai-provider` recreated → **healthy**, `RestartCount=0`, `/health` → `status:ok`, `ollama:healthy`.
+  - Live-Repro gegen `ollama/anubclaw/dev-coder:q4` (Originalszenario) und `ollama/oracle-llama3.2:3b`: History mit String-Args → **200**, getrunkene Args → **200**, Objekt-Args → **200**, `{}-String` → **200**. 0 Grammar-400 und 0 Tracebacks in den Container-Logs seit Recreate.
+- **Nicht Teil des Fixes (pre-existing, maskiert):** ein einzelner transienter 404 auf `oracle-llama3.2:3b` direkt nach dem Recreate (Model-Map-/RR-Fenster); Folgerequests 200. Kein Routing-Zusammenhang mit diesem Fix.
+- **Git:** `Fix:` `b93635c` + `Docs:` auf `fix/ollama-tool-args-object-2026-09-22` → `Merge:` --no-ff → main `f8772e7` → push.
+
 ### Async Model Cache für /v1/models (2026-09-05, Pi)
 
 **Was:** `GET /v1/models` führte pro Request synchron `get_models()`-HTTP-Calls
