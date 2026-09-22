@@ -434,3 +434,104 @@ def test_endpoints_hosting_matches_bare_name_to_tagged_map(monkeypatch):
         assert client._endpoints_hosting('does-not-exist') == []
     finally:
         OllamaClient._endpoint_models = {}
+
+
+def _ok_response():
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        'message': {'content': 'ok'},
+        'prompt_eval_count': 5,
+        'eval_count': 1,
+        'done_reason': 'stop',
+    }
+    return response
+
+
+def test_create_message_converts_openai_string_tool_arguments_to_objects(monkeypatch):
+    """OpenAI clients replay tool history with ``arguments`` as a JSON string.
+    Ollama's /api/chat requires an object; forwarding the string 400s the whole
+    request ('Value looks like object, but can't find closing }') on every
+    follow-up turn. Regression for the pi search_web 400 incident (2026-09-22)."""
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    history = [
+        {'role': 'user', 'content': 'Wie ist das Wetter in Dortmund?'},
+        {
+            'role': 'assistant',
+            'content': '',
+            'tool_calls': [{
+                'id': 'call_1',
+                'type': 'function',
+                'function': {
+                    'name': 'search_web',
+                    'arguments': '{"query": "wetter Dortmund heute", "count": 1}',
+                },
+            }],
+        },
+        {'role': 'tool', 'tool_call_id': 'call_1', 'name': 'search_web', 'content': '[]'},
+    ]
+    post = Mock(return_value=_ok_response())
+    monkeypatch.setattr('providers.ollama.requests.post', post)
+
+    client.create_message('dev-coder:q4', history, max_tokens=64)
+
+    sent = post.call_args.kwargs['json']['messages']
+    assert sent[1]['tool_calls'][0]['function']['arguments'] == {
+        'query': 'wetter Dortmund heute', 'count': 1,
+    }
+    # caller's history must not be mutated
+    assert history[1]['tool_calls'][0]['function']['arguments'] == (
+        '{"query": "wetter Dortmund heute", "count": 1}'
+    )
+
+
+def test_create_message_coerces_unparseable_tool_arguments_to_empty_object(monkeypatch):
+    """A truncated tool-call argument string must never poison the request:
+    it degrades to {} (Ollama accepts that) instead of a grammar 400."""
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    history = [
+        {'role': 'user', 'content': 'status'},
+        {
+            'role': 'assistant',
+            'content': '',
+            'tool_calls': [{
+                'id': 'call_1',
+                'type': 'function',
+                'function': {'name': 'run', 'arguments': '{"cmd": "git statu'},
+            }],
+        },
+    ]
+    post = Mock(return_value=_ok_response())
+    monkeypatch.setattr('providers.ollama.requests.post', post)
+
+    client.create_message('dev-coder:q4', history, max_tokens=64)
+
+    sent = post.call_args.kwargs['json']['messages']
+    assert sent[1]['tool_calls'][0]['function']['arguments'] == {}
+
+
+def test_create_message_keeps_object_tool_arguments_unchanged(monkeypatch):
+    """Native-format history (arguments already an object) passes through as-is."""
+    from providers.ollama import OllamaClient
+
+    client = OllamaClient({'api_endpoint': 'http://ollama.test'})
+    args = {'path': '/tmp/x'}
+    history = [
+        {'role': 'user', 'content': 'read'},
+        {
+            'role': 'assistant',
+            'content': '',
+            'tool_calls': [{'function': {'name': 'read_file', 'arguments': args}}],
+        },
+    ]
+    post = Mock(return_value=_ok_response())
+    monkeypatch.setattr('providers.ollama.requests.post', post)
+
+    client.create_message('dev-coder:q4', history, max_tokens=64)
+
+    sent = post.call_args.kwargs['json']['messages']
+    assert sent[1]['tool_calls'][0]['function']['arguments'] is args

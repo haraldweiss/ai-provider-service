@@ -261,6 +261,62 @@ def _is_tool_grammar_error(status: int, body: str) -> bool:
     )
 
 
+def _ollama_tool_arguments(value) -> dict:
+    """Return tool-call ``arguments`` as the JSON object Ollama requires.
+
+    OpenAI clients (pi, Open WebUI, the OpenAI SDK) send ``arguments`` as a JSON
+    *string* per the OpenAI spec, but Ollama's ``/api/chat`` expects a JSON
+    *object*. Forwarding the string verbatim makes Ollama reject the whole request
+    with ``{"error":"Value looks like object, but can't find closing '}' symbol"}``
+    (HTTP 400) on every follow-up turn that replays the tool-call history — so a
+    tool conversation works on turn 1 and breaks on turn 2. Decode the string back
+    into an object; undecodable or non-object values fall back to ``{}`` so a
+    truncated argument can never poison the request.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+    return {}
+
+
+def _ollama_messages(messages: list[dict]) -> list[dict]:
+    """Convert OpenAI string tool-call arguments to objects for Ollama.
+
+    Only messages carrying ``tool_calls`` are copied/rebuilt; every other message
+    is passed through by reference so the payload is unchanged in the common case.
+    The caller's message dicts are never mutated.
+    """
+    if not any(isinstance(m, dict) and m.get('tool_calls') for m in messages):
+        return messages
+    normalized = []
+    for message in messages:
+        if not (isinstance(message, dict) and message.get('tool_calls')):
+            normalized.append(message)
+            continue
+        item = dict(message)
+        calls = []
+        for call in message.get('tool_calls') or []:
+            if not isinstance(call, dict):
+                continue
+            function = call.get('function')
+            if not isinstance(function, dict):
+                calls.append(call)
+                continue
+            call_item = dict(call)
+            function = dict(function)
+            function['arguments'] = _ollama_tool_arguments(function.get('arguments'))
+            call_item['function'] = function
+            calls.append(call_item)
+        item['tool_calls'] = calls
+        normalized.append(item)
+    return normalized
+
+
 def _result_from_ollama_data(
     data: dict, url: str, num_ctx: int, model: str, tools: list[dict] | None,
 ) -> dict:
@@ -473,7 +529,9 @@ class OllamaClient(BaseClient):
 
         payload = {
             'model': model,
-            'messages': messages,
+            # Ollama needs tool-call arguments as objects; OpenAI clients send
+            # strings. Normalize so replayed tool history does not 400 the call.
+            'messages': _ollama_messages(messages),
             'stream': False,
             'options': {
                 'num_predict': max_tokens,
