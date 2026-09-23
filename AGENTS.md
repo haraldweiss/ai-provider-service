@@ -250,6 +250,58 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-09-23 — Open WebUI „Provider openrouter nicht erreichbar": fehlender Fallback für `harald` + `/configs` verwarf `fallback_model`
+
+- **Trigger:** Open WebUI meldete bei OpenRouter-Free-Modellen
+  `Provider openrouter nicht erreichbar, kein Fallback/Queue konfiguriert`
+  (HTTP 503, `type=service_unavailable`).
+- **Root cause (2 Schichten):**
+  1. Das gewählte Modell `qwen/qwen3.8-27b:free` wird upstream im **shared pool**
+     gedrosselt (OpenRouter 429, `provider_name=ModelRun`, `is_byok=false`,
+     `limit_source=upstream_provider_shared_pool`). Der 3×-Retry in
+     `providers/openrouter.py` erschöpft sich; der Provider selbst ist gesund
+     (`openrouter.healthy=true`, `/v1/auth/key` ok, `is_free_tier=false`,
+     Paid-Modell `openai/gpt-4o-mini` → 200).
+  2. Für `user_id='harald'` existierte **keine** `ProviderConfig` für
+     `openrouter` (nur `harald/cline` + `harald/opencode`) → `dispatch()` sah
+     `fallback=None`, `queue_when_unavailable=False` → `ProviderUnavailableError`
+     (`dispatcher.py:424`) → 503. Die Meldung ist irreführend: OpenRouter war
+     erreichbar, nur das Free-Modell gedrosselt und kein Fallback vorhanden.
+- **Fix A (Runtime-Config, DB):** `harald/openrouter` angelegt —
+  `fallback_provider=ollama`, `fallback_model=ollama/oracle-llama3.2:3b`
+  (always-on lokaler Container), `queue_when_unavailable=false`, und
+  `config={api_key:<OPENROUTER_API_KEY>, _free_only:true}`. Der Key **muss** in
+  der Row stehen: `_load_config()` liefert für openrouter ohne Row den Server-Key
+  als Default; eine Row ohne Key würde Paid-Modelle auf anonym/free-only
+  degradieren. Gesetzt via `POST /configs/harald/openrouter`, `fallback_model`
+  per direktem DB-Update (siehe Fix B).
+- **Fix B (Code, `api/configs_api.py`):** `save_config()` übernahm
+  `fallback_provider`/`queue_*`, **ignorierte aber `fallback_model`** → der
+  Fallback bekam den Request-Modellnamen (`qwen/qwen3.8-27b:free`) und lief in
+  ollama-404. Jetzt `if 'fallback_model' in body: pc.fallback_model = body[...] or None`
+  (+ Docstring/README). Regressionstest `tests/test_configs_api.py`.
+- **Verified:**
+  - `pytest tests/test_configs_api.py` → 3 passed; Full-Suite → **484 passed,
+    1 failed** (vorbestehend `test_opencode_raises_without_api_key`, auch rot
+    auf clean `main`).
+  - **DEPLOYED oracle-vm, running == committed (`4b1ee69`):** `sudo git fetch
+    origin && sudo git merge --ff-only origin/main` → `4b1ee69`; `sudo docker
+    compose build` + `up -d`; Container healthy; neue Zeilen in
+    `/app/api/configs_api.py:93-94` nachgewiesen.
+  - API-Persistenz live: `POST fallback_model=ollama/llama3.2:3b` → `GET` zeigt
+    es; `POST …oracle-llama3.2:3b` → `GET` + DB-Row zeigen finalen Wert.
+  - End-to-End: `openrouter/qwen/qwen3.8-27b:free` ×6 vor + ×5 nach Deploy →
+    **alle HTTP 200** (vorher ~50 % 503); Log `Trying fallback ollama
+    (model=oracle-llama3.2:3b)` (Präfix korrekt abgetrennt).
+  - Regression: `openrouter/openai/gpt-4o-mini` → 200 „OK!" (Paid-Pfad intakt);
+    `chat.wolfinisoftware.de` → 200.
+- **Gotcha:** `POST /configs/<user>/<provider>` validiert nur
+  `PROVIDER_REGISTRY[...][‘requires’]`; `fallback_model` war nie Teil des
+  Handlers. Ein erneutes Speichern über die API überschreibt `fallback_model`
+  jetzt korrekt bzw. lässt es bei Weglassen unangetastet (Test deckt das ab).
+- **Git:** `Fix:` `1032237` + `Test:` `ff67555` + `Docs:` `99e4301` auf
+  `fix/configs-fallback-model-2026-09-23` → `Merge:` --no-ff → main `4b1ee69` → push.
+
 ### 2026-09-23 — Provider-Regeln: OpenCode-Go-Session/UA + täglicher Doku-Watcher
 
 - **Trigger:** „check if the rules for opencode or cline changed" — Upstream-Doku
