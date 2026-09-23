@@ -16,3 +16,7 @@ venv/
 .serena/
 .worktrees/
 /vault/
+
+# Provider docs watcher runtime snapshot
+provider_docs_snapshot.json
+provider_docs_snapshot.json.prev

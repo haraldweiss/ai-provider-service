@@ -692,6 +692,47 @@ def check_cline_catalog_command():
         raise click.Abort()
 
 
+@click.command('check-provider-docs')
+@click.option('--notify/--no-notify', default=True,
+              help='Email the owner when a provider rule change is detected.')
+def check_provider_docs_command(notify):
+    """Check the provider documentation for client-rule changes (daily job).
+
+    Fetches the OpenCode/Cline docs that define required headers and free-tier
+    policy, snapshots the rule-relevant lines and emails the owner on change so
+    the provider clients + AGENTS.md §3.12 can be adjusted.
+    """
+    from provider_docs import (run_check, format_change_email,
+                               PROVIDER_DOC_SOURCES)
+    try:
+        result = run_check()
+    except Exception as e:
+        click.echo(f'Error: {e}', err=True)
+        raise click.Abort()
+
+    if result['errors']:
+        for sid, err in result['errors'].items():
+            click.echo(f'Warning: could not fetch {sid}: {err}', err=True)
+
+    if result['seeded']:
+        click.echo(f'No prior snapshot — seeded {len(PROVIDER_DOC_SOURCES)} '
+                   f'sources (no notification).')
+        return
+
+    if not result['changed']:
+        click.echo('No provider rule changes since last snapshot.')
+        return
+
+    click.echo(f'Provider rule change detected in {len(result["diff"])} source(s).')
+    if notify:
+        _send_email(
+            'ai-provider: Provider-Regeln geändert',
+            format_change_email(result['diff']),
+            to=Config.PROVIDER_DOCS_NOTIFY_EMAIL,
+        )
+        click.echo('Change detected — notification sent.')
+
+
 @click.command('summary-job')
 @click.option('--period', default='day', type=click.Choice(['day', 'app']),
               help='Aggregate by day or by app.')

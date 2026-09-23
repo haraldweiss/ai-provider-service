@@ -133,6 +133,7 @@ def create_app() -> Flask:
                      summary_job_command, vault_render_command, vault_backup_command,
                      refresh_free_models_command, update_zai_pricing_command,
                      update_cline_catalog_command, check_cline_catalog_command,
+                     check_provider_docs_command,
                      eval_seed_tasks_command, eval_run_command)
     app.cli.add_command(grants_bootstrap_command)
     app.cli.add_command(update_opencode_pricing_command)
@@ -143,6 +144,7 @@ def create_app() -> Flask:
     app.cli.add_command(update_zai_pricing_command)
     app.cli.add_command(update_cline_catalog_command)
     app.cli.add_command(check_cline_catalog_command)
+    app.cli.add_command(check_provider_docs_command)
     app.cli.add_command(eval_seed_tasks_command)
     app.cli.add_command(eval_run_command)
 
@@ -150,7 +152,7 @@ def create_app() -> Flask:
     def index():
         return jsonify({
             'service': 'ai-provider-service',
-            'version': '0.1.0',
+            'version': Config.SERVICE_VERSION,
             'endpoints': [
                 'GET  /health',
                 'GET  /providers?user_id=<id>',
