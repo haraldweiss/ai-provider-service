@@ -516,10 +516,16 @@ POST-Body Beispiel (Ollama mit Fallback auf Claude):
 {
   "config": {},
   "fallback_provider": "claude",
+  "fallback_model": "claude-haiku-4-5-20251001",
   "queue_when_unavailable": true,
   "queue_ttl_hours": 24
 }
 ```
+
+`fallback_model` ist optional. Fehlt es, nutzt der Dispatcher für den Fallback
+denselben Modellnamen wie im Request — das schlägt fehl, wenn der Fallback-Provider
+das Modell nicht hostet. Enthält der Wert ein Provider-Präfix (z.B.
+`ollama/oracle-llama3.2:3b`), wird dieses vor dem Aufruf abgetrennt.
 
 ### Chat
 

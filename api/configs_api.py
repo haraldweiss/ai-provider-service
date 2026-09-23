@@ -67,6 +67,7 @@ def save_config(user_id, provider_id):
       {
         "config": { "api_key": "...", "api_endpoint": "...", "organization_id": "..." },
         "fallback_provider": "claude" | null,
+        "fallback_model": "claude-haiku-4-5-20251001" | null,
         "queue_when_unavailable": true,
         "queue_ttl_hours": 24
       }
@@ -89,6 +90,8 @@ def save_config(user_id, provider_id):
     pc = save_provider_config(user_id, provider_id, config_dict)
     if 'fallback_provider' in body:
         pc.fallback_provider = body['fallback_provider'] or None
+    if 'fallback_model' in body:
+        pc.fallback_model = body['fallback_model'] or None
     if 'queue_when_unavailable' in body:
         pc.queue_when_unavailable = bool(body['queue_when_unavailable'])
     if 'queue_ttl_hours' in body:
