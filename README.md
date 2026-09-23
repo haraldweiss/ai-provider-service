@@ -39,8 +39,8 @@ Alle Provider-Clients senden App-Identifikations-Header an die Provider-APIs. Di
 
 | Provider | Header | Status |
 |----------|--------|--------|
-| **OpenCode** | `x-opencode-session: ai-provider-service` | **Pflicht** (ab 09/06, sonst Errors) |
-| **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service` | Optional (empfohlen) |
+| **OpenCode** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Pflicht** (Go; Session ab 09/06) |
+| **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service`<br>`X-Task-ID: <uuid>` (nur Chat) | Optional (empfohlen) |
 | **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (empfohlen) |
 | **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (Request-Tracking) |
 | **Anthropic/Claude** | Keine (Erkennung via System-Prompt-Analyse) | N/A |
@@ -49,27 +49,37 @@ Alle Provider-Clients senden App-Identifikations-Header an die Provider-APIs. Di
 
 ### OpenCode (Pflicht ab 2026-09-06)
 
-OpenCode erfordert den `x-opencode-session` Header in allen Requests. Requests ohne diesen Header werden ab dem 09.06.2026 abgelehnt.
+OpenCode Go erfordert pro Chat-Request einen `x-opencode-session` Header. Laut
+Doku muss der Wert eine **stabile Session-ID pro Konversation** sein (Routing +
+Prompt-Cache-Affinität), kein globaler Konstante — außerdem muss sich der Client
+mit einem **eigenen User-Agent** identifizieren (nicht der generische OpenAI-SDK-Name).
 
 **Implementierung** (`providers/opencode.py`):
 ```python
+# Client-weit: eigener User-Agent statt SDK-Default
 self.client = OpenAI(
     api_key=api_key,
     base_url=base_url,
-    default_headers={'x-opencode-session': 'ai-provider-service'}
+    default_headers={'User-Agent': f'ai-provider-service/{Config.SERVICE_VERSION}'},
 )
+
+# Pro Chat-Request: stabile ID aus dem Konversations-Präfix (System + erste User-Turn)
+extra_headers = {'x-opencode-session': _conversation_session_id(messages)}
+self.client.chat.completions.create(..., extra_headers=extra_headers)
 ```
 
 ### Cline (Optional)
 
-Cline akzeptiert `HTTP-Referer` und `X-Title` für App-Attribution in Rankings.
+Cline akzeptiert `HTTP-Referer` und `X-Title` für App-Attribution in Rankings sowie
+ein optionales `X-Task-ID` (eindeutige Task-ID, nur für Chat-Requests).
 
 **Implementierung** (`providers/cline.py`):
 ```python
 headers = {
     'Authorization': f'Bearer {api_key}',
     'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
-    'X-Title': 'ai-provider-service'
+    'X-Title': 'ai-provider-service',
+    'X-Task-ID': str(uuid.uuid4()),  # nur bei /chat/completions
 }
 ```
 
@@ -112,6 +122,33 @@ Wenn du einen neuen Provider integrierst:
 2. Falls unterstützt, füge die Header im Provider-Client hinzu
 3. Verwende konsistente Werte: `https://ai-provider-service.wolfinisoftware.de` für URLs, `ai-provider-service` für Namen
 4. Dokumentiere die Header in diesem README und in `AGENTS.md` §3.12
+
+### Täglicher Provider-Regel-Check (`flask check-provider-docs`)
+
+Provider ändern ihre Client-Regeln (Pflicht-Header, Free-Tier-Policy,
+Modell-Endpoints) ohne Ankündigung. `provider_docs.py` fetcht die
+regel-definierenden Doku-Seiten (OpenCode Go/Zen, Cline Auth/Models),
+snapshotet die regel-relevanten Zeilen (`x-opencode-session`, `HTTP-Referer`,
+`X-Task-ID`, `free model`, …) und mailt bei jeder Änderung an
+`PROVIDER_DOCS_NOTIFY_EMAIL`. Snapshot:
+`PROVIDER_DOCS_SNAPSHOT` (Default neben `VAULT_PATH`).
+
+```bash
+docker exec ai-provider flask check-provider-docs --no-notify   # report only
+```
+
+Bei Änderung: `providers/opencode.py` / `providers/cline.py` und
+`AGENTS.md` §3.12 anpassen.
+
+### OpenCode Free-Tier (Stand 2026-09-23)
+
+opencode.ai liefert die Free-Modelle nur noch an die OpenCode-App
+(`403 FreeTierError: "OpenCode's free tier can only be used from within
+OpenCode"`). Ein UA-Spoofing-Workaround (`opencode/latest`, `opencode/1.18.x`,
+`opencode/latest/1.3.15/cli`, mit/ohne `x-opencode-client: cli`) wurde live
+gegen **alle 9** Free-Modelle getestet und **funktioniert nicht** — daher
+bleiben die Free-Modelle in `/v1/models` versteckt. Sobald upstream die Sperre
+aufhebt, genügt `OPENCODE_ADVERTISE_FREE_MODELS=1`.
 
 ## Architektur
 

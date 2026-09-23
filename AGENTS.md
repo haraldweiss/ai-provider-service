@@ -159,8 +159,8 @@ All provider clients must send app identification headers where the provider sup
 
 | Provider | Headers | Status |
 |----------|---------|--------|
-| **OpenCode** | `x-opencode-session: ai-provider-service` | **Required** (ab 09/06, sonst Errors) |
-| **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service` | Optional (but recommended) |
+| **OpenCode** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Required** (Go; session ab 09/06) |
+| **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service`<br>`X-Task-ID: <uuid>` (nur Chat-Requests) | Optional (but recommended) |
 | **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (but recommended) |
 | **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (for request tracking) |
 | **Anthropic/Claude** | None (uses system prompt analysis for detection) | N/A |
@@ -169,10 +169,12 @@ All provider clients must send app identification headers where the provider sup
 
 **Implementation requirements:**
 
-1. **OpenCode** (`providers/opencode.py`): Must include `x-opencode-session` in all requests. Starting 2026-09-06, requests without this header will error.
-2. **Cline** (`providers/cline.py`): Should include `HTTP-Referer` and `X-Title` for app attribution in Cline's rankings.
+1. **OpenCode** (`providers/opencode.py`): Must send `x-opencode-session` per chat request. OpenCode Go's docs require the value to be a **stable session ID per conversation** (routing + prompt-cache affinity), not one global constant — `_conversation_session_id()` derives a sha256 of the stable prefix (system prompt + first user turn), so turns of one conversation share an ID while different conversations differ. The client must also send its **own User-Agent** (`ai-provider-service/<Config.SERVICE_VERSION>`) instead of the generic OpenAI-SDK UA (`_default_headers()`). Starting 2026-09-06, requests without the session header error.
+2. **Cline** (`providers/cline.py`): Sends `HTTP-Referer` and `X-Title` for app attribution, plus an optional unique `X-Task-ID` on chat requests.
 3. **OpenRouter** (`providers/openrouter.py`): Should include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` for app attribution.
 4. **OpenAI** (`providers/openai_client.py`): May include `X-Client-Request-Id` for request tracking (optional).
+
+**Keeping these rules current:** `flask check-provider-docs` (daily cron, §6) fetches the OpenCode/Cline docs that define these headers, snapshots the rule-relevant lines and emails on change — when it fires, re-check `providers/opencode.py` / `providers/cline.py` and this table. OpenCode's free tier was live-tested on 2026-09-23 against all 9 discovered free models and is still client-locked (`403 FreeTierError`) even with an `opencode/*` User-Agent, so free models stay hidden; set `OPENCODE_ADVERTISE_FREE_MODELS=1` only if the upstream lock lifts.
 
 **Adding a new provider:**
 
@@ -183,7 +185,7 @@ When integrating a new provider, check their documentation for app attribution o
 
 **Why this matters:**
 
-- **OpenCode**: Will reject requests without `x-opencode-session` starting 09/06
+- **OpenCode**: Will reject requests without `x-opencode-session` starting 09/06; Go also expects a client-specific User-Agent and a stable per-conversation session ID
 - **OpenRouter/Cline**: App appears in their rankings and leaderboards, driving awareness
 - **Debugging**: Providers can identify and troubleshoot our traffic more easily
 - **Compliance**: Some providers require identification for certain access tiers
@@ -241,12 +243,55 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 | DB | SQLite in Docker volume `bewerbungen_data` → `/app/data/storage.db`; host copy/backup at `/opt/ai-provider-data/storage.db` |
 | Ollama tunnels | macOS `launchd` autossh on 3 Macs → `opc@oracle-vm` + host/Compose bridge (see §3.3). Current container env uses `host.docker.internal` endpoints, including ports `11441`, `11434`, and `11440`. Server check: `ss -tln \| grep 1144\\|1143` and `curl 127.0.0.1:<port>/api/tags` |
 | Vault | `VAULT_PATH=/app/data/vault` (container env; `MEMORY_ENABLED=true`). Cache; regen via `flask vault-render --rebuild` inside the container. |
-| Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT). The old IONOS systemd timers (summary @02:30, vault-render /10min) are gone — any such jobs now run inside the container, not as host timers. Host root crontab (oracle-vm) also runs daily jobs against the container: `0 5` `flask refresh-free-models`, `0 6` `flask update-zai-pricing` and `0 6` `flask check-cline-catalog` (Cline model-change notification, added 2026-08-16). Server repo git fetch needs `sudo` (pack-object permission quirk); use `sudo git fetch origin && git merge --ff-only origin/main`. |
+| Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT). The old IONOS systemd timers (summary @02:30, vault-render /10min) are gone — any such jobs now run inside the container, not as host timers. Host root crontab (oracle-vm) also runs daily jobs against the container: `0 5` `flask refresh-free-models`, `0 6` `flask update-zai-pricing`, `0 6` `flask check-cline-catalog` (Cline model-change notification, added 2026-08-16) and `30 6` `flask check-provider-docs` (OpenCode/Cline client-rule docs watcher, added 2026-09-23 — emails on required-header/free-tier doc changes). Server repo git fetch needs `sudo` (pack-object permission quirk); use `sudo git fetch origin && git merge --ff-only origin/main`. |
 | Apache | Host `httpd` reverse-proxies `:8767` → `ai-admin.wolfinisoftware.de` and `ai-provider-service.wolfinisoftware.de/` (`/etc/httpd/conf.d/`) |
 
 ---
 
 ## 7. Handoff zone
+
+### 2026-09-23 — Provider-Regeln: OpenCode-Go-Session/UA + täglicher Doku-Watcher
+
+- **Trigger:** „check if the rules for opencode or cline changed" — Upstream-Doku
+  prüfen und Clients/Doku angleichen.
+- **Upstream-Findings (2026-09-23):** OpenCode Go ([docs/go](https://opencode.ai/docs/go/),
+  zuletzt 2026-09-22 aktualisiert) verlangt, dass Clients (a) ihren **eigenen
+  User-Agent** senden (`my-coding-agent/1.0`, kein generischer SDK/HTTP-Lib-Name)
+  und (b) pro Konversation eine **stabile Session-ID** in `x-opencode-session`
+  senden (Routing + Prompt-Cache). Cline ([docs.cline.bot/api/authentication](https://docs.cline.bot/api/authentication))
+  listet unverändert optionale `HTTP-Referer`/`X-Title`, neu dazu `X-Task-ID`
+  (optional, nur Chat).
+- **Code (`providers/opencode.py`):** statt statischem `x-opencode-session:
+  ai-provider-service` jetzt `_conversation_session_id()` (sha256 über
+  System-Prompt + erste User-Turn → stabil über Turns, verschieden je
+  Konversation) per `extra_headers` auf jedem Chat-Request; `_default_headers()`
+  sendet `User-Agent: ai-provider-service/<Config.SERVICE_VERSION>` statt des
+  OpenAI-SDK-UAs. `Config.SERVICE_VERSION` (env `SERVICE_VERSION`, Default
+  `0.1.0`) neu; `app.py` index nutzt sie. `providers/cline.py` sendet optional
+  `X-Task-ID` (uuid4, nur `/chat/completions`).
+- **Free-Tier live getestet:** alle 9 über `refresh-free-models` entdeckten
+  opencode-Free-Modelle liefern weiterhin **403 FreeTierError** („only … within
+  OpenCode") — mit unserem UA **und** mit UA-Spoofing (`opencode/latest`,
+  `opencode/1.18.16/18`, `opencode/latest/1.3.15/cli`, ± `x-opencode-client:
+  cli`). Ein UA-Workaround wurde deshalb **nicht** eingebaut; Free-Modelle
+  bleiben versteckt, `OPENCODE_ADVERTISE_FREE_MODELS=1` bleibt der Schalter
+  falls upstream die Sperre aufhebt.
+- **Neu — täglicher Provider-Doku-Watcher:** `provider_docs.py` +
+  `flask check-provider-docs` fetcht OpenCode Go/Zen- und Cline-Auth/Models-Docs,
+  snapshotet die regel-relevanten Zeilen (Header-Namen, free-model-Policy) und
+  mailt bei Änderung an `PROVIDER_DOCS_NOTIFY_EMAIL`. Snapshot
+  `PROVIDER_DOCS_SNAPSHOT` (Default `/app/data/provider_docs_snapshot.json`).
+  Cron-Vorschlag: `30 6 * * * docker exec ai-provider flask check-provider-docs
+  >> /var/log/ai-provider-provider-docs.log 2>&1` (siehe §6).
+- **Tests:** `pytest` → 473 passed, 1 pre-existing failure
+  (`test_opencode_raises_without_api_key`, auch auf clean `main` rot). Neue:
+  `tests/test_provider_docs.py` (Seeding, Change-Diff, Fetch-Fehler-Retention,
+  E-Mail-Body), +Session/UA-Tests in `tests/test_opencode_provider.py`,
+  +Header-Tests in `tests/test_cline_provider.py`. Live-Smoke:
+  `flask check-provider-docs` seedet 4 Quellen, zweiter Lauf „no changes".
+- **NICHT deployed** (kein Deploy beauftragt): Code+Tests+Doku lokal geändert,
+  noch nicht committet; Deploy via `build.sh <sha>` + `docker compose up -d
+  --force-recreate ai-provider`, danach Cron in §6 installieren.
 
 ### 2026-09-22 — Ollama-Toolcalls: OpenAI-String-Argumente → Objekt (Multi-Turn-Tool-Calls gefixt)
 
