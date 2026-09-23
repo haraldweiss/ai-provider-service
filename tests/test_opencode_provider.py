@@ -37,6 +37,55 @@ def test_opencode_uses_default_base_url(mock_openai):
     args, kwargs = mock_openai.call_args
     assert kwargs['base_url'] == 'https://opencode.ai/zen/v1'
     assert kwargs['api_key'] == 'sk-test'
+    # OpenCode Go requires clients to identify with their own UA, not the SDK's.
+    assert kwargs['default_headers']['User-Agent'].startswith('ai-provider-service/')
+    # The session header is per-conversation, not a global default.
+    assert 'x-opencode-session' not in kwargs['default_headers']
+
+
+def test_conversation_session_id_stable_across_turns():
+    from providers.opencode import _conversation_session_id
+    turn1 = [
+        {'role': 'system', 'content': 'You are helpful.'},
+        {'role': 'user', 'content': 'Hallo'},
+    ]
+    turn2 = turn1 + [
+        {'role': 'assistant', 'content': 'Hi!'},
+        {'role': 'user', 'content': 'Wie geht es dir?'},
+    ]
+    assert _conversation_session_id(turn1) == _conversation_session_id(turn2)
+
+
+def test_conversation_session_id_differs_between_conversations():
+    from providers.opencode import _conversation_session_id
+    a = _conversation_session_id([{'role': 'user', 'content': 'Wie ist das Wetter?'}])
+    b = _conversation_session_id([{'role': 'user', 'content': 'Erzähl mir einen Witz.'}])
+    assert a != b
+
+
+def test_conversation_session_id_handles_multimodal_content():
+    from providers.opencode import _conversation_session_id
+    content = [
+        {'type': 'text', 'text': 'Was ist das?'},
+        {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,AAAA'}},
+    ]
+    assert _conversation_session_id([{'role': 'user', 'content': content}]) != 'ai-provider-service'
+
+
+@patch('providers.opencode.OpenAI')
+def test_opencode_create_message_sends_per_conversation_session(mock_openai):
+    from providers.opencode import OpencodeClient, _conversation_session_id
+    fake_response = MagicMock()
+    fake_response.choices = [MagicMock(message=MagicMock(content='hi back'))]
+    fake_response.usage = MagicMock(prompt_tokens=10, completion_tokens=3)
+    create = mock_openai.return_value.chat.completions.create
+    create.return_value = fake_response
+
+    messages = [{'role': 'user', 'content': 'hi'}]
+    OpencodeClient({'api_key': 'sk-test'}).create_message('gpt-5', messages, 50)
+
+    extra_headers = create.call_args.kwargs['extra_headers']
+    assert extra_headers['x-opencode-session'] == _conversation_session_id(messages)
 
 
 @patch('providers.opencode.OpenAI')

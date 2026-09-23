@@ -10,6 +10,11 @@ class Config:
     HOST = os.getenv('HOST', '127.0.0.1')
     PORT = int(os.getenv('PORT', '8767'))
 
+    # Advertised service version — used for /health, the index endpoint and
+    # outbound User-Agent headers (opencode Go requires clients to identify
+    # themselves with their own user agent, not a generic SDK name).
+    SERVICE_VERSION = os.getenv('SERVICE_VERSION', '0.1.0')
+
     MASTER_KEY = os.getenv('MASTER_KEY', '')
     SERVICE_TOKEN = os.getenv('SERVICE_TOKEN', '')
 
@@ -103,6 +108,17 @@ class Config:
     MEMORY_FREE_MODELS = [
         m.strip() for m in os.getenv('MEMORY_FREE_MODELS', '').split(',') if m.strip()
     ]
+
+    # Provider documentation watcher (`flask check-provider-docs`, daily cron).
+    # Snapshots the rule-relevant lines of the provider docs so a change in
+    # required headers / free-tier policy is reported. Defaults next to the
+    # vault (i.e. /app/data in the container) so it survives image rebuilds.
+    PROVIDER_DOCS_SNAPSHOT = os.getenv(
+        'PROVIDER_DOCS_SNAPSHOT',
+        os.path.join(os.path.dirname(VAULT_PATH), 'provider_docs_snapshot.json'),
+    )
+    PROVIDER_DOCS_NOTIFY_EMAIL = os.getenv(
+        'PROVIDER_DOCS_NOTIFY_EMAIL', 'harald.weiss@wolfinisoftware.de')
 
     # Region-locked model exclusion — comma-separated entries. Each entry may
     # be a bare model prefix (applies to every provider) or a `provider/prefix`

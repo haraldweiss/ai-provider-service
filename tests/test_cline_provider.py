@@ -90,6 +90,41 @@ def test_create_message_returns_claude_format(mock_httpx_client):
 
 
 @patch('providers.cline.httpx.Client')
+def test_create_message_sends_attribution_and_task_id_headers(mock_httpx_client):
+    """Cline chat requests carry attribution headers plus a unique X-Task-ID."""
+    from providers.cline import ClineClient
+    fake_raw = {
+        'data': {
+            'choices': [{'message': {'content': 'ok'}, 'finish_reason': 'stop'}],
+            'usage': {'prompt_tokens': 1, 'completion_tokens': 1},
+        },
+        'success': True,
+    }
+    mock_response = MagicMock()
+    mock_response.json.return_value = fake_raw
+    mock_response.raise_for_status.return_value = None
+    inst = MagicMock()
+    inst.post.return_value = mock_response
+    mock_httpx_client.return_value.__enter__.return_value = inst
+
+    ClineClient({'api_key': 'sk-test'}).create_message(
+        'anthropic/claude-sonnet-4-6', [{'role': 'user', 'content': 'hi'}], 50)
+    headers = inst.post.call_args[1]['headers']
+    assert headers['HTTP-Referer'] == 'https://ai-provider-service.wolfinisoftware.de'
+    assert headers['X-Title'] == 'ai-provider-service'
+    assert headers['X-Task-ID']
+    assert headers['Authorization'] == 'Bearer sk-test'
+
+
+@patch('providers.cline.httpx.Client')
+def test_get_headers_omits_task_id_by_default(mock_httpx_client):
+    """X-Task-ID is only attached to chat requests, not model/health probes."""
+    from providers.cline import ClineClient
+    headers = ClineClient({'api_key': 'sk-test'})._get_headers()
+    assert 'X-Task-ID' not in headers
+
+
+@patch('providers.cline.httpx.Client')
 def test_get_models_uses_live_api(mock_httpx_client):
     """get_models() prefers Cline's live /models list over the override file."""
     from providers import cline as cline_mod

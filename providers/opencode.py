@@ -5,6 +5,7 @@ Handles reasoning_content for models that output there.
 """
 
 from __future__ import annotations
+import hashlib
 import json
 import logging
 import os
@@ -17,16 +18,76 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
+APP_NAME = 'ai-provider-service'
+
 _MODEL_PREFIX_RE = re.compile(r'^(?:opencode-go/|opencode-)', re.IGNORECASE)
 _BALANCE_ERR_RE = re.compile(r'insufficient balance|CreditsError', re.IGNORECASE)
+
+
+def _user_agent() -> str:
+    """Identify as our own coding agent, not the generic OpenAI SDK.
+
+    OpenCode Go's docs require clients to send their own user agent
+    (e.g. ``my-coding-agent/1.0``) rather than a generic SDK/HTTP-library name.
+    """
+    version = getattr(Config, 'SERVICE_VERSION', '') or '0.0.0'
+    return f'{APP_NAME}/{version}'
+
+
+def _default_headers() -> dict:
+    return {'User-Agent': _user_agent()}
+
+
+def _content_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return ' '.join(
+            p.get('text', '') for p in content
+            if isinstance(p, dict) and isinstance(p.get('text'), str)
+        )
+    return ''
+
+
+def _conversation_session_id(messages: list[dict] | None) -> str:
+    """Return an opaque session id that is stable per conversation.
+
+    OpenCode Go uses ``x-opencode-session`` to pin consecutive turns of one
+    conversation to the same backend (routing + prompt-cache affinity). The id
+    must therefore stay identical across turns but differ between
+    conversations, so we hash the stable prefix (system prompt + first user
+    turn) instead of the ever-growing message history.
+    """
+    system_parts: list[str] = []
+    first_user = ''
+    for m in messages or []:
+        if not isinstance(m, dict):
+            continue
+        role = m.get('role', '')
+        text = _content_text(m.get('content'))
+        if role == 'system':
+            system_parts.append(text)
+        elif role == 'user' and not first_user:
+            first_user = text
+            break
+    seed = '\n'.join(system_parts) + '\x1f' + first_user
+    if first_user or system_parts:
+        return hashlib.sha256(seed.encode('utf-8')).hexdigest()[:32]
+    return APP_NAME
 
 # 2026-09-18: opencode.ai locked its free tier to the OpenCode app —
 # every free-model chat via this gateway gets
 # `403 FreeTierError: "OpenCode's free tier can only be used from within
 # OpenCode"`. Advertising the free models in /v1/models only produces
 # dead selections in pi / Open WebUI, so free-only mode hides them.
-# Paid models via a personal key are unaffected. Reversible via env:
-# OPENCODE_ADVERTISE_FREE_MODELS=1 restores the old behavior.
+# Paid models via a personal key are unaffected.
+#
+# 2026-09-23: live-tested UA spoofing (`opencode/latest`, `opencode/1.18.x`,
+# `opencode/latest/1.3.15/cli`, with/without `x-opencode-client: cli`) against
+# every discovered free model — all still return 403 FreeTierError, so no
+# header workaround unlocks the free tier. Re-check daily via
+# `flask check-provider-docs`; if the lock lifts, set
+# OPENCODE_ADVERTISE_FREE_MODELS=1 to re-list the free models.
 def _free_models_advertised() -> bool:
     return os.getenv('OPENCODE_ADVERTISE_FREE_MODELS', '').strip() == '1'
 
@@ -142,7 +203,7 @@ class OpencodeClient(BaseClient):
         self.client = OpenAI(
             api_key=api_key, 
             base_url=base_url,
-            default_headers={'x-opencode-session': 'ai-provider-service'}
+            default_headers=_default_headers()
         )
         self._free_models: list[str] | None = None
 
@@ -182,7 +243,7 @@ class OpencodeClient(BaseClient):
         client = OpenAI(
             api_key=api_key, 
             base_url=Config.OPENCODE_BASE_URL,
-            default_headers={'x-opencode-session': 'ai-provider-service'}
+            default_headers=_default_headers()
         )
         return refresh_free_models(client)
 
@@ -207,7 +268,8 @@ class OpencodeClient(BaseClient):
             kwargs = dict(model=clean, messages=messages, max_tokens=max_tokens)
             if tools:
                 kwargs['tools'] = tools
-            r = self.client.chat.completions.create(**kwargs)
+            extra_headers = {'x-opencode-session': _conversation_session_id(messages)}
+            r = self.client.chat.completions.create(**kwargs, extra_headers=extra_headers)
             text = _extract_content(r.choices[0])
             return {
                 'content': [{'text': text}],
@@ -240,6 +302,7 @@ class OpencodeClient(BaseClient):
                     r2 = self.client.chat.completions.create(
                         model=fallback_model, messages=messages,
                         max_tokens=max_tokens, tools=tools if tools else None,
+                        extra_headers=extra_headers,
                     )
                     text2 = _extract_content(r2.choices[0])
                     _send_notification(

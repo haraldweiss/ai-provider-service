@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from pathlib import Path
 import httpx
 from providers.base import BaseClient
@@ -46,13 +47,21 @@ class ClineClient(BaseClient):
             raise ValueError("Cline: api_key erforderlich")
         self._base_url = config.get('api_endpoint') or Config.CLINE_BASE_URL or DEFAULT_BASE_URL
 
-    def _get_headers(self) -> dict:
-        """Return headers for Cline API requests including optional tracking headers."""
-        return {
+    def _get_headers(self, task_id: str | None = None) -> dict:
+        """Return headers for Cline API requests including optional tracking headers.
+
+        ``HTTP-Referer``/``X-Title`` are documented attribution headers;
+        ``X-Task-ID`` is an optional unique task identifier (see
+        https://docs.cline.bot/api/authentication).
+        """
+        headers = {
             'Authorization': f'Bearer {self._api_key}',
             'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
             'X-Title': 'ai-provider-service',
         }
+        if task_id:
+            headers['X-Task-ID'] = task_id
+        return headers
 
     def _models_from_override(self) -> list[str]:
         try:
@@ -105,7 +114,7 @@ class ClineClient(BaseClient):
             r = hc.post(
                 f'{self._base_url}/chat/completions',
                 json=body,
-                headers=self._get_headers(),
+                headers=self._get_headers(task_id=str(uuid.uuid4())),
             )
         r.raise_for_status()
         raw = r.json()
