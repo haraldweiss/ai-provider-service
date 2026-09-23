@@ -283,15 +283,30 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   `PROVIDER_DOCS_SNAPSHOT` (Default `/app/data/provider_docs_snapshot.json`).
   Cron-Vorschlag: `30 6 * * * docker exec ai-provider flask check-provider-docs
   >> /var/log/ai-provider-provider-docs.log 2>&1` (siehe §6).
-- **Tests:** `pytest` → 473 passed, 1 pre-existing failure
+- **Tests:** `pytest` → 481 passed, 1 pre-existing failure
   (`test_opencode_raises_without_api_key`, auch auf clean `main` rot). Neue:
   `tests/test_provider_docs.py` (Seeding, Change-Diff, Fetch-Fehler-Retention,
   E-Mail-Body), +Session/UA-Tests in `tests/test_opencode_provider.py`,
   +Header-Tests in `tests/test_cline_provider.py`. Live-Smoke:
   `flask check-provider-docs` seedet 4 Quellen, zweiter Lauf „no changes".
-- **NICHT deployed** (kein Deploy beauftragt): Code+Tests+Doku lokal geändert,
-  noch nicht committet; Deploy via `build.sh <sha>` + `docker compose up -d
-  --force-recreate ai-provider`, danach Cron in §6 installieren.
+- **DEPLOYED auf oracle-vm (2026-09-23), running == committed (`f596b15`):**
+  Server-Repo ff auf `f596b15`; Image `localhost/ai-provider:f596b15`
+  (+`:latest`) via `sudo ./build.sh f596b15`; Container recreated
+  (`sudo docker compose up -d --force-recreate ai-provider`) → **healthy**,
+  `RestartCount=0`, created `2026-09-23T06:13:29Z`. Verifiziert: `/health` 200;
+  `/v1/models` 498 (cline 454, ollama 20, **opencode 0** — Free-Modelle weiter
+  versteckt); Chat-Smoke `ollama/oracle-llama3.2:3b` → „OK" und
+  `cline/qwen/qwen3-235b-a22b` → „OK" (X-Task-ID-Pfad); keine Startup-Tracebacks.
+- **Env-/Cron-Änderung bei Deploy:** `PROVIDER_DOCS_SNAPSHOT=/app/data/provider_docs_snapshot.json`
+  in `/etc/ai-provider/ai-provider.env` ergänzt (Backup
+  `/root/ai-provider.env.bak-20260923061322`), da die laufende Container-Env
+  **kein** `VAULT_PATH` setzt und der Snapshot sonst ins flüchtige `/app` fiel.
+  Seed nach `/opt/ai-provider-data/provider_docs_snapshot.json` kopiert
+  (uid 999); 2. Lauf „no changes". Daily-Cron (root) installiert:
+  `30 6 * * * docker exec ai-provider flask check-provider-docs >> /var/log/ai-provider-provider-docs.log 2>&1`.
+- **Hinweis (pre-existing, nicht angefasst):** die laufende Env hat weder
+  `VAULT_PATH` noch `MEMORY_ENABLED`, entgegen §6 — Memory/Vault läuft in diesem
+  Compose also nicht. Eigene Session nötig, falls das reaktiviert werden soll.
 
 ### 2026-09-22 — Ollama-Toolcalls: OpenAI-String-Argumente → Objekt (Multi-Turn-Tool-Calls gefixt)
 
