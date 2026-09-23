@@ -304,9 +304,16 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   Seed nach `/opt/ai-provider-data/provider_docs_snapshot.json` kopiert
   (uid 999); 2. Lauf „no changes". Daily-Cron (root) installiert:
   `30 6 * * * docker exec ai-provider flask check-provider-docs >> /var/log/ai-provider-provider-docs.log 2>&1`.
-- **Hinweis (pre-existing, nicht angefasst):** die laufende Env hat weder
-  `VAULT_PATH` noch `MEMORY_ENABLED`, entgegen §6 — Memory/Vault läuft in diesem
-  Compose also nicht. Eigene Session nötig, falls das reaktiviert werden soll.
+- **Memory/Vault reaktiviert (2026-09-23):** die laufende Env hatte weder
+  `VAULT_PATH` noch `MEMORY_ENABLED` (entgegen §6), daher war Memory/Vault
+  inaktiv. Korrigiert: beide Vars in `/etc/ai-provider/ai-provider.env` ergänzt
+  (Backup `/root/ai-provider.env.bak-20260923061856`), Container recreated →
+  healthy (`RestartCount=0`). Verifiziert: `Config.VAULT_PATH=/app/data/vault`,
+  `MEMORY_ENABLED=True`; `/memory/notes` 200, `/memory/audit` 200, WebDAV
+  `OPTIONS` 200 + `PROPFIND` 207; Chat-Smoke schreibt eine Audit-Note ohne
+  „memory audit write failed"; `memory_notes` 1566. (Nebenbefund:
+  `/memory/tags` existiert in diesem Repo nicht — der Handoff-Eintrag
+  2026-06-05 war hier ungenau.)
 
 ### 2026-09-22 — Ollama-Toolcalls: OpenAI-String-Argumente → Objekt (Multi-Turn-Tool-Calls gefixt)
 
