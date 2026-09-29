@@ -8,7 +8,7 @@ from flask_cors import CORS
 from sqlalchemy.exc import OperationalError
 
 from config import Config
-from database import db
+from database import db, configure_sqlite_engine
 import worker
 from api.notifications import init_notification_service
 
@@ -80,6 +80,12 @@ def create_app() -> Flask:
     CORS(app, resources={r'/*': {'origins': origins, 'supports_credentials': False}})
 
     db.init_app(app)
+
+    # Register the SQLite pragmas (WAL + busy_timeout) BEFORE the first
+    # connection is created: create_all()/FTS below already open pooled
+    # connections, and a listener added later would only affect new ones.
+    configure_sqlite_engine(app)
+
     with app.app_context():
         # Models importieren, damit Tables registriert werden.
         from storage.models import (  # noqa: F401
