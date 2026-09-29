@@ -129,6 +129,15 @@ class Config:
     EVAL_JUDGE_PROVIDER = os.getenv('EVAL_JUDGE_PROVIDER', 'opencode')
     EVAL_JUDGE_MODEL = os.getenv('EVAL_JUDGE_MODEL', 'big-pickle')
     EVAL_REQUEST_DELAY = os.getenv('EVAL_REQUEST_DELAY', '2.5')  # seconds between requests (rate limit protection)
+    # Cap applied by the HTTP path (POST /eval/run) when the caller does not pass
+    # max_models. Without it a single request would evaluate every advertised
+    # model (hundreds) at EVAL_REQUEST_DELAY each — run 363e1cf2 did exactly
+    # that and never finished.
+    EVAL_MAX_MODELS = os.getenv('EVAL_MAX_MODELS', '10')
+    # A run that is still 'pending'/'running' after this many hours is treated as
+    # abandoned (worker died / container was recreated) and marked 'failed' by
+    # reap_stale_runs(), so the Hub tile never shows a permanent "running".
+    EVAL_STALE_HOURS = os.getenv('EVAL_STALE_HOURS', '3')
 
     EXCLUDE_REGION_LOCKED_MODELS = [
         m.strip() for m in os.getenv('EXCLUDE_REGION_LOCKED_MODELS',

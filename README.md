@@ -792,6 +792,45 @@ Quelle: `wolfini_de_web/studio/`).
 (`bytedance-seed/seedream-4.5` → `2048x2048`) wird nur injiziert, wenn weder
 `size` noch `aspect_ratio` gesendet wurde — sonst würden sich beide widersprechen.
 
+### Model Evaluation (Eval API)
+
+Misst, wie gut die konfigurierten Modelle die `eval_tasks` (Prompt + Bewertungs-
+kriterien je Kategorie) lösen, und leitet daraus Empfehlungen ab. Konsument ist
+u.a. die Hub-Kachel „🏆 Model Evaluation“ in `wolfini_de_web`.
+
+```
+GET  /eval/tasks                 # aktive Tasks (Service-Token)
+POST /eval/tasks                 # Task anlegen (Admin-Token)
+GET  /eval/runs                  # letzte 50 Runs — reapt dabei verwaiste Runs
+GET  /eval/run                   # (POST) Run starten, läuft im Hintergrund-Thread
+GET  /eval/runs/<id>             # Run + Einzel-Ergebnisse
+GET  /eval/leaderboard           # aggregiertes Ranking (nach avg_score)
+GET  /recommend?category=coding  # Top-Modelle je Kategorie
+```
+
+`POST /eval/run` (Admin-Token) Body optional: `categories[]`, `model_ids[]`,
+`max_models`, `force`.
+
+- **`max_models` default = `EVAL_MAX_MODELS` (10).** Ohne Cap würde ein einziger
+  Request jedes angebotene Modell bewerten (im Bestand ~530 Modelle × 7 Tasks ×
+  2,5 s ≈ Stunden) — genau so entstand der nie beendete Run `363e1cf2`.
+- **Ein aktiver Run blockiert neue Runs** (HTTP 409 mit `run_id`) — `{"force": true}`
+  erzwingt einen zweiten. Verhindert überlappende Runs, die sich gegenseitig in
+  Ratelimits drücken.
+- Läuft in einem Daemon-Thread (`eval.runner.run_eval_run`) mit eigener Session;
+  nur App-Objekt + Primitive (Run-ID, Modell-Dicts) überqueren die Thread-Grenze.
+- **Verwaiste Runs** (Worker-Prozess tot, Container neu gebaut) werden von
+  `reap_stale_runs()` beim nächsten `GET /eval/runs`/`POST /eval/run` auf `failed`
+  gesetzt (`EVAL_STALE_HOURS`, Default 3) — sonst bliebe die Kachel ewig auf
+  „running“ und der 409-Guard würde alles blockieren.
+
+| Env-Var | Default | Bedeutung |
+|---|---|---|
+| `EVAL_JUDGE_PROVIDER` / `EVAL_JUDGE_MODEL` | `opencode` / `big-pickle` | LLM-Judge für den Qualitätsscore |
+| `EVAL_REQUEST_DELAY` | `2.5` | Sekunden zwischen zwei Requests (Ratelimit-Schutz) |
+| `EVAL_MAX_MODELS` | `10` | Modell-Cap, wenn `max_models` fehlt |
+| `EVAL_STALE_HOURS` | `3` | Ab wann ein hängender Run als verwaist gilt |
+
 ### Grant-Request + Notifications
 
 User können Provider-Zugriff selbst beantragen, Admins können Anfragen reviewen:
