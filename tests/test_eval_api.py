@@ -2,6 +2,7 @@
 
 import json
 import pytest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 from database import db
 from storage.models import EvalTask, EvalRun, EvalResult
@@ -210,3 +211,158 @@ class TestEvalSeedTasks:
             result = runner.invoke(eval_seed_tasks_command)
             assert 'Seeded 0' in result.output
             assert EvalTask.query.count() == 7
+
+
+class TestEvalRunLifecycle:
+    """POST /eval/run guard rails plus the stale-run reaper.
+
+    Regression context: run 363e1cf2 (started 2026-09-03 with max_models unset,
+    so 548 models x 7 tasks) never finished and stayed status='running' forever
+    after its worker process died, and run 034c4289 failed instantly with
+    "Instance <EvalTask ...> is not bound to a Session".
+    """
+
+    ADMIN = {'Authorization': 'Bearer admin-test-token'}
+
+    def _seed_task(self, app):
+        with app.app_context():
+            db.session.add(EvalTask(category='coding', name='life', prompt='p'))
+            db.session.commit()
+
+    def test_active_run_blocks_a_new_run(self, app, client):
+        self._seed_task(app)
+        with app.app_context():
+            db.session.add(EvalRun(id='active-run', status='running',
+                                   total_models=1, total_tasks=1))
+            db.session.commit()
+
+        resp = client.post('/eval/run', headers=self.ADMIN, json={})
+        assert resp.status_code == 409
+        body = resp.get_json()
+        assert body['run_id'] == 'active-run'
+        assert 'force' in body['hint']
+
+    def test_force_starts_second_run_and_max_models_is_capped(self, app, client):
+        self._seed_task(app)
+        with app.app_context():
+            db.session.add(EvalRun(id='active-run', status='running',
+                                   total_models=1, total_tasks=1))
+            db.session.commit()
+
+        many = [{'provider_id': 'ollama', 'model_name': f'm{i}', 'model_id': f'ollama/m{i}'}
+                for i in range(50)]
+        with patch('eval.runner.discover_available_models', return_value=many), \
+             patch('eval.runner.run_eval_run') as mock_worker:
+            resp = client.post('/eval/run', headers=self.ADMIN, json={'force': True})
+
+        assert resp.status_code == 202
+        run = resp.get_json()['run']
+        # Config.EVAL_MAX_MODELS caps the run when the caller omits max_models.
+        assert run['total_models'] == int(Config.EVAL_MAX_MODELS)
+        assert run['total_models'] < len(many)
+        mock_worker.assert_called_once()
+
+    def test_explicit_max_models_wins(self, app, client):
+        self._seed_task(app)
+        many = [{'provider_id': 'ollama', 'model_name': f'm{i}', 'model_id': f'ollama/m{i}'}
+                for i in range(50)]
+        with patch('eval.runner.discover_available_models', return_value=many), \
+             patch('eval.runner.run_eval_run'):
+            resp = client.post('/eval/run', headers=self.ADMIN,
+                               json={'max_models': 3})
+        assert resp.status_code == 202
+        assert resp.get_json()['run']['total_models'] == 3
+
+    def test_stale_run_is_reaped_by_list_runs(self, app, client):
+        with app.app_context():
+            db.session.add(EvalRun(
+                id='stuck-run', status='running', total_models=548, total_tasks=7,
+                started_at=datetime.now(timezone.utc) - timedelta(hours=5),
+            ))
+            db.session.commit()
+
+        resp = client.get('/eval/runs', headers={'Authorization': 'Bearer test-token'})
+        assert resp.status_code == 200
+        run = resp.get_json()['runs'][0]
+        assert run['status'] == 'failed'
+        assert 'stale' in run['error_message']
+        assert run['finished_at'] is not None
+
+    def test_fresh_run_is_not_reaped(self, app, client):
+        with app.app_context():
+            db.session.add(EvalRun(id='fresh-run', status='running',
+                                   total_models=1, total_tasks=1))
+            db.session.commit()
+
+        resp = client.get('/eval/runs', headers={'Authorization': 'Bearer test-token'})
+        assert resp.get_json()['runs'][0]['status'] == 'running'
+
+
+class TestEvalWorker:
+    """run_eval_run() — the background worker behind POST /eval/run."""
+
+    MODEL = {'provider_id': 'ollama', 'model_name': 'm', 'model_id': 'ollama/m'}
+
+    def _seed(self, app, run_id):
+        with app.app_context():
+            db.session.add(EvalTask(category='coding', name='w', prompt='p'))
+            db.session.add(EvalRun(id=run_id, status='pending',
+                                   total_models=1, total_tasks=1))
+            db.session.commit()
+
+    def _stored(self, app, run_id):
+        with app.app_context():
+            run = EvalRun.query.get(run_id)
+            return {'status': run.status, 'error': run.error_message,
+                    'finished': run.finished_at, 'models': run.completed_models}
+
+    def test_completes_and_stamps_finished_at(self, app):
+        self._seed(app, 'worker-run')
+        from eval.runner import run_eval_run
+
+        with patch('eval.runner._evaluate_model') as mock_eval:
+            run_eval_run(app, 'worker-run', [self.MODEL])
+
+        assert mock_eval.call_count == 1
+        stored = self._stored(app, 'worker-run')
+        assert stored['status'] == 'completed'
+        assert stored['finished'] is not None
+        assert stored['models'] == 1
+
+    def test_marks_failed_on_evaluator_exception(self, app):
+        self._seed(app, 'worker-fail')
+        from eval.runner import run_eval_run
+
+        with patch('eval.runner._evaluate_model', side_effect=RuntimeError('boom')):
+            run_eval_run(app, 'worker-fail', [self.MODEL])
+
+        stored = self._stored(app, 'worker-fail')
+        assert stored['status'] == 'failed'
+        assert 'RuntimeError: boom' in stored['error']
+        assert stored['finished'] is not None
+
+    def test_reloads_tasks_in_its_own_session(self, app):
+        """The worker must not need ORM objects from the caller's session.
+
+        The request teardown closes its session while the worker still runs; a
+        captured EvalTask then raises "Instance ... is not bound to a Session".
+        """
+        self._seed(app, 'worker-detach')
+        with app.app_context():
+            db.session.remove()      # detach everything, like a request teardown
+
+        seen = []
+
+        def fake_eval(run_obj, model_info, tasks, user_id):
+            seen.append([t.name for t in tasks])
+
+        from eval.runner import run_eval_run
+        with patch('eval.runner._evaluate_model', side_effect=fake_eval):
+            run_eval_run(app, 'worker-detach', [self.MODEL])
+
+        assert seen == [['w']]
+        assert self._stored(app, 'worker-detach')['status'] == 'completed'
+
+    def test_unknown_run_id_is_a_no_op(self, app):
+        from eval.runner import run_eval_run
+        run_eval_run(app, 'does-not-exist', [self.MODEL])   # must not raise

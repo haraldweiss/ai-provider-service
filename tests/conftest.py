@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
+from sqlalchemy.pool import StaticPool
 from app import create_app
 from database import db
 from config import Config
@@ -57,6 +58,15 @@ def app():
     Sets MASTER_KEY and SERVICE_TOKEN on Config directly because
     config.py calls load_dotenv() at import time — os.environ overrides
     are ignored for already-loaded values.
+
+    The database URI is forced on the Config CLASS for the same reason:
+    SQLALCHEMY_DATABASE_URI is bound at import time, so the env var alone is
+    ineffective. Without this, the session silently ran against the persistent
+    instance/storage.db, and test_config_access_control's importlib.reload()
+    flipped later Config objects to in-memory mid-session — the split brain
+    produced order-dependent failures ("table user_access_tokens already
+    exists" in the fixture, data leaking between tests). StaticPool pins every
+    connection to the same in-memory database.
     """
     os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
     Config.MASTER_KEY = '8hbXucPt-LumWh0Ul9f9wka6VHzAHE29LvU52R3pEDA='
@@ -64,6 +74,12 @@ def app():
     Config.MEMORY_ENABLED = True
     os.environ['MASTER_KEY'] = Config.MASTER_KEY
     os.environ['SERVICE_TOKEN'] = Config.SERVICE_TOKEN
+    Config.DATABASE_URL = 'sqlite:///:memory:'
+    Config.SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    Config.SQLALCHEMY_ENGINE_OPTIONS = {
+        'poolclass': StaticPool,
+        'connect_args': {'check_same_thread': False},
+    }
 
     app = create_app()
     app.config['TESTING'] = True

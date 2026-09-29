@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from database import db
@@ -76,6 +76,103 @@ def _judge_dispatch(messages: list) -> str:
         return ''
 
 
+def _active_tasks(categories: list[str] = None) -> list[EvalTask]:
+    """Active eval tasks, optionally filtered by category."""
+    query = EvalTask.query.filter_by(is_active=True)
+    if categories:
+        query = query.filter(EvalTask.category.in_(categories))
+    return query.all()
+
+
+def reap_stale_runs(max_age_hours: float = None) -> int:
+    """Mark abandoned runs as failed; returns how many were reaped.
+
+    A run whose process died (container recreate, gunicorn restart, OOM) keeps
+    status 'pending'/'running' forever. That makes the Hub tile show a permanent
+    "running" run and (since the API refuses concurrent runs) blocks new ones —
+    run 363e1cf2 sat there from 2026-09-03.
+    """
+    max_age = float(Config.EVAL_STALE_HOURS) if max_age_hours is None else float(max_age_hours)
+    now = datetime.now(timezone.utc)
+    reaped = 0
+    for run in EvalRun.query.filter(EvalRun.status.in_(('pending', 'running'))).all():
+        started = run.started_at
+        if started is None:
+            continue
+        if started.tzinfo is None:          # SQLite returns naive UTC datetimes
+            started = started.replace(tzinfo=timezone.utc)
+        if (now - started) <= timedelta(hours=max_age):
+            continue
+        run.status = 'failed'
+        run.error_message = (
+            f'stale: no progress for >{max_age:g}h (worker died or was restarted)'
+        )[:1000]
+        run.finished_at = now
+        reaped += 1
+    if reaped:
+        db.session.commit()
+        logger.warning('Eval: marked %d stale run(s) as failed', reaped)
+    return reaped
+
+
+def run_eval_run(
+    app,
+    run_id: str,
+    available: list[dict],
+    categories: list[str] = None,
+    user_id: str = None,
+) -> None:
+    """Evaluate `available` models for an existing run row, on its own session.
+
+    This is the background worker started by POST /eval/run. Only primitives
+    cross the thread boundary (run id + plain model dicts): passing ORM
+    instances owned by the request session is how run 034c4289 died with
+    "Instance <EvalTask ...> is not bound to a Session" — the request teardown
+    closes its session while the worker still holds the objects.
+
+    Uses the caller's app object instead of building a second one (create_app()
+    per request thread would re-run create_all/FTS and duplicate the config).
+    """
+    user_id = user_id or Config.ADMIN_USER_ID
+    with app.app_context():
+        run = db.session.get(EvalRun, run_id)
+        if run is None:
+            logger.warning('Eval run %s disappeared before the worker started', run_id)
+            return
+
+        run.status = 'running'
+        db.session.commit()
+
+        try:
+            tasks = _active_tasks(categories)
+            if not tasks:
+                raise ValueError('No active eval tasks found')
+            logger.info('Eval run %s: %d models x %d tasks',
+                        run_id, len(available), len(tasks))
+
+            for model_info in available:
+                _evaluate_model(run, model_info, tasks, user_id)
+                run.completed_models += 1
+                db.session.commit()
+
+            run.status = 'completed'
+        except Exception as e:
+            logger.exception('Eval run %s failed', run_id)
+            db.session.rollback()
+            run = db.session.get(EvalRun, run_id)
+            if run is not None:
+                run.status = 'failed'
+                run.error_message = f'{type(e).__name__}: {str(e)[:900]}'
+        finally:
+            try:
+                if run is not None:
+                    run.finished_at = datetime.now(timezone.utc)
+                db.session.commit()
+            except Exception:                        # pragma: no cover - defensive
+                db.session.rollback()
+                logger.exception('Eval run %s: could not persist final state', run_id)
+
+
 def run_evaluation(
     user_id: str = None,
     categories: list[str] = None,
@@ -92,10 +189,7 @@ def run_evaluation(
     """
     user_id = user_id or Config.ADMIN_USER_ID
 
-    query = EvalTask.query.filter_by(is_active=True)
-    if categories:
-        query = query.filter(EvalTask.category.in_(categories))
-    tasks = query.all()
+    tasks = _active_tasks(categories)
     if not tasks:
         raise ValueError('No active eval tasks found')
 
