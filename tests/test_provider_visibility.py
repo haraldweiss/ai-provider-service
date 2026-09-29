@@ -3,18 +3,25 @@ from storage.models import ProviderConfig
 
 
 def _disable_server_keys(monkeypatch):
+    """Neutralise every central server key for the duration of one test.
+
+    Config is process-global mutable state and several test modules assign keys
+    directly (e.g. tests/test_images_api.py sets OPENROUTER_API_KEY), so a
+    missing entry here makes the visibility assertions order-dependent —
+    test_models_endpoint_uses_openrouter_free_mode_without_user_key failed only
+    when another module had run first. monkeypatch restores the old values.
+    """
     from config import Config
     import dispatcher
 
     monkeypatch.setenv('CLAUDE_SERVER_KEY_ALLOWED_USERS', 'harald')
-    monkeypatch.setattr(Config, 'ANTHROPIC_API_KEY', '')
-    monkeypatch.setattr(Config, 'OPENCODE_API_KEY', '')
-    monkeypatch.setattr(Config, 'ZAI_API_KEY', '')
-    monkeypatch.setattr(Config, 'ZAI_SERVER_KEY_ALLOWED_USERS', '')
-    monkeypatch.setattr(dispatcher.Config, 'ANTHROPIC_API_KEY', '')
-    monkeypatch.setattr(dispatcher.Config, 'OPENCODE_API_KEY', '')
-    monkeypatch.setattr(dispatcher.Config, 'ZAI_API_KEY', '')
-    monkeypatch.setattr(dispatcher.Config, 'ZAI_SERVER_KEY_ALLOWED_USERS', '')
+    for cfg in (Config, dispatcher.Config):
+        monkeypatch.setattr(cfg, 'ANTHROPIC_API_KEY', '')
+        monkeypatch.setattr(cfg, 'OPENCODE_API_KEY', '')
+        monkeypatch.setattr(cfg, 'ZAI_API_KEY', '')
+        monkeypatch.setattr(cfg, 'ZAI_SERVER_KEY_ALLOWED_USERS', '')
+        monkeypatch.setattr(cfg, 'OPENROUTER_API_KEY', '')
+        monkeypatch.setattr(cfg, 'CLINE_API_KEY', '')
 
 
 def test_providers_hides_key_required_providers_without_user_key(client, monkeypatch):

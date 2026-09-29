@@ -25,7 +25,18 @@ def test_factory_returns_opencode_client():
     assert client.__class__.__name__ == 'OpencodeClient'
 
 
-def test_opencode_raises_without_api_key():
+def test_opencode_raises_without_api_key(monkeypatch):
+    """No key in the request config AND no central key → ValueError.
+
+    The central key must be neutralised explicitly: config.py runs
+    load_dotenv() at import, so a developer's local .env (which carries
+    OPENCODE_API_KEY) otherwise makes this pass only in CI. Both Config
+    references are patched because providers/opencode.py bound its own at
+    import time and test_config_access_control reloads the module.
+    """
+    import providers.opencode as opencode_module
+    monkeypatch.setattr(opencode_module.Config, 'OPENCODE_API_KEY', '')
+
     with pytest.raises(ValueError, match='api_key'):
         get_client('opencode', {})
 
