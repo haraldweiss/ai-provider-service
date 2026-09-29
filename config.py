@@ -39,6 +39,15 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # SQLite sees concurrent writers (gunicorn workers + the health/queue worker
+    # + the eval run thread): without a busy timeout the loser of a write race
+    # drops its row with "database is locked". WAL + the 30 s busy timeout are
+    # applied per connection by database.configure_sqlite_engine().
+    if DATABASE_URL.startswith('sqlite'):
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_pre_ping': True,
+            'connect_args': {'timeout': 30},
+        }
 
     # Access control (provider gating)
     ADMIN_TOKEN = os.getenv('ADMIN_TOKEN', '')
