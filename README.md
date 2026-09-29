@@ -746,21 +746,51 @@ Betrieb (`http://localhost:8767`) kann die Extension direkt verbinden.
 GET /v1/images/models
   → Liste image-fähiger Modelle mit Preis/Qualität-Sortierung
     Query-Parameter: sort=price|quality, order=asc|desc
+                     details=0  → nur {id,name} (Legacy-Payload)
+    Jede Zeile enthält zusätzlich `capabilities`:
+      { aspect_ratios: [...], resolutions: [...], qualities: [...],
+        output_formats: [...], backgrounds: [...], max_n: N,
+        supports_seed: bool, input_references: {min,max},
+        supports_streaming: bool }
+    → damit kann ein Picker-UI nur gültige Optionen anbieten
 
 POST /v1/images/generations
   Body: {
-    "model": "openai/dall-e-3",
+    "model": "black-forest-labs/flux.2-pro",
     "prompt": "A cat wearing a hat",
     "n": 1,
-    "size": "1024x1024"
+    "aspect_ratio": "16:9",      # 1:1, 3:2, 2:3, 16:9, 9:16, 4:3, 3:4, 21:9 … / "auto"
+    "resolution": "2K",          # 512 | 1K | 2K | 4K
+    "quality": "high",           # auto | low | medium | high
+    "output_format": "jpeg",     # png | jpeg | webp | svg
+    "background": "opaque",      # auto | transparent | opaque
+    "output_compression": 90,    # 0-100 (webp/jpeg)
+    "seed": 42,                  # deterministisch, wo unterstützt
+    "size": "1024x1024",         # Alternative zu aspect_ratio
+    "input_references": ["data:image/png;base64,…"]  # Image-to-Image
   }
   → OpenAI-kompatible Response mit b64_json als Data-URI
+    + `usage.cost` (USD, echte Kosten von OpenRouter)
+    + `params` (die tatsächlich weitergegebenen Parameter)
 ```
 
 Image-Generation wird via OpenRouter `/images` Endpoint proxyt. Kosten werden
 in `UsageEvent` für KI-Usage-Tracker geloggt. Die Response enthält `b64_json`
 als Data-URI (MIME-Type preserved, damit Clients z.B. image/jpeg korrekt
 identifizieren).
+
+Die optionalen Parameter (`aspect_ratio`, `resolution`, `quality`,
+`output_format`, `background`, `output_compression`, `seed`,
+`input_references`) werden validiert (Whitelist/Range) und 1:1 an OpenRouter
+weitergereicht; unbekannte/ungültige Werte liefern **400** mit
+`invalid <feld>: …`. Welche Parameter ein Modell unterstützt, steht in
+`capabilities` aus `/v1/images/models`. Beispiel-Nutzer: die NightCafe-artige
+Oberfläche „Wolfini AI Studio“ (`chat.wolfinisoftware.de/studio/`,
+Quelle: `wolfini_de_web/studio/`).
+
+**Hinweis `size` vs. `aspect_ratio`:** Der Legacy-Minimum-Pixel-Fallback
+(`bytedance-seed/seedream-4.5` → `2048x2048`) wird nur injiziert, wenn weder
+`size` noch `aspect_ratio` gesendet wurde — sonst würden sich beide widersprechen.
 
 ### Grant-Request + Notifications
 
