@@ -250,6 +250,48 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-09-29 — `/v1/images/*`: Aspect-Ratio/Resolution/Quality/Seed werden jetzt durchgereicht (+ Capabilities)
+
+- **Trigger:** Der Nutzer wollte eine NightCafe-artige Oberfläche für die Bildgenerierung
+  („mit Modellauswahl, aspect ratio usw.") für die Open-WebUI-Instanz. Die Bildgenerierung
+  funktionierte, war aber nicht bedienbar: `/v1/images/generations` reichte nur
+  `model, prompt, n, size` durch — OpenRouters echte Image-API kennt zusätzlich
+  `aspect_ratio`, `resolution`, `quality`, `output_format`, `background`,
+  `output_compression`, `seed` und `input_references` (Image-to-Image). Alle anderen
+  Felder wurden still verworfen, also gab es keine Möglichkeit, ein Format zu wählen.
+- **Änderung (`api/images_api.py`):**
+  - `_clean_generation_params()` validiert/whitelistet die optionalen Parameter und
+    reicht sie 1:1 weiter (400 mit `invalid <feld>: …` bei Verstoß).
+    `_clean_input_references()` normalisiert Strings zu `{type:"image_url",image_url:{url}}`.
+  - Der Legacy-Minimum-Pixel-Fallback (`seedream-4.5` → `2048x2048`) greift nur noch,
+    wenn **weder** `size` noch `aspect_ratio` gesendet wurde (sonst widersprüchlich).
+  - `GET /v1/images/models` liefert pro Modell `capabilities`
+    (`aspect_ratios`, `resolutions`, `qualities`, `output_formats`, `backgrounds`,
+    `max_n`, `supports_seed`, `input_references`, `supports_streaming`) aus
+    OpenRouters `/images/models` (`supported_parameters`, 6 h Cache).
+    `?details=0` behält den Legacy-Payload `{id,name}` (Open WebUI liest nur das).
+  - Response enthält zusätzlich `params` (was tatsächlich an OpenRouter ging).
+  - `_resolve_size()` entfernt (war durch `_clean_generation_params` ersetzt).
+- **Tests:** neu `tests/test_images_api.py` (17 Tests): Pass-Through von
+  aspect_ratio/resolution/quality/output_format/seed, 400 für 7 ungültige Felder,
+  `n`-Clamp auf 10, seedream-Fallback-Logik, `input_references`-Normalisierung +
+  leeres Array → 400, Capabilities in `/v1/images/models`, `details=0`-Legacy-Payload,
+  fehlende Capabilities (Endpunkt down) blockieren die Modellliste nicht,
+  `_normalize_capabilities()`-Mapping. `pytest tests/test_images_api.py` → **17 passed**.
+  (Achtung: die lokale Suite ist flaky — `sqlite3.OperationalError: table … already
+  exists` aus der `app`-Fixture, `_safe_create_all`-Race, unabhängig von dieser Änderung.)
+- **Live-Beweis (oracle-vm, direkt gegen OpenRouter):** `flux.2-klein-4b` +
+  `aspect_ratio: 16:9` → 1824×1024 JPEG in 4,1 s, `usage.cost` 0,015 USD;
+  Capabilities pro Modell abrufbar (FLUX.2: 9 Ratio-Werte + seed + output_format;
+  gemini-3-pro-image: 4:5/21:9 + resolution 1K/2K/4K; gpt-5-image-mini: quality+background).
+- **Consumer:** neue Oberfläche **Wolfini AI Studio** —
+  `https://chat.wolfinisoftware.de/studio/` (Quelle `wolfini_de_web/studio/`,
+  Apache-Alias + `/studio-api/`-Proxy auf diese API, SERVICE_TOKEN bleibt serverseitig,
+  Basic-Auth vorgeschaltet).
+- **Deploy (pull-based, oracle-vm):** `git pull --ff-only origin main` →
+  `docker compose build` + `sudo docker compose up -d` (env nur als root lesbar).
+- **Git:** `Add:` auf `fix/images-api-params-capabilities` → `Merge:` --no-ff → main → push.
+
 ### 2026-09-23 — Open WebUI „Provider openrouter nicht erreichbar": fehlender Fallback für `harald` + `/configs` verwarf `fallback_model`
 
 - **Trigger:** Open WebUI meldete bei OpenRouter-Free-Modellen
