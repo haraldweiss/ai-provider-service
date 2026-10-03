@@ -115,6 +115,7 @@ def create_app() -> Flask:
     from api.settings_ui import settings_ui_bp
     from api.openai_api import openai_bp
     from api.images_api import images_bp
+    from api.videos_api import videos_bp
     from api.eval_api import eval_bp
 
     app.register_blueprint(providers_bp)
@@ -133,6 +134,7 @@ def create_app() -> Flask:
     app.register_blueprint(settings_ui_bp)
     app.register_blueprint(openai_bp)
     app.register_blueprint(images_bp)
+    app.register_blueprint(videos_bp)
     app.register_blueprint(eval_bp)
 
     from cli import (grants_bootstrap_command, update_opencode_pricing_command,
