@@ -250,6 +250,38 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-10-03 — `/v1/videos/*`: OpenRouter-Video/Animation-Bridge für das Wolfini AI Studio
+
+- **Trigger:** Der Nutzer wollte Animationserzeugung im „Wolfini AI Studio"
+  (Bild/Animation-Umschalter, Länge, Startbild, Kosten vorab, nur video-fähige
+  Modelle). Ohne Server-Bridge hätte der OpenRouter-Token im Browser gelegen.
+- **Neu:** `api/videos_api.py` (in `app.py` registriert) mit
+  `GET /v1/videos/models`, `POST /v1/videos/generations` (202 + `estimate_usd`),
+  `GET /v1/videos/generations/<id>` (Poll) und
+  `GET /v1/videos/generations/<id>/content?index=N` (Bytes gestreamt, `Range`
+  durchgereicht). Tests `tests/test_videos_api.py` → **20 passed** (volle Suite
+  **533 passed**).
+- **Kosten-Normalisierung:** OpenRouters `pricing_skus` unterscheiden sich pro
+  Familie (`duration_seconds_720p`, `cents_per_video_output_second_480p`,
+  `video_tokens`, `reference_duration_seconds_*`, `cents_per_megapixel_second_*`).
+  `_normalize_pricing()` reduziert sie auf `/s`-Tiers `{resolution,audio,kind,
+  usd_per_second}` + `per_image_usd`/`minimum_usd`; `_price_hint()` liefert
+  „ab X $/s"; `estimate_video_cost()` wählt den besten Tier (Kind text/image,
+  Auflösung, Ton). Token-/megapixelbasierte Modelle sind bewusst **nicht**
+  schätzbar (`token_based`/`megapixel_based`) → UI sagt „nach Generierung".
+- **Wichtiger Betriebs-Befund:** Video ist **async** (POST → Poll → Content).
+  Bei aktiver **ZDR**-Kontoeinstellung schließt OpenRouter Endpunkte aus —
+  `google/*` (Veo) und `x-ai/*` antworten mit **404 „ZDR violation (account
+  settings)"**, `alibaba/*`/`minimax/*` funktionieren. Die Meldung wird 1:1
+  durchgereicht.
+- **Deploy + Verifikation (oracle-vm):** `git merge --ff-only origin/main`
+  (`ddf003e`) + `docker compose build`/`up -d`; Container healthy.
+  `GET /v1/videos/models` → 30 Modelle; echte Generation `alibaba/wan-2.6` 5 s →
+  `completed`, `usage.cost=0.4`, Content `video/mp4` 4,79 MB (`ftypisom`).
+  End-to-End aus dem Studio (Wan 3.0, 2 s, 480p): 0,2125 $, 114 s.
+- **Git:** `Add:` `4085d45` → `Merge:` --no-ff → `main` `ddf003e` → push;
+  `Docs:` (README-Abschnitt + dieser Eintrag).
+
 ### 2026-09-29 — `/v1/images/*`: Aspect-Ratio/Resolution/Quality/Seed werden jetzt durchgereicht (+ Capabilities)
 
 - **Trigger:** Der Nutzer wollte eine NightCafe-artige Oberfläche für die Bildgenerierung

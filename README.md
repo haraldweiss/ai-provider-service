@@ -792,6 +792,51 @@ Quelle: `wolfini_de_web/studio/`).
 (`bytedance-seed/seedream-4.5` → `2048x2048`) wird nur injiziert, wenn weder
 `size` noch `aspect_ratio` gesendet wurde — sonst würden sich beide widersprechen.
 
+### Video / Animation Generation (OpenRouter, async)
+
+Video generation is asynchronous — the same submit/poll/download lifecycle as
+OpenRouter's `/videos` API, but the OpenRouter token stays server-side.
+
+```
+GET /v1/videos/models
+  → nur video-fähige Modelle mit `capabilities`:
+    { aspect_ratios, resolutions, durations, sizes, frame_images,
+      generate_audio, supports_seed, passthrough,
+      pricing: { currency, tiers:[{resolution,audio,kind,usd_per_second}],
+                 per_image_usd, minimum_usd, token_based, megapixel_based },
+      price_hint }
+    Die `pricing_skus` von OpenRouter sind pro Familie unterschiedlich und
+    werden zu `/s`-Tiers normalisiert, damit ein UI vorab schätzen kann.
+
+POST /v1/videos/generations
+  Body: {
+    "model": "alibaba/wan-2.7",
+    "prompt": "A red balloon rising",
+    "duration": 5,               # nur erlaubte Werte aus capabilities.durations
+    "resolution": "720p",        # 480p|720p|768p|1080p|1K|2K|4K
+    "aspect_ratio": "16:9",
+    "size": "1280x720",          # Alternative zu resolution+aspect_ratio
+    "generate_audio": true,
+    "seed": 42,
+    "frame_images": [{"type":"image_url","image_url":{"url":"…"},"frame_type":"first_frame"}],
+    "input_references": ["data:image/png;base64,…"]
+  }
+  → 202 { id, status, model, params, estimate_usd }
+
+GET /v1/videos/generations/<id>          # pollen (pending|in_progress|completed|failed)
+  → { status, content_count, error, usage:{cost} }
+    Bei `completed` wird `usage.cost` einmalig als UsageEvent gebucht.
+
+GET /v1/videos/generations/<id>/content?index=0
+  → gestreamte Video-Bytes (Content-Type video/mp4, `Range` wird durchgereicht)
+```
+
+Frame-/Referenzbilder werden validiert und auf OpenRouters `frame_images` /
+`input_references` abgebildet. Beispiel-Nutzer: der Animationsmodus (🎬) im
+„Wolfini AI Studio“. **ZDR-Hinweis:** bei aktiver Zero-Data-Retention im
+OpenRouter-Konto schließt OpenRouter Endpunkte aus (Google Vertex/x.ai → 404
+„ZDR violation"); die Meldung wird durchgereicht.
+
 ### Model Evaluation (Eval API)
 
 Misst, wie gut die konfigurierten Modelle die `eval_tasks` (Prompt + Bewertungs-
