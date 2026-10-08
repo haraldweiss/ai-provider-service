@@ -192,6 +192,30 @@ When integrating a new provider, check their documentation for app attribution o
 
 ---
 
+### 3.13 Provider responses must preserve actual model, tool calls, and reported cost
+
+- Every provider client must return, alongside `content`/`usage`, the **actual**
+  upstream `model` (when reported), a normalized `tool_calls` list
+  (`[{id, name, input}]`), a `stop_reason`, and any `cost_usd` the provider
+  reported. `providers/response_metadata.py` provides `completion_metadata()` and
+  `reported_cost()`; clients layer them into their result dict.
+- This is what makes tool calls work for OpenAI-compatible clients on *all*
+  providers (`openai`, `openrouter`, `opencode`, `zai`, `cline`, `custom`,
+  `mammouth`, `omlx`): `api/openai_api._openai_tool_calls()` reads
+  `result['tool_calls']`. Without the normalization those providers returned only
+  text and tool calls were silently dropped.
+- `dispatcher._execute()` logs the usage event under the **actual** model
+  (`result['balance_failover_model']` > `result['model']` > requested model) and
+  prefers a provider-reported `cost_usd` (including `0`) over the price-table
+  estimate. Invalid/negative/non-finite costs are ignored so they never override a
+  valid estimate.
+- Anthropic cache counters (`cache_creation_input_tokens`,
+  `cache_read_input_tokens`, `cache_creation_1h_input_tokens`) are counted into
+  the stored `input_tokens` and priced with Anthropic's multipliers
+  (1.25×/2× writes, 0.1× reads) — see `pricing.calc_cost_usd`.
+
+---
+
 ## 4. Verification standards
 
 Record in commit body. Examples:
@@ -249,6 +273,47 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 ---
 
 ## 7. Handoff zone
+
+### 2026-10-08 — Provider-/Dashboard-Review: Tool-Calls + Kosten über alle Provider, Usage-Cursor, Pricing
+
+- **Trigger:** Fortsetzung des von Codex begonnenen „improvement pass" (Übergabe
+  wegen Usage-Limit). Ziel: Provider-Clients, Scraper und Dashboard-Ergebnisse
+  prüfen und konsistent machen.
+- **Neu `providers/response_metadata.py`:** `field()`, `reported_cost()`,
+  `completion_metadata()`. Alle OpenAI-kompatiblen Clients (`openai_client`,
+  `openrouter`, `opencode`, `zai`, `cline`, `custom`, `mammouth`, `omlx`) liefern
+  jetzt Top-Level `model` und `tool_calls` sowie `usage.cost_usd`, wenn upstream
+  gemeldet. Fixt, dass Tool-Calls bei diesen Providern für OpenAI-kompatible
+  Clients verworfen wurden (`api/openai_api._openai_tool_calls()` liest
+  `result['tool_calls']`). Neue Regel §3.13.
+- **`dispatcher._execute()`** loggt das Usage-Event unter dem tatsächlichen Modell
+  (`balance_failover_model` > `model` > angefragt) und bevorzugt den gemeldeten
+  `cost_usd` (inkl. `0`) gegenüber der Preistabelle.
+- **`pricing.py`:** Claude-Preise korrigiert (Haiku 4.5 $1/$5, Opus 4.7 $5/$25),
+  `_strip_version()` entfernt auch `YYYY-MM-DD`-Suffixe (z.B.
+  `gpt-4o-2024-08-06`), Anthropic-Cache-Token-Bepreisung (1.25×/2×/0.1×),
+  `omlx` als lokaler Provider ($0).
+- **`providers/claude.py`:** `cache_creation_1h_input_tokens` aus
+  `usage.cache_creation.ephemeral_1h_input_tokens`.
+- **`api/usage_api.py`:** `/usage/events` nutzt einen undurchsichtigen
+  `cursor` (`<iso>|<id>`) mit stabiler Sortierung (`created_at, id`) gegen
+  verlorene/doppelte Events bei gleichem Timestamp; `has_more` über `limit+1`;
+  Legacy-`since` bleibt. `/usage/users` beschränkt sich bei `user_token`
+  Credentials auf die eigene Identität.
+- **`cli.py`:** Pricing-Overrides werden atomar geschrieben (`_atomic_json_write`)
+  und `_parse_opencode_pricing` wirft bei unparsebarer Tabelle einen Fehler,
+  statt eine reine Free-Only-Override zu schreiben (die Paid-Preise löschte).
+- **`providers/openrouter.py`:** Free-Only-Guard (Paid-Modell → `ValueError`, wird
+  vom `except Exception`-Pfad in `dispatch()` als Fallback behandelt);
+  `_is_free_model` behandelt fehlende/ungültige Preise als *nicht* frei.
+- **`providers/cline.py`:** Live-Model-Cache pro `(base_url, sha256(api_key)`,
+  sonst überschreiben sich mehrere Accounts/Endpoints.
+- **Tests:** AIPS `pytest` → **559 passed**; neue `tests/test_provider_response_metadata.py`,
+  Erweiterungen in `test_usage_api.py`, `test_pricing.py`, `test_dispatcher_logging.py`,
+  `test_openrouter_provider.py`, `test_cline_provider.py`, `test_pricing_update.py`.
+- **Verwandt (separates Repo `Claude-KI-Usage-Tracker`):** Scraper-/Dashboard-Fixes
+  (Cursor-Sync, key-scoped Dedup, `usage-parsers.ts`) im Repo-Handoff dokumentiert.
+- **Deploy:** siehe unten (oracle-vm, `git pull` + SHA-Build + Recreate).
 
 ### 2026-10-03 — `/v1/videos/*`: OpenRouter-Video/Animation-Bridge für das Wolfini AI Studio
 
