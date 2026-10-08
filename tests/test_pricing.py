@@ -9,6 +9,11 @@ def test_local_provider_returns_zero():
     assert calc_cost_usd('ollama', 'llama3.1:8b', 1000, 500) == 0.0
 
 
+def test_omlx_is_local_and_has_no_provider_charge():
+    from pricing import calc_cost_usd
+    assert calc_cost_usd('omlx', 'qwen', 1000, 500) == 0.0
+
+
 def test_local_provider_with_null_tokens_returns_none():
     from pricing import calc_cost_usd
     assert calc_cost_usd('ollama', 'llama3.1:8b', None, None) is None
@@ -16,17 +21,17 @@ def test_local_provider_with_null_tokens_returns_none():
 
 def test_claude_haiku_pricing():
     from pricing import calc_cost_usd
-    # haiku 4.5: 0.80 input / 4.00 output per million tokens
-    # 1M input + 1M output -> 0.80 + 4.00 = 4.80
+    # haiku 4.5: 1.00 input / 5.00 output per million tokens
+    # 1M input + 1M output -> 1.00 + 5.00 = 6.00
     cost = calc_cost_usd('claude', 'claude-haiku-4-5', 1_000_000, 1_000_000)
-    assert cost == 4.80
+    assert cost == 6.0
 
 
 def test_claude_versioned_model_strips_version():
     from pricing import calc_cost_usd
     cost = calc_cost_usd('claude', 'claude-haiku-4-5-20251001',
                          1_000_000, 1_000_000)
-    assert cost == 4.80
+    assert cost == 6.0
 
 
 def test_openai_gpt_4o_mini_pricing():
@@ -34,6 +39,11 @@ def test_openai_gpt_4o_mini_pricing():
     # 0.15 input / 0.60 output per M
     cost = calc_cost_usd('openai', 'gpt-4o-mini', 1_000_000, 1_000_000)
     assert cost == 0.75
+
+
+def test_openai_reported_model_version_keeps_alias_rate():
+    from pricing import calc_cost_usd
+    assert calc_cost_usd('openai', 'gpt-4o-2024-08-06', 1_000_000, 1_000_000) == 12.5
 
 
 def test_unknown_model_returns_none():

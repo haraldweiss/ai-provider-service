@@ -102,6 +102,8 @@ class ClaudeClient(BaseClient):
                 'output_tokens': usage.output_tokens,
                 'cache_creation_input_tokens': getattr(usage, 'cache_creation_input_tokens', 0) or 0,
                 'cache_read_input_tokens': getattr(usage, 'cache_read_input_tokens', 0) or 0,
+                'cache_creation_1h_input_tokens': getattr(
+                    getattr(usage, 'cache_creation', None), 'ephemeral_1h_input_tokens', 0) or 0,
             }
         }
 

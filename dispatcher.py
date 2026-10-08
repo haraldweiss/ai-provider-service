@@ -148,13 +148,25 @@ def _log_usage_event(
     input_tokens, output_tokens, status: str,
     error_message: Optional[str] = None,
     origin_app: Optional[str] = None,
+    reported_cost=None,
+    cache_usage: Optional[dict] = None,
 ) -> None:
     """Schreibt einen UsageEvent. Logging-Fehler werden geschluckt — der
     Hot-Path darf dadurch nicht abbrechen."""
     try:
         from pricing import calc_cost_usd
         from storage.models import UsageEvent
-        cost = calc_cost_usd(provider_id, model, input_tokens, output_tokens)
+        cache = cache_usage or {}
+        cache_fields = {name: cache.get(name, 0) or 0 for name in (
+            'cache_creation_input_tokens', 'cache_read_input_tokens',
+            'cache_creation_1h_input_tokens')}
+        cost = calc_cost_usd(provider_id, model, input_tokens, output_tokens, **cache_fields)
+        if isinstance(reported_cost, (int, float)) and not isinstance(reported_cost, bool):
+            import math
+            if math.isfinite(reported_cost) and reported_cost >= 0:
+                cost = reported_cost
+        if provider_id == 'claude' and input_tokens is not None:
+            input_tokens += cache_fields['cache_creation_input_tokens'] + cache_fields['cache_read_input_tokens']
         ev = UsageEvent(
             user_id=user_id, provider_id=provider_id, model=model,
             input_tokens=input_tokens, output_tokens=output_tokens,
@@ -263,9 +275,10 @@ def _execute(
         health_tracker.set_status(provider_id, True)
         usage = (result or {}).get('usage') or {}
         _log_usage_event(
-            user_id, provider_id, model,
+            user_id, provider_id, result.get('balance_failover_model') or result.get('model') or model,
             usage.get('input_tokens'), usage.get('output_tokens'),
-            'success', origin_app=origin_app,
+            'success', origin_app=origin_app, reported_cost=usage.get('cost_usd'),
+            cache_usage=usage,
         )
         prompt_text = _join_messages(messages)
         response_text = _extract_response_text(result)

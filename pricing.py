@@ -14,9 +14,9 @@ from typing import Optional
 
 # USD pro 1M Tokens. Quelle: manuell, Stand Mai 2026.
 _PRICING_USD_PER_MTOK: dict[tuple[str, str], dict[str, float]] = {
-    ('claude', 'claude-opus-4-7'):    {'in': 15.0, 'out': 75.0},
+    ('claude', 'claude-opus-4-7'):    {'in': 5.0, 'out': 25.0},
     ('claude', 'claude-sonnet-4-6'):  {'in':  3.0, 'out': 15.0},
-    ('claude', 'claude-haiku-4-5'):   {'in':  0.8, 'out':  4.0},
+    ('claude', 'claude-haiku-4-5'):   {'in':  1.0, 'out':  5.0},
     ('openai', 'gpt-4o'):             {'in':  2.5, 'out': 10.0},
     ('openai', 'gpt-4o-mini'):        {'in':  0.15, 'out': 0.6},
     # opencode.ai Zen rate card — Stand Mai 2026, USD per 1M tokens.
@@ -89,7 +89,7 @@ _PRICING_USD_PER_MTOK: dict[tuple[str, str], dict[str, float]] = {
 }
 
 # Provider, die immer als kostenfrei (lokal) gelten.
-_LOCAL_PROVIDERS = {'ollama'}
+_LOCAL_PROVIDERS = {'ollama', 'omlx'}
 
 # Pfade zu JSON-Override-Dateien (täglich via Cron aktualisierbar).
 # Getrennte Dateien pro Provider, damit der opencode-Daily-Cron die z.ai-Preise
@@ -162,12 +162,14 @@ def _load_merged_pricing() -> dict[tuple[str, str], dict[str, float]]:
 def _strip_version(model: str) -> str:
     """Entfernt das Anthropic-Date-Suffix.
     'claude-haiku-4-5-20251001' -> 'claude-haiku-4-5'."""
-    return re.sub(r'-\d{8}$', '', model)
+    return re.sub(r'-(?:\d{8}|\d{4}-\d{2}-\d{2})$', '', model)
 
 
 def calc_cost_usd(
     provider_id: str, model: str,
     input_tokens: Optional[int], output_tokens: Optional[int],
+    *, cache_creation_input_tokens: int = 0, cache_read_input_tokens: int = 0,
+    cache_creation_1h_input_tokens: int = 0,
 ) -> Optional[float]:
     """USD-Kosten für einen Call. None bei unbekanntem Modell oder
     fehlenden Token-Counts."""
@@ -183,7 +185,14 @@ def calc_cost_usd(
         or _pricing.get((provider_id, _strip_version(model)))
     if not rates:
         return None
+    cached_cost = 0
+    if provider_id == 'claude':
+        # Cache counters are separate from Anthropic's uncached input_tokens.
+        writes_1h = min(cache_creation_input_tokens, cache_creation_1h_input_tokens)
+        cached_cost = rates['in'] * (
+            (cache_creation_input_tokens - writes_1h) * 1.25
+            + writes_1h * 2 + cache_read_input_tokens * 0.1)
     return round(
-        (input_tokens * rates['in'] + output_tokens * rates['out']) / 1_000_000,
+        (input_tokens * rates['in'] + output_tokens * rates['out'] + cached_cost) / 1_000_000,
         6,
     )
