@@ -313,7 +313,23 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   `test_openrouter_provider.py`, `test_cline_provider.py`, `test_pricing_update.py`.
 - **Verwandt (separates Repo `Claude-KI-Usage-Tracker`):** Scraper-/Dashboard-Fixes
   (Cursor-Sync, key-scoped Dedup, `usage-parsers.ts`) im Repo-Handoff dokumentiert.
-- **Deploy:** siehe unten (oracle-vm, `git pull` + SHA-Build + Recreate).
+- **Deploy (oracle-vm, 2026-10-08):** Server-Repo `sudo git fetch && sudo git merge
+  --ff-only origin/main` → `a7610da`; Image `localhost/ai-provider:a7610da`
+  (`sha256:df252877…`, + `:latest`) via `sudo ./build.sh a7610da`; Container per
+  `sudo docker compose up -d --force-recreate ai-provider` recreated →
+  **healthy**, `RestartCount=0`, created `2026-10-08T10:02:33Z`.
+  - **Verifiziert live (127.0.0.1:8767):** `/health` 200; `/v1/models` → **958**;
+    `/usage/events?user_id=harald&limit=2` → `count 2, has_more true,
+    next_cursor 2026-06-02T06:10:34.717597|10947` (neues Cursor-Format);
+    Chat-Smoke `ollama/oracle-llama3.2:3b` → „OK".
+  - **Kern-Fix live bewiesen:** `cline/qwen/qwen3-235b-a22b` + `get_weather`-Tool
+    → `finish_reason=tool_calls` mit `message.tool_calls` (Name/Argumente/ID),
+    `model` + `usage` vorhanden — vorher wurden Tool-Calls bei cline verworfen.
+    `openrouter/amazon/nova-lite-v1` → 200 „OK" (Modell/Usage erhalten);
+    `openrouter/qwen/qwen3-235b-a22b:free` → 404 (Modell upstream entfernt, kein
+    Code-Problem).
+  - **Git:** `54b12a8` + `26b76a4` + `452140b` + `3c654f1` + `1e96a70` auf
+    `codex/provider-dashboard-review` → `Merge:` `a7610da` → `main` → push.
 
 ### 2026-10-03 — `/v1/videos/*`: OpenRouter-Video/Animation-Bridge für das Wolfini AI Studio
 
