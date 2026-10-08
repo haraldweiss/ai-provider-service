@@ -2,8 +2,27 @@
 
 import json
 import time
+import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from providers import get_client, PROVIDER_REGISTRY
+
+
+@patch('providers.openrouter.OpenAI')
+def test_free_only_rejects_paid_model_before_request(mock_openai):
+    from providers.openrouter import OpenRouterClient
+    client = OpenRouterClient({'_free_only': True, 'api_key': 'shared-key'})
+    with patch.object(client, 'get_free_models', return_value=['free-model']):
+        with pytest.raises(ValueError, match='requires your own'):
+            client.create_message('paid-model', [{'role': 'user', 'content': 'hi'}])
+    mock_openai.return_value.chat.completions.create.assert_not_called()
+
+
+@pytest.mark.parametrize('pricing', [None, {}, {'prompt': '0'},
+                                    {'prompt': 'NaN', 'completion': '0'}])
+def test_missing_or_invalid_prices_are_not_free(pricing):
+    from providers.openrouter import _is_free_model
+    assert not _is_free_model(SimpleNamespace(pricing=pricing))
 
 
 def test_openrouter_registered():

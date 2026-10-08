@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import uuid
 from providers.base import BaseClient
+from providers.response_metadata import completion_metadata, reported_cost
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +39,12 @@ class OpenAIClient(BaseClient):
         kwargs['extra_headers'] = {'X-Client-Request-Id': str(uuid.uuid4())}
         r = self.client.chat.completions.create(**kwargs)
         return {
-            'content': [{'text': r.choices[0].message.content}],
+            **completion_metadata(r),
+            'content': [{'text': r.choices[0].message.content or ''}],
             'usage': {
-                'input_tokens': r.usage.prompt_tokens,
-                'output_tokens': r.usage.completion_tokens,
+                **reported_cost(r.usage),
+                'input_tokens': getattr(r.usage, 'prompt_tokens', None),
+                'output_tokens': getattr(r.usage, 'completion_tokens', None),
             }
         }
 

@@ -22,9 +22,11 @@ import json
 import logging
 import time
 import uuid
+import hashlib
 from pathlib import Path
 import httpx
 from providers.base import BaseClient
+from providers.response_metadata import completion_metadata, reported_cost
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -74,7 +76,9 @@ class ClineClient(BaseClient):
     def _models_from_api(self) -> list[str]:
         """Fetch the live, servable model list from Cline's public /models."""
         now = time.time()
-        if _live_models_cache['models'] and now - _live_models_cache['ts'] < _LIVE_MODELS_TTL:
+        cache_key = (self._base_url, hashlib.sha256(self._api_key.encode()).hexdigest())
+        if (_live_models_cache.get('key') == cache_key and _live_models_cache['models']
+                and now - _live_models_cache['ts'] < _LIVE_MODELS_TTL):
             return list(_live_models_cache['models'])
         try:
             with httpx.Client(timeout=20) as hc:
@@ -89,6 +93,7 @@ class ClineClient(BaseClient):
             if ids:
                 _live_models_cache['models'] = ids
                 _live_models_cache['ts'] = now
+                _live_models_cache['key'] = cache_key
                 logger.info('Cline: %d models from live API', len(ids))
                 return ids
             logger.warning('Cline /models returned no usable entries; using override file')
@@ -123,12 +128,14 @@ class ClineClient(BaseClient):
         choice = (data.get('choices') or [{}])[0]
         msg = choice.get('message', {})
         content = msg.get('content') or msg.get('reasoning_content') or ''
-        usage = data.get('usage', {}) or {}
+        usage = (data.get('usage') or {}) or {}
         return {
+            **completion_metadata(data),
             'content': [{'text': content}],
             'usage': {
-                'input_tokens': usage.get('prompt_tokens', 0),
-                'output_tokens': usage.get('completion_tokens', 0),
+                **reported_cost(data.get('usage')),
+                'input_tokens': usage.get('prompt_tokens'),
+                'output_tokens': usage.get('completion_tokens'),
             },
         }
 

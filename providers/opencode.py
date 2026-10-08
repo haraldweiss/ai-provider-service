@@ -14,6 +14,7 @@ import subprocess
 import time
 from openai import OpenAI, AuthenticationError
 from providers.base import BaseClient
+from providers.response_metadata import completion_metadata, reported_cost
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -272,10 +273,12 @@ class OpencodeClient(BaseClient):
             r = self.client.chat.completions.create(**kwargs, extra_headers=extra_headers)
             text = _extract_content(r.choices[0])
             return {
+                **completion_metadata(r),
                 'content': [{'text': text}],
                 'usage': {
-                    'input_tokens': r.usage.prompt_tokens,
-                    'output_tokens': r.usage.completion_tokens,
+                    **reported_cost(r.usage),
+                    'input_tokens': getattr(r.usage, 'prompt_tokens', None),
+                    'output_tokens': getattr(r.usage, 'completion_tokens', None),
                 },
             }
         except AuthenticationError as e:
@@ -312,10 +315,12 @@ class OpencodeClient(BaseClient):
                         f'Guthaben aufladen: https://opencode.ai/workspace/wrk_01KSKQJKEA4AQ3KV75MPTVNR3R/billing',
                     )
                     return {
+                        **completion_metadata(r2),
                         'content': [{'text': text2}],
                         'usage': {
-                            'input_tokens': r2.usage.prompt_tokens,
-                            'output_tokens': r2.usage.completion_tokens,
+                            **reported_cost(r2.usage),
+                            'input_tokens': getattr(r2.usage, 'prompt_tokens', None),
+                            'output_tokens': getattr(r2.usage, 'completion_tokens', None),
                         },
                         'balance_failover': True,
                         'balance_failover_model': fallback_model,

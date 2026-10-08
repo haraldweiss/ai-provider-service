@@ -8,6 +8,7 @@ import requests
 
 from config import Config
 from providers.base import BaseClient
+from providers.response_metadata import completion_metadata, reported_cost
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,14 @@ class OmlxClient(BaseClient):
         )
         response.raise_for_status()
         data = response.json()
-        usage = data.get('usage', {})
+        usage = (data.get('usage') or {})
         return {
+            **completion_metadata(data),
             'content': [{'text': data['choices'][0]['message'].get('content') or ''}],
             'usage': {
-                'input_tokens': usage.get('prompt_tokens', 0),
-                'output_tokens': usage.get('completion_tokens', 0),
+                **reported_cost(data.get('usage')),
+                'input_tokens': usage.get('prompt_tokens'),
+                'output_tokens': usage.get('completion_tokens'),
             },
         }
 

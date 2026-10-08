@@ -9,6 +9,19 @@ import pytest
 from providers import get_client, PROVIDER_REGISTRY
 
 
+@patch('providers.cline.httpx.Client')
+def test_model_cache_does_not_cross_keys_or_endpoints(http):
+    from providers import cline
+    cline._live_models_cache.update({'ts': 0.0, 'models': []})
+    response = http.return_value.__enter__.return_value.get.return_value
+    response.json.side_effect = [{'data': [{'id': 'account-a-model'}]},
+                                 {'data': [{'id': 'account-b-model'}]}]
+    first = cline.ClineClient({'api_key': 'a'})
+    second = cline.ClineClient({'api_key': 'b'})
+    assert first.get_models() == ['account-a-model']
+    assert second.get_models() == ['account-b-model']
+
+
 def test_cline_registered():
     assert 'cline' in PROVIDER_REGISTRY
 
