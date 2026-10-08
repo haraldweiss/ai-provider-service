@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import urllib.request
 from pathlib import Path
 import click
@@ -89,6 +90,9 @@ def _parse_opencode_pricing(html: str) -> dict[str, dict[str, float]]:
         out = float(out_str)
         models_list[f'opencode::{model_id}'] = {'in': inp, 'out': out}
 
+    if not models_list:
+        raise ValueError('Pricing table contains no parseable model rates')
+
     # Ensure free models (re.findall may not match "Free" with $)
     free_ids = [
         'big-pickle', 'deepseek-v4-flash-free', 'mimo-v2.5-free',
@@ -129,10 +133,23 @@ def fetch_opencode_pricing() -> dict[str, dict[str, float]]:
     return _parse_opencode_pricing(html)
 
 
+def _atomic_json_write(path: Path, data: dict) -> None:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as handle:
+            temporary = Path(handle.name)
+            json.dump(data, handle, indent=2)
+            handle.write('\n')
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
 def save_opencode_pricing(data: dict[str, dict[str, float]]) -> Path:
     """Persist pricing data to pricing_overrides.json next to pricing.py."""
     path = Path(__file__).parent / 'pricing_overrides.json'
-    path.write_text(json.dumps(data, indent=2) + '\n')
+    _atomic_json_write(path, data)
     return path
 
 
@@ -241,7 +258,7 @@ def save_zai_pricing(data: dict[str, dict[str, float]]) -> Path:
     """Persist z.ai pricing to its own override file (separate from opencode)."""
     import pricing
     path = pricing._ZAI_OVERRIDE_PATH
-    path.write_text(json.dumps(data, indent=2) + '\n')
+    _atomic_json_write(path, data)
     return path
 
 
@@ -442,7 +459,7 @@ def save_cline_pricing(data: dict) -> Path:
     """Persist the Cline override file (used only by --apply)."""
     import pricing
     path = pricing._CLINE_OVERRIDE_PATH
-    path.write_text(json.dumps(data, indent=2) + '\n')
+    _atomic_json_write(path, data)
     return path
 
 

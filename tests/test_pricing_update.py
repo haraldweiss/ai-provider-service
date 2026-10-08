@@ -2,6 +2,13 @@
 """Tests for opencode.ai Zen pricing fetcher."""
 
 from cli import _parse_opencode_pricing
+import pytest
+
+
+def test_unparseable_table_is_rejected_instead_of_free_only_override():
+    with pytest.raises(ValueError, match='no parseable'):
+        _parse_opencode_pricing('<table><th>Input</th><th>Output</th>'
+                               '<tr><td>Paid</td><td>USD 9</td><td>USD 19</td></tr></table>')
 
 
 def test_parse_sample_table():
