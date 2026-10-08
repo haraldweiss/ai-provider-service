@@ -5,6 +5,33 @@ import pytest
 from unittest.mock import patch
 
 
+def test_execute_logs_actual_free_failover_model(app):
+    from dispatcher import _execute
+    from storage.models import UsageEvent
+    with patch('dispatcher.get_client') as factory:
+        factory.return_value.create_message.return_value = {
+            'content': [{'text': 'hi'}],
+            'balance_failover_model': 'deepseek-v4-flash-free',
+            'usage': {'input_tokens': 100, 'output_tokens': 50},
+        }
+        _execute('u1', 'opencode', 'gpt-5', [], 100, config_override={})
+    event = UsageEvent.query.one()
+    assert event.model == 'deepseek-v4-flash-free'
+    assert event.cost_usd == 0
+
+
+def test_execute_keeps_reported_cost_including_zero(app):
+    from dispatcher import _execute
+    from storage.models import UsageEvent
+    with patch('dispatcher.get_client') as factory:
+        factory.return_value.create_message.return_value = {
+            'content': [{'text': 'hi'}],
+            'usage': {'input_tokens': 1000, 'output_tokens': 500, 'cost_usd': 0},
+        }
+        _execute('u1', 'openrouter', 'paid-model', [], 100, config_override={})
+    assert UsageEvent.query.one().cost_usd == 0
+
+
 def test_execute_logs_success_event(app):
     from dispatcher import _execute
     from storage.models import UsageEvent

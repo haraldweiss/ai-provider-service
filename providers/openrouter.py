@@ -14,6 +14,7 @@ import time
 import openai
 from openai import OpenAI
 from providers.base import BaseClient
+from providers.response_metadata import completion_metadata, reported_cost
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,8 @@ def _retry_after_seconds(exc: Exception) -> float | None:
 def _is_free_model(api_model) -> bool:
     """Check if a model entry from OpenRouter is free."""
     pricing = getattr(api_model, 'pricing', None) or {}
-    prompt = pricing.get('prompt', '0') if isinstance(pricing, dict) else getattr(pricing, 'prompt', '0')
-    completion = pricing.get('completion', '0') if isinstance(pricing, dict) else getattr(pricing, 'completion', '0')
+    prompt = pricing.get('prompt') if isinstance(pricing, dict) else getattr(pricing, 'prompt', None)
+    completion = pricing.get('completion') if isinstance(pricing, dict) else getattr(pricing, 'completion', None)
     try:
         return float(prompt) == 0.0 and float(completion) == 0.0
     except (ValueError, TypeError):
@@ -158,6 +159,8 @@ class OpenRouterClient(BaseClient):
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600,
                        *, tools: list[dict] | None = None) -> dict:
+        if self._free_only and model not in self.get_free_models():
+            raise ValueError(f"'{model}' requires your own OpenRouter API key")
         kwargs = dict(model=model, messages=messages, max_tokens=max_tokens)
         if tools:
             kwargs['tools'] = tools
@@ -191,10 +194,12 @@ class OpenRouterClient(BaseClient):
             text = msg.get('content', '')
 
         return {
+            **completion_metadata(r),
             'content': [{'text': text}],
             'usage': {
-                'input_tokens': r.usage.prompt_tokens if r.usage else 0,
-                'output_tokens': r.usage.completion_tokens if r.usage else 0,
+                **reported_cost(r.usage),
+                'input_tokens': getattr(r.usage, 'prompt_tokens', None),
+                'output_tokens': getattr(r.usage, 'completion_tokens', None),
             },
         }
 

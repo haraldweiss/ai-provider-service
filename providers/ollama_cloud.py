@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 import requests
 
 from providers.base import BaseClient
+from providers.response_metadata import completion_metadata
 
 
 class OllamaCloudRequestError(RuntimeError):
@@ -72,6 +73,7 @@ class OllamaCloudClient(BaseClient):
             response.raise_for_status()
             data = response.json()
             return {
+                **completion_metadata(data, data.get('message')),
                 'content': [{'text': data.get('message', {}).get('content', '')}],
                 'usage': {
                     'input_tokens': data.get('prompt_eval_count', 0),

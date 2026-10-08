@@ -686,6 +686,22 @@ pro Einzelchunk mit inkrementellem `index` ausgegeben — strengere OpenAI-Parse
 erwarten dies. Chunk-Sequenz: `role` → `content` (optional) → `tool_calls`
 (einer pro Call, mit `index`) → `finish_reason` → `[DONE]`.
 
+**Response-Metadaten aller Provider (Fix 2026-10-08):** Jeder Provider-Client
+gibt jetzt das *tatsächliche* Upstream-`model`, eine normalisierte
+`tool_calls`-Liste und einen vom Provider gemeldeten `cost_usd` zurück
+(`providers/response_metadata.py`). Dadurch funktionieren Tool-Calls auch für
+`openai`, `openrouter`, `opencode`, `zai`, `cline`, `custom`, `mammouth` und
+`omlx` — vorher wurden sie bei diesen Providern verworfen, weil
+`_openai_tool_calls()` ein Top-Level-`tool_calls` erwartet. Das Usage-Event wird
+unter dem tatsächlich genutzten Modell geloggt (z.B. das Free-Failover-Modell
+statt des angefragten), und ein vom Provider gemeldeter Preis (auch `0`) hat
+Vorrang vor der Preistabelle; ungültige Werte (negativ/NaN/Inf) werden ignoriert.
+
+**Anthropic-Cache-Tokens:** `dispatcher` zählt `cache_creation_input_tokens`,
+`cache_read_input_tokens` und `cache_creation_1h_input_tokens` in die
+gespeicherten `input_tokens` und `pricing.calc_cost_usd()` bepreist sie mit den
+Anthropic-Multiplikatoren (1.25×/2× für Writes, 0.1× für Reads).
+
 **OpenAI-Content-Parts:** `messages[].content` darf ein String oder eine
 OpenAI-kompatible Content-Part-Liste sein, z.B.
 `[{"type":"text","text":"Hallo"}]`. Der Gateway normalisiert diese Parts vor
