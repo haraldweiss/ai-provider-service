@@ -728,46 +728,53 @@ in `provider_grants` are harmless — they're ignored when gate is off.
 
 ## Markdown memory vault
 
-**Source of truth:** SQLite (`memory_notes` and `summary_jobs` tables).
+**Source of truth:** SQLite (`memory_notes` and `summary_jobs` tables) in the
+`ai-provider` container (`/app/data/storage.db`, Docker volume
+`bewerbungen_data`).
 
-**Filesystem view:** `/var/lib/ai-provider-service/vault/` — regenerable
+**Filesystem view:** `/app/data/vault/` inside the container — regenerable
 cache. *Excluded* from backups by design; if you lose it, run
 `flask vault-render --rebuild` to recreate from DB.
 
-**Background timers:**
-- `ai-provider-summary.timer` — nightly @ 02:30 UTC. Logs:
-  `/var/log/ai-provider-service/summary-job.log`.
-- `ai-provider-vault-render.timer` — every 10 min. Logs:
-  `/var/log/ai-provider-service/vault-render.log`.
+**Background timers (oracle-vm host, `docker exec` into the container):**
+- `ai-provider-summary.timer` — nightly @ 02:30 UTC; `ai-provider-summary.service`
+  runs `flask summary-job --period=day --yesterday`.
+- `ai-provider-vault-render.timer` — 2 min after boot, then every 10 min;
+  `flask vault-render --check-stale`.
 
-**Feature flag:** `MEMORY_ENABLED` in `/etc/ai-provider-service/.env`.
-Set to `false` to disable audit hook and put Memory API into 503 mode
-without restarting.
+Both write to the journal (no log files):
+`journalctl -u ai-provider-summary.service`,
+`journalctl -u ai-provider-vault-render.service`.
+The service units are `Wants/After=ai-provider-docker.service`, so they only
+need the container to be up.
+
+**Feature flag:** `MEMORY_ENABLED` in `/etc/ai-provider/ai-provider.env`.
+Set to `false` to disable the audit hook and put the Memory API into 503 mode
+without restarting (read per request).
+
+**Summarization models:** `MEMORY_FREE_MODELS` (same env file) is an ordered,
+comma-separated `provider::model` list, tried cheap-first. If every entry
+fails the job is marked `failed` — there is deliberately **no** paid fallback
+(cost control). The value is read at container start, so changing it needs
+`--force-recreate`. Current value (2026-10-12): three OpenRouter `:free`
+models plus `ollama::oracle-llama3.2:3b` as last resort — the oracle VM's
+2 vCPU generate only ~5 tok/s, so a 600-token summary on the *local* model
+alone exceeds the provider's 120 s per-call timeout and fails.
 
 **Disaster recovery for the vault directory:**
 
 ```bash
-sudo rm -rf /var/lib/ai-provider-service/vault/*
-sudo -u ai-provider /opt/ai-provider-service/venv/bin/flask --app app vault-render --rebuild
+sudo docker exec ai-provider flask vault-render --rebuild
 ```
 
-**Deploy of Phase 1 (one-time):**
+**Deploy (oracle-vm, one-time):**
 
 ```bash
-# 1. Pull branch, install unit files
 sudo cp deploy/ai-provider-summary.{service,timer} /etc/systemd/system/
 sudo cp deploy/ai-provider-vault-render.{service,timer} /etc/systemd/system/
-
-# 2. Create vault dir + SELinux context
-sudo install -d -o ai-provider -g ai-provider -m 0750 /var/lib/ai-provider-service/vault
-sudo semanage fcontext -a -t var_lib_t '/var/lib/ai-provider-service/vault(/.*)?'
-sudo restorecon -Rv /var/lib/ai-provider-service/vault
-
-# 3. Update .env (add MEMORY_ENABLED=true and the other keys)
-
-# 4. Restart service + enable timers
-sudo systemctl restart ai-provider-service
+sudo restorecon -v /etc/systemd/system/ai-provider-summary.* \
+                   /etc/systemd/system/ai-provider-vault-render.*
 sudo systemctl daemon-reload
 sudo systemctl enable --now ai-provider-summary.timer ai-provider-vault-render.timer
-sudo systemctl list-timers | grep ai-provider
+systemctl list-timers 'ai-provider-*'
 ```

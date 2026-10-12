@@ -1138,11 +1138,15 @@ via `GET /memory/vault.tar.gz`.
 
 ```
 MEMORY_ENABLED=true
-VAULT_PATH=/var/lib/ai-provider-service/vault
+VAULT_PATH=/app/data/vault
 SUMMARY_PROFILE=cheap-first
 SUMMARY_MAX_NOTES_PER_DAY=200
-MEMORY_FREE_MODELS=ollama::mistral,opencode::deepseek-v4-flash-free
+MEMORY_FREE_MODELS=openrouter::nvidia/nemotron-3-super-120b-a12b:free,ollama::oracle-llama3.2:3b
 ```
+
+`MEMORY_FREE_MODELS` is read at container start (change it with
+`docker compose up -d --force-recreate ai-provider`). List several entries —
+the job tries them in order and fails hard (no paid fallback) if all fail.
 
 Source of truth is SQLite. The vault directory is a regenerable cache —
 do not back it up, do not edit files directly. See
