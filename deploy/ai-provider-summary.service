@@ -1,10 +1,9 @@
 [Unit]
 Description=ai-provider-service nightly summary job
-After=ai-provider.service
-Requires=ai-provider.service
+Documentation=https://github.com/haraldweiss/ai-provider-service
+After=ai-provider-docker.service docker.service
+Wants=ai-provider-docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/podman exec ai-provider flask summary-job --period=day --yesterday
-StandardOutput=append:/var/log/ai-provider-service/summary-job.log
-StandardError=inherit
+ExecStart=/usr/bin/docker exec ai-provider flask summary-job --period=day --yesterday

@@ -2,8 +2,8 @@
 Description=ai-provider-service vault self-heal timer
 
 [Timer]
-OnUnitActiveSec=10min
 OnBootSec=2min
+OnUnitActiveSec=10min
 Unit=ai-provider-vault-render.service
 
 [Install]
