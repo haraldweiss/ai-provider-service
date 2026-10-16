@@ -12,6 +12,7 @@ from __future__ import annotations
 import itertools
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -390,10 +391,30 @@ def _resolve_endpoints(config: dict | None) -> List[str]:
     return [Config.OLLAMA_URL.rstrip('/')]
 
 
+def _resolve_timeout(config: dict | None) -> int:
+    """Per-call Ollama budget: config['timeout'] > env OLLAMA_TIMEOUT > 120s.
+
+    Must stay below the gunicorn --timeout (180s), otherwise gunicorn kills the
+    worker before Ollama can answer. Raise it (env OLLAMA_TIMEOUT) only if the
+    gunicorn timeout was raised too. A local 3B model pre-filling a
+    web-search-sized prompt on a 2-vCPU host can exceed 120s, and the pool
+    failover then used to report that timeout as a bogus "model not found".
+    """
+    cfg = config or {}
+    raw = cfg.get('timeout')
+    if raw in (None, ''):
+        raw = os.getenv('OLLAMA_TIMEOUT', '')
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return OllamaClient.timeout
+    return value if value > 0 else OllamaClient.timeout
+
+
 class OllamaClient(BaseClient):
     timeout = 120  # Max-Wartezeit pro Ollama-Call. Muss < Gunicorn --timeout (180s)
                   # sein, sonst killt Gunicorn den Worker bevor Ollama den Fehler
-                  # zurückgibt.
+                  # zurückgibt. Override per config['timeout'] oder env OLLAMA_TIMEOUT.
 
     # Class-level per-gunicorn-worker model map for predictive routing.
     # Filled lazily on first request and refreshed every _MODEL_MAP_TTL_SEC.
@@ -411,6 +432,8 @@ class OllamaClient(BaseClient):
     def __init__(self, config: dict):
         self.endpoints = _resolve_endpoints(config)
         self.base_url = self.endpoints[0]  # backwards-compat for any caller reading .base_url
+        # Per-instance budget so an operator can raise it without a code change.
+        self.timeout = _resolve_timeout(config)
         # Atomic round-robin counter shared by all instances within one Python process.
         # Using itertools.count + modulo gives lock-free RR across the gunicorn worker
         # (each worker has its own counter — that's fine, balancing is statistical).
@@ -547,8 +570,18 @@ class OllamaClient(BaseClient):
         # ConnectionError/Timeout/5xx (transient) and on 404 (model truly
         # missing on that endpoint — perfect signal to refresh the map
         # next time around).
+        #
+        # Error priority (2026-10-16): a 404 from an endpoint that the model-map
+        # says does NOT host the model is an *expected* miss. It must never
+        # replace a real failure (timeout/connection/5xx) from an endpoint that
+        # does host it — otherwise a slow local model surfaced to the client as
+        # a bogus `404 model 'x' not found` instead of the timeout that actually
+        # happened. `miss_exc` keeps the expected-miss error only as a fallback
+        # for the case where nothing else was recorded.
         last_exc: Exception | None = None
+        miss_exc: Exception | None = None
         order = self._pick_order(model)
+        hosting = set(self._endpoints_hosting(model)) if model else set()
         for idx, url in enumerate(order):
             try:
                 r = requests.post(f'{url}/api/chat', json=payload, timeout=self.timeout)
@@ -609,6 +642,17 @@ class OllamaClient(BaseClient):
                     # Lock protects against concurrent _refresh_model_map replacement.
                     with OllamaClient._model_map_lock:
                         OllamaClient._endpoint_models.setdefault(url, set()).discard(model)
+                    if hosting and url not in hosting:
+                        # The model-map says this model lives on another endpoint,
+                        # so this 404 was expected. Never let it replace a real
+                        # failure (timeout/5xx) recorded from a hosting endpoint.
+                        if last_exc is None and miss_exc is None:
+                            miss_exc = e
+                        logger.debug(
+                            'Ollama endpoint %s does not host model=%s (expected miss); trying next',
+                            url, model,
+                        )
+                        continue
                 if (500 <= status < 600 or status in (400, 404)) and len(order) > 1:
                     last_exc = e
                     logger.warning(
@@ -622,8 +666,19 @@ class OllamaClient(BaseClient):
                 )
                 raise
 
-        # All endpoints exhausted
-        raise last_exc if last_exc else RuntimeError('All Ollama endpoints failed')
+        # All endpoints exhausted. A real failure from an endpoint that hosts the
+        # model wins over an expected miss from one that does not, so the client
+        # sees the actual cause instead of a misleading 404.
+        if last_exc is not None:
+            logger.warning(
+                'All Ollama endpoints failed for model=%s (order=%s); raising %s: %s',
+                model, ', '.join(order), type(last_exc).__name__, last_exc,
+            )
+            raise last_exc
+        if miss_exc is not None:
+            logger.warning('No Ollama endpoint in the pool hosts model=%s (tried %s)', model, ', '.join(order))
+            raise miss_exc
+        raise RuntimeError('All Ollama endpoints failed')
 
     def health(self) -> bool:
         # Healthy if ANY endpoint responds.

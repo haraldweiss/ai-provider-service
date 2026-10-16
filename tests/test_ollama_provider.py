@@ -1,6 +1,7 @@
 """Tests for local Ollama provider response mapping."""
 
 from unittest.mock import Mock
+import pytest
 import requests
 
 
@@ -434,6 +435,118 @@ def test_endpoints_hosting_matches_bare_name_to_tagged_map(monkeypatch):
         assert client._endpoints_hosting('does-not-exist') == []
     finally:
         OllamaClient._endpoint_models = {}
+
+
+def _http_error(status, body='{"error":"model not found"}'):
+    response = Mock()
+    response.status_code = status
+    response.text = body
+    response.raise_for_status.side_effect = requests.HTTPError(response=response)
+    return response
+
+
+def _pool_client(monkeypatch, endpoints, model_map):
+    """OllamaClient with a pinned model map (no /api/tags refresh, no network)."""
+    import time
+
+    from providers.ollama import OllamaClient
+
+    OllamaClient._endpoint_models = dict(model_map)
+    OllamaClient._model_map_last_refresh = time.monotonic()  # skip the TTL refresh
+    return OllamaClient({'api_endpoints': endpoints})
+
+
+def test_pool_timeout_is_not_masked_by_expected_404(monkeypatch):
+    """A timeout on the endpoint that hosts the model must not be reported as a
+    404 from the endpoints that do not host it.
+
+    Regression for the 2026-10-16 Open WebUI web-search incident: the local 3B
+    model timed out on a ~180-document prompt, the pool then 404'd on the two
+    Macs, and the client saw `Provider ollama rejected the request (HTTP 404)`
+    instead of the timeout that actually happened."""
+    from providers.ollama import OllamaClient
+
+    endpoints = ['http://oracle:11441', 'http://m3:11434', 'http://mini:11434']
+    client = _pool_client(monkeypatch, endpoints, {
+        'http://oracle:11441': {'oracle-llama3.2:3b'},
+        'http://m3:11434': {'dev-coder:latest'},
+        'http://mini:11434': {'other:latest'},
+    })
+
+    def fake_post(url, **kwargs):
+        if url.startswith('http://oracle'):
+            raise requests.Timeout('Read timed out. (read timeout=120)')
+        return _http_error(404)
+
+    monkeypatch.setattr('providers.ollama.requests.post', fake_post)
+    try:
+        with pytest.raises(requests.Timeout):
+            client.create_message('oracle-llama3.2:3b', [{'role': 'user', 'content': 'hi'}])
+        # the expected misses still prune the model map (self-heal)
+        assert 'oracle-llama3.2:3b' not in OllamaClient._endpoint_models.get('http://m3:11434', set())
+        assert 'oracle-llama3.2:3b' not in OllamaClient._endpoint_models.get('http://mini:11434', set())
+    finally:
+        OllamaClient._endpoint_models = {}
+        OllamaClient._model_map_last_refresh = 0.0
+
+
+def test_pool_404_from_hosting_endpoint_still_raises_404(monkeypatch):
+    """When the endpoint that the map says hosts the model answers 404, that is a
+    real 'model not found' and must still surface as an HTTP 404."""
+    from providers.ollama import OllamaClient
+
+    endpoints = ['http://oracle:11441', 'http://m3:11434']
+    client = _pool_client(monkeypatch, endpoints, {
+        'http://oracle:11441': {'oracle-llama3.2:3b'},
+        'http://m3:11434': {'dev-coder:latest'},
+    })
+
+    monkeypatch.setattr('providers.ollama.requests.post', lambda url, **kwargs: _http_error(404))
+    try:
+        with pytest.raises(requests.HTTPError) as excinfo:
+            client.create_message('oracle-llama3.2:3b', [{'role': 'user', 'content': 'hi'}])
+        assert excinfo.value.response.status_code == 404
+    finally:
+        OllamaClient._endpoint_models = {}
+        OllamaClient._model_map_last_refresh = 0.0
+
+
+def test_pool_unknown_model_reports_404_when_nothing_hosts_it(monkeypatch):
+    """No endpoint in the pool hosts the model: the 404 is the truthful answer."""
+    from providers.ollama import OllamaClient
+
+    endpoints = ['http://oracle:11441', 'http://m3:11434']
+    client = _pool_client(monkeypatch, endpoints, {
+        'http://oracle:11441': {'oracle-llama3.2:3b'},
+        'http://m3:11434': {'dev-coder:latest'},
+    })
+
+    monkeypatch.setattr('providers.ollama.requests.post', lambda url, **kwargs: _http_error(404))
+    try:
+        with pytest.raises(requests.HTTPError) as excinfo:
+            client.create_message('does-not-exist', [{'role': 'user', 'content': 'hi'}])
+        assert excinfo.value.response.status_code == 404
+    finally:
+        OllamaClient._endpoint_models = {}
+        OllamaClient._model_map_last_refresh = 0.0
+
+
+def test_resolve_timeout_config_env_and_default(monkeypatch):
+    from providers.ollama import OllamaClient, _resolve_timeout
+
+    monkeypatch.delenv('OLLAMA_TIMEOUT', raising=False)
+    assert _resolve_timeout({}) == 120
+    assert _resolve_timeout({'timeout': 30}) == 30
+    assert _resolve_timeout({'timeout': '45'}) == 45
+    # invalid / non-positive values fall back to the default
+    assert _resolve_timeout({'timeout': 'nope'}) == 120
+    assert _resolve_timeout({'timeout': 0}) == 120
+
+    monkeypatch.setenv('OLLAMA_TIMEOUT', '170')
+    assert _resolve_timeout({}) == 170
+    # an explicit config value still wins over the env
+    assert _resolve_timeout({'timeout': 90}) == 90
+    assert OllamaClient({'api_endpoint': 'http://ollama.test'}).timeout == 170
 
 
 def _ok_response():
