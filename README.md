@@ -371,6 +371,23 @@ beim Service-Start erscheint im Log:
 [INFO] providers.ollama: Ollama pool mode: 2 endpoints: ['http://127.0.0.1:11434', 'http://127.0.0.1:11435']
 ```
 
+### Per-Call Timeout und Fehler-Priorität im Pool
+
+```bash
+# Max-Wartezeit pro Ollama-Call in Sekunden (Default 120).
+# MUSS unter dem gunicorn --timeout (180s) bleiben, sonst killt gunicorn den
+# Worker, bevor Ollama den Fehler zurückgeben kann. Nur erhöhen, wenn der
+# gunicorn-Timeout mit angehoben wird.
+OLLAMA_TIMEOUT=120
+```
+
+Ein 3B-Modell auf einem 2-vCPU-Host kann einen Websuche-großen Prompt (~180
+Dokumente) nicht in 120 s prefilled bekommen. Wichtig ist dann, **was der Client
+sieht**: Endpunkte, die das Modell laut Model-Map **nicht** hosten, antworten mit
+404 — das ist ein *erwarteter* Fehlschlag und überschreibt nie den echten Fehler
+(Timeout/5xx) des hostenden Endpunkts. Ein zu langsames Modell meldet sich also
+als Timeout, nicht als „model not found".
+
 ### Predictive Per-Model Routing
 
 Verschiedene Macs haben oft nicht dieselben Modelle gepullt — kleinere Maschinen

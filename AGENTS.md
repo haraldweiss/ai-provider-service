@@ -214,6 +214,36 @@ When integrating a new provider, check their documentation for app attribution o
   the stored `input_tokens` and priced with Anthropic's multipliers
   (1.25×/2× writes, 0.1× reads) — see `pricing.calc_cost_usd`.
 
+### 3.14 A pool endpoint's "model not found" must never mask a real failure
+
+In Ollama pool mode, an endpoint that does not host the requested model answers
+`404 model not found`. That is an **expected miss**, not a diagnosis — the request
+may already have failed with a timeout / connection error / 5xx on the endpoint
+that *does* host the model. `OllamaClient.create_message()` therefore keeps
+expected misses in a separate slot (`miss_exc`) and raises the real failure first;
+the final log line names the endpoint order and the raised exception. Pruning the
+model map on 404 is unchanged (self-heal stays).
+
+The 2026-10-16 incident: an Open WebUI web-search chat with the local
+`oracle-llama3.2:3b` timed out after 120 s on a ~180-document prompt, the pool then
+404'd on the two Macs, and the client was told
+`Provider ollama rejected the request (HTTP 404)` — "your model does not exist"
+instead of "your model was too slow".
+
+When touching pool routing:
+
+- never let a 404 from an endpoint outside the model map's hosting set replace a
+  recorded timeout/5xx; keep `miss_exc` for the "nothing in the pool hosts it" case;
+- keep the per-endpoint 404 log at **debug** level (it reads like a fatal error at
+  warning level) and keep the single summary warning before raising;
+- `OLLAMA_TIMEOUT` (env) / `config['timeout']` raise the per-call budget (default
+  120 s) and **must stay below the gunicorn `--timeout` (180 s)**.
+
+Verification:
+```bash
+venv/bin/python -m pytest tests/test_ollama_provider.py -q   # 18 passed
+```
+
 ---
 
 ## 4. Verification standards
@@ -2228,4 +2258,20 @@ workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.
   - `test_opencode_raises_without_api_key` erwartet `ValueError`, wenn kein Key konfiguriert ist. Lokal liefert `config.py` per `load_dotenv()` aber `OPENCODE_API_KEY` aus `.env` (67 Zeichen) ⇒ der Test war nur in CI grün. Er neutralisiert den Zentral-Key jetzt per `monkeypatch.setattr` auf `providers.opencode.Config` (greift an derselben Klassen-Referenz, die der Client beim Import gebunden hat).
   - `test_models_endpoint_uses_openrouter_free_mode_without_user_key` fiel nur im Suite-Verbund: `tests/test_images_api.py::_set_config()` setzt `Config.OPENROUTER_API_KEY = 'test-openrouter-key'` **dauerhaft** (Config ist prozess-global, und `Config` wird in mehreren Modulen als eigene Referenz gehalten), und `_disable_server_keys()` löschte OPENROUTER nicht. Der Helper neutralisiert jetzt ANTHROPIC/OPENCODE/ZAI/OPENROUTER/CLINE + `ZAI_SERVER_KEY_ALLOWED_USERS` für beide Config-Referenzen (`config.Config` und `dispatcher.Config`) per `monkeypatch` (stellt danach automatisch wieder her).
   - **Verifiziert:** `pytest -q` → **511 passed, 0 failed** (3 Läufe in Folge; davor 509 passed / 2 failed = Baseline). Die exakte Fehlerkombination `pytest tests/test_images_api.py tests/test_provider_visibility.py` (leakende Datei zuerst) → **22 passed** (vorher 1 failed). Kein Produktionscode geändert.
+
+
+### 2026-10-16 — Ollama-Pool meldete einen Timeout als „model not found" (gefixt, live verifiziert)
+- **Anlass:** Beim Fix der zwei Open-WebUI-Befunde aus dem 0.12.2-Upgrade (sibling `wolfini_de_web`) zeigte sich ein Provider-Bug: ein Websuche-Chat mit dem **lokalen** `oracle-llama3.2:3b` endete nach 194 s mit `Provider ollama rejected the request (HTTP 404)` — obwohl das Modell existiert und direkt erreichbar ist (3 Proben 200 in 1,9–3,9 s).
+- **Root Cause (Code, `providers/ollama.py::create_message`):** `_pick_order()` hängt an die hostenden Endpunkte die **nicht** hostenden als Last-Resort-Fallback an. Lief der hostende Endpunkt (lokal, 11441) in einen `ReadTimeout`, setzte das `last_exc = Timeout`. Die beiden Macs antworteten danach wie erwartet mit **404**, und die 404-Zeile `last_exc = e` **überschrieb den Timeout** → am Ende `raise last_exc` = 404 → der Client las „model not found" statt „zu langsam". Der auslösende Prompt (~180 Websuche-Dokumente) braucht auf 2 vCPU länger als die 120 s.
+- **Fix:** `miss_exc` als separater Slot für *erwartete* Fehlschläge (404 von einem Endpunkt außerhalb der Model-Map-Hosting-Menge); der echte Fehler gewinnt immer. Per-Endpunkt-404 jetzt auf **debug** (las sich auf warning wie ein Fatalfehler), davor eine Zusammenfassung `All Ollama endpoints failed for model=… (order=…) ; raising <Typ>`. Model-Map-Pruning unverändert (Self-Heal bleibt). Zusätzlich `OLLAMA_TIMEOUT` (env) / `config['timeout']` als konfigurierbares Budget (Default 120 s, muss < gunicorn `--timeout` 180 s bleiben) → neue Hard Rule **§3.14**.
+- **Deploy (oracle-vm, pull-based):** `sudo git pull --ff-only` → `980b0e4`, `docker compose build` + `up -d`, Container `healthy`, `RestartCount=0`; im Container `grep -c "expected miss" /app/providers/ollama.py` = 2 (Code live).
+- **Verifiziert (live, mit temporär `OLLAMA_TIMEOUT=1` um den Timeout-Pfad zu erzwingen; danach Env zurückgerollt):**
+  - Timeout-Fall: Client → **503** `{"message":"Provider ollama nicht erreichbar, kein Fallback/Queue konfiguriert","type":"service_unavailable"}`; Log: `All Ollama endpoints failed for model=oracle-llama3.2:3b (order=host.docker.internal:11441, 10.10.0.4, 10.10.0.2); raising ReadTimeout` + `dispatcher: Primary ollama failed … ReadTimeout`. **Vorher:** 404 `model 'oracle-llama3.2:3b' not found`.
+  - Hosting-Endpunkt antwortet 404 → weiterhin 404 (unverändert korrekt).
+  - Modell in keinem Pool-Endpunkt → weiterhin 404 (`ollama/definitely-not-a-model` → 404).
+  - Normalfälle: `ollama/oracle-llama3.2:3b` → 200 (1,6 s), `openrouter/liquid/lfm-2.5-2.6b:free` → 200 (0,5 s).
+  - Env-Rollback verifiziert: `docker exec ai-provider printenv OLLAMA_TIMEOUT` leer (Default 120), `/health` 200.
+- **Tests:** `tests/test_ollama_provider.py` → **18 passed** (4 neu: Timeout-nicht-als-404-maskiert, Hosting-404 bleibt 404, unbekanntes Modell bleibt 404, `_resolve_timeout`-Matrix). Volle Suite **563 passed**.
+- **Doku:** AGENTS §3.14 (neu) + dieser Eintrag; README „Per-Call Timeout und Fehler-Priorität im Pool"; `.env.example` (`# OLLAMA_TIMEOUT=120`).
+- **Git:** `Fix:` `980b0e4` (Code+Tests) und `Docs:` auf `main` → push.
 
