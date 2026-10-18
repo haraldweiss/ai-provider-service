@@ -429,9 +429,21 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
        mit dem **abgelaufenen** Key. Jetzt `opencode`-Auth entfernt, `opencode-go` mit
        dem neuen Service-Key, Default `ai-provider-service/opencode_go/deepseek-v4.1-flash`
        (+ Scoped-Model), Zen-Modell-Cache verworfen. Verifiziert: 999 registrierte
-       Modelle, `pi --print …` → `OK`. Kleinigkeit offen: einzelne
-       `openrouter/…:free`-Einträge in Pis Scoped-Liste sind upstream verschwunden
-       (Direkt-OpenRouter, nicht Gateway).
+       Modelle, `pi --print …` → `OK`. Die 7 `openrouter/…:free`-Einträge in Pis
+       Scoped-Liste waren Direkt-OpenRouter-Modelle (nicht über den Gateway) und
+       **alle unbrauchbar** — 4 von 7 aus dem Katalog verschwunden
+       (`qwen/qwen3.8-27b:free`, `deepseek/deepseek-v4-flash-0731:free`,
+       `z-ai/glm-5.2:free`, `inclusionai/ling-3.0-flash-fin:free`), 3 antworteten mit
+       leerem Body/404 (`google/gemma-4-26b-a4b-it:free` → „0 endpoints available",
+       `nvidia/nemotron-3.5-lightning:free` → leer nach 111 s,
+       `liquid/lfm-2.5-2.6b:free` → leer). Ersetzt durch 3 gemessene Free-Modelle
+       (je 2 Proben nicht-leer): `cohere/north-mini-code:free` (~1 s),
+       `nvidia/nemotron-3-ultra-550b-a55b:free` (<1,2 s),
+       `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` (1–2,4 s);
+       `google/gemma-4-31b-it:free` (404), `dots-studio/dots-3-note-preview:free` (1/2 leer)
+       und `nvidia/nemotron-3-super-120b-a12b:free` (2/2 leer) fielen durch.
+       Verifiziert: `pi --print --model openrouter/nvidia/nemotron-3-ultra-550b-a55b:free …`
+       → `OK`; Backup `settings.json.bak-<ts>`.
   2. **DB-Fallbacks auf den toten Zen-Provider: erledigt** (2026-10-18) — alle 8 Rows mit
      `fallback_provider='opencode'` (`harald/cline`, `lisa/ollama`, `pi-agent/cline`,
      `pi-agent/ollama`, `pi-agent/zai`, `test-user/ollama`, `wolfini_de_web/ollama`,
@@ -510,8 +522,9 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   Error-Payload **ohne** Cache-Änderung. Auf oracle-vm installiert und verifiziert:
   Cache mit der Go-Liste (37 Modelle) geseedet → Lauf „No model changes", rc=0, keine
   Mail; Guard-Test gegen eine 401-URL → ERROR, rc=1, **Cache-Hash unverändert**
-  (`10817e2251d18cba`). *Achtung: installiert, aber noch nicht gemergt — PR #225 offen,
-  also „installed ≠ main".*
+  (`10817e2251d18cba`). War als **PR #225** committet und ist **seit 2026-10-18 gemergt**
+  (Merge-Commit `7724578`); installiertes Skript und `main` sind byte-identisch
+  (sha256 `7ba01f64…` auf oracle-vm == Repo).
 
 
 ### 2026-10-12 — Memory-Timer wieder eingesetzt (oracle-vm/docker) + `MEMORY_FREE_MODELS` konfiguriert
