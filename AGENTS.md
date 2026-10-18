@@ -398,37 +398,54 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
     Probe `37 models` + Chat 200; die Env-Datei ist danach **byte-identisch**
     (sha256 `de834663b940…` vor und nach dem Lauf).
 - **Offen / bewusst nicht geändert:**
-  1. **Consumer-Modell-IDs:** Clients, die `opencode/<model>` referenzieren (Open WebUI
-     Workspace-Modelle, Bewerbungstracker, Pi-Extension), müssen auf `opencode_go/<model>`
-     umgestellt werden — `opencode/herst` liefert jetzt „unknown/unavailable". Der
-     Open-WebUI-Modell-Sync läuft automatisch, gespeicherte Workspace-Modelle nicht.
-     **Bewerbungstracker: erledigt** (2026-10-18, Repo `Bewerbungstracker`, Commit
-     `da3010a` + CHANGELOG-Eintrag): Prod-User `harald.weiss@…` stand auf
-     `opencode`/`muse-spark-1.3-contributor-free` (163× `HTTP 410` in 3 Tagen, dazu 404er
-     auf Free-IDs, die es auf Ollama nie gab) → jetzt `opencode_go`/`deepseek-v4.1-flash`
-     (Backup bleibt `ollama`/`mistral-nemo-cc:latest`); zusätzlich `opencode_go` in
-     `VALID_PROVIDERS`/`USER_PROVIDERS`/`_DEFAULT_MODELS` + Wizard-Default + 5 neue Tests
-     (`pytest tests/` → 906 passed). Deploy: rsync → `build.sh da3010a` →
-     `IMAGE_TAG=da3010a setup-oracle-vm.sh rebuild` (5/5 Container auf `da3010a`,
-     Site 200). **E2E-Beweis** im Prod-Container: `POST /api/providers/chat` →
-     `200 {via: opencode_go, model: deepseek-v4.1-flash, fallback_used: false,
-     response: "OK"}`. **Offen dort:** User `ba3e37ac…` stand auf `claude` ohne Key →
-     0 von 2549 Job-Matches bewertet; **behoben** (2026-10-18, Commit `c68b956`) auf
-     `openrouter`/`cohere/north-mini-code:free` im **free-only-Modus** des Service
-     (Server-Key, `cost_usd=0`, kein Guthaben nötig), Backup `ollama`/`mistral-nemo-cc:latest`;
-     E2E `200 {via: openrouter, response: '{"score": 90, …}'}`. Der Free-Router
-     `openrouter/free` wurde gemessen und **verworfen** (4 Probes: 1× valides JSON,
-     2× leerer Body, 1× Safety-Modell-Antwort → leere Antworten bedeuten Score 0).
-     **Ebenso umgestellt** (2026-10-18, Commit `dd4af40`): `a82be5b8…`
-     (`sarlakk@icloud.com`) auf dieselbe Einstellung; E2E `200 {via: openrouter,
-     response: '{"score": 85, …}'}`. Damit steht kein Bewerbungstracker-User mehr auf
-     einem Provider ohne funktionierenden Key. Bleibt hier: Open WebUI
-     Workspace-Modelle + Pi-Extension.
-  2. **DB-Fallbacks auf den toten Zen-Provider:** `fallback_provider=opencode` +
-     `fallback_model=deepseek-v4-flash-free` (u.a. bei `lisa/ollama`, `pi-agent/ollama`,
-     `wolfinichat/ollama`, `wolfini_de_web/ollama`, `harald/cline`) zeigt jetzt ins
-     Leere. Repoint auf `opencode_go/deepseek-v4.1-flash` (kostet Go-Kontingent) oder
-     besser auf `openrouter/*:free` (kostenlos) — Entscheidung steht aus.
+  1. **Consumer-Modell-IDs:** Clients, die `opencode/<model>` referenzieren, müssen auf
+     `opencode_go/<model>` umgestellt werden — `opencode/herst` liefert jetzt
+     „unknown/unavailable". **Erledigt für alle drei Consumer** (2026-10-18):
+     - **Bewerbungstracker** (Commit `da3010a` + CHANGELOG): Prod-User `harald.weiss@…`
+       stand auf `opencode`/`muse-spark-1.3-contributor-free` (163× `HTTP 410` in 3 Tagen,
+       dazu 404er auf Free-IDs, die es auf Ollama nie gab) → jetzt
+       `opencode_go`/`deepseek-v4.1-flash` (Backup bleibt `ollama`/`mistral-nemo-cc:latest`);
+       zusätzlich `opencode_go` in `VALID_PROVIDERS`/`USER_PROVIDERS`/`_DEFAULT_MODELS` +
+       Wizard-Default + 5 neue Tests (`pytest tests/` → 906 passed). Deploy: rsync →
+       `build.sh da3010a` → `IMAGE_TAG=da3010a setup-oracle-vm.sh rebuild` (5/5 Container
+       auf `da3010a`, Site 200). **E2E-Beweis** im Prod-Container:
+       `POST /api/providers/chat` → `200 {via: opencode_go, model: deepseek-v4.1-flash,
+       fallback_used: false, response: "OK"}`. Die beiden User, die vorher auf `claude`
+       ohne jeden Key standen (`ba3e37ac…` = `ri-lampe@t-online.de` mit 0 von 2549
+       Job-Matches bewertet, `a82be5b8…` = `sarlakk@icloud.com`) laufen jetzt auf
+       `openrouter`/`cohere/north-mini-code:free` im free-only-Modus
+       (Server-Key, `cost_usd=0`) mit `ollama`-Backup; E2E je `200 {via: openrouter,
+       response: '{"score": …}'}` (Commits `c68b956`, `dd4af40`). Kein Tracker-User mehr
+       auf einem Provider ohne funktionierenden Key.
+     - **Open WebUI** (`ionos-vps`, PR `wolfini_de_web#226`): Die 37 synchronisierten
+       `opencode_go/*`-Workspace-Modelle waren doppelt falsch — Label `[Unknown]`
+       (Präfix fehlte in `PROVIDER_LABELS`) **und** `DEFAULT_POLICY` = read nur Admin,
+       d. h. normale Nutzer sahen sie **gar nicht**. Jetzt `read: [premium, admin]`
+       (wie früher `opencode/`; `ACCESS_POLICY["opencode_go/"]`), Label
+       „OpenCode Go (Subscription)". Die 37 Zeilen wurden gelöscht und per regulärem
+       `wolfini-owui-model-sync.sh` neu erzeugt (DB-Backup vorher); verifiziert:
+       37 Zeilen, 0× `[Unknown]`, 0 Zen-Zeilen.
+     - **Pi** (Mac, `~/.pi/agent`): Default war `opencode`/`hy3-free` (totes Zen-Model)
+       mit dem **abgelaufenen** Key. Jetzt `opencode`-Auth entfernt, `opencode-go` mit
+       dem neuen Service-Key, Default `ai-provider-service/opencode_go/deepseek-v4.1-flash`
+       (+ Scoped-Model), Zen-Modell-Cache verworfen. Verifiziert: 999 registrierte
+       Modelle, `pi --print …` → `OK`. Kleinigkeit offen: einzelne
+       `openrouter/…:free`-Einträge in Pis Scoped-Liste sind upstream verschwunden
+       (Direkt-OpenRouter, nicht Gateway).
+  2. **DB-Fallbacks auf den toten Zen-Provider: erledigt** (2026-10-18) — alle 8 Rows mit
+     `fallback_provider='opencode'` (`harald/cline`, `lisa/ollama`, `pi-agent/cline`,
+     `pi-agent/ollama`, `pi-agent/zai`, `test-user/ollama`, `wolfini_de_web/ollama`,
+     `wolfinichat/ollama`) zeigen jetzt auf
+     `openrouter` / `openrouter/cohere/north-mini-code:free` (kostenlos im free-only-Modus
+     des Server-Keys). Vorher hatte die Hälfte `fallback_model=NULL` — dort wäre der
+     *Primary*-Modellname an openrouter gegangen und am Free-Only-Guard gescheitert.
+     DB-Backup: `/opt/ai-provider-data/storage.db.pre-openrouter-fallback-<ts>`.
+     **Live bewiesen:** `pi-agent/zai` (kein Guthaben → 402/429) → `HTTP 200 via=openrouter
+     fallback=True model=cohere/north-mini-code:free`; `test-user/ollama` unverändert direkt.
+     Modell-Wahl gemessen (2 Proben je Kandidat, allgemeiner Prompt + JSON-Prompt):
+     `cohere/north-mini-code:free` 2/2 ok (1,4–1,9 s) — `openrouter/free` (Free-Router),
+     `google/*:free` (404), `nvidia/nemotron-3.5-*:free` (leer), `dots-studio/*`,
+     `poolside/*`, `liquid/*`, `thinkingmachines/*` (403/leer) fielen durch.
   3. **Zen-Key + Cron:** `OPENCODE_API_KEY` bleibt absichtlich (invalidiert) in der Env,
      weil der root-Cron `opencode-models-check.sh` (täglich 04:30 UTC, Skript im
      `wolfini_de_web`-Repo unter `scripts/oracle/opencode-models-check/`) ihn liest und
