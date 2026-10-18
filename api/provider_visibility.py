@@ -8,12 +8,21 @@ from providers import PROVIDER_REGISTRY
 
 
 def _server_key_available_for_user(user_id: str, provider_id: str) -> bool:
-    from dispatcher import _is_claude_server_key_allowed, _is_zai_server_key_allowed
+    from dispatcher import (
+        _is_claude_server_key_allowed,
+        _is_opencode_go_server_key_allowed,
+        _is_zai_server_key_allowed,
+    )
 
     if provider_id == 'claude':
         return bool(Config.ANTHROPIC_API_KEY) and _is_claude_server_key_allowed(user_id)
     if provider_id == 'opencode':
         return bool(Config.OPENCODE_API_KEY)
+    if provider_id == 'opencode_go':
+        # The server key funds the shared Go plan; the allowlist can restrict it
+        # to specific user_ids (empty = open to everyone).
+        return (bool(Config.OPENCODE_GO_API_KEY)
+                and _is_opencode_go_server_key_allowed(user_id))
     if provider_id == 'openrouter':
         return True
     if provider_id == 'zai':

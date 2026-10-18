@@ -93,6 +93,48 @@ def test_models_endpoint_refuses_key_required_provider_without_user_key(client, 
     assert response.get_json()['error'] == 'provider_requires_api_key'
 
 
+def test_opencode_go_server_key_keeps_provider_visible(client, monkeypatch):
+    """The shared Go plan key must not be reported as "personal key required":
+    the models are served and listed for every user (AGENTS §7, 2026-10-18)."""
+    from config import Config
+    import dispatcher
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    _disable_server_keys(monkeypatch)
+    for cfg in (Config, dispatcher.Config):
+        monkeypatch.setattr(cfg, 'OPENCODE_GO_API_KEY', 'oc_sk_server')
+        monkeypatch.setattr(cfg, 'OPENCODE_GO_SERVER_KEY_ALLOWED_USERS', '')
+
+    response = client.get(
+        '/providers?user_id=lisa',
+        headers={'Authorization': 'Bearer admin-test-token'},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert 'opencode_go' in {p['id'] for p in body['providers']}
+    assert 'opencode_go' not in {p['id'] for p in body['hidden_providers']}
+
+
+def test_opencode_go_allowlist_hides_provider_for_other_users(client, monkeypatch):
+    from config import Config
+    import dispatcher
+
+    Config.ADMIN_TOKEN = 'admin-test-token'
+    _disable_server_keys(monkeypatch)
+    for cfg in (Config, dispatcher.Config):
+        monkeypatch.setattr(cfg, 'OPENCODE_GO_API_KEY', 'oc_sk_server')
+        monkeypatch.setattr(cfg, 'OPENCODE_GO_SERVER_KEY_ALLOWED_USERS', 'harald')
+
+    allowed = client.get('/providers?user_id=harald',
+                         headers={'Authorization': 'Bearer admin-test-token'}).get_json()
+    denied = client.get('/providers?user_id=lisa',
+                        headers={'Authorization': 'Bearer admin-test-token'}).get_json()
+
+    assert 'opencode_go' in {p['id'] for p in allowed['providers']}
+    assert 'opencode_go' in {p['id'] for p in denied['hidden_providers']}
+
+
 def test_models_endpoint_uses_openrouter_free_mode_without_user_key(client, monkeypatch):
     from config import Config
     import api.providers_api as providers_api
