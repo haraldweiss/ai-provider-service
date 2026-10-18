@@ -104,6 +104,22 @@ def _is_zai_server_key_allowed(user_id: str) -> bool:
     return user_id in allowed
 
 
+def _is_opencode_go_server_key_allowed(user_id: str) -> bool:
+    """Allowlist für den zentralen OPENCODE_GO_API_KEY (Go/Go-Plus-Abo).
+
+    Der Go-Key ist ein bezahltes Abo, aber mit monatlichen Modell-Limits; das
+    Gateway hat opencode vorher für alle User server-finanziert (Free-Modelle).
+    Leer/nicht gesetzt ⇒ offen für alle (Verhalten beibehalten), damit der
+    Umbau auf Go nichts für Consumer wegnimmt. Wer das Abo-Kontingent teilen
+    will, setzt `OPENCODE_GO_SERVER_KEY_ALLOWED_USERS=user1,user2`.
+    """
+    allowed_raw = (Config.OPENCODE_GO_SERVER_KEY_ALLOWED_USERS or '').strip()
+    if not allowed_raw:
+        return True
+    allowed = {u.strip() for u in allowed_raw.split(',') if u.strip()}
+    return user_id in allowed
+
+
 def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     """Lädt + entschlüsselt Provider-Config aus DB. Für System-Provider (Claude,
     Ollama) leeres Dict, falls keine User-Config existiert.
@@ -126,6 +142,13 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     if provider_id == 'opencode':
         if Config.OPENCODE_API_KEY:
             return {'_free_only': True, 'api_key': Config.OPENCODE_API_KEY}
+        return None
+
+    # opencode_go: the Go plan key covers its whole catalog, so no free-only
+    # filter here (that flag exists only for Zen's app-locked free tier).
+    if provider_id == 'opencode_go':
+        if Config.OPENCODE_GO_API_KEY and _is_opencode_go_server_key_allowed(user_id):
+            return {'api_key': Config.OPENCODE_GO_API_KEY}
         return None
 
     # openrouter: free models work even without system key, otherwise free-only

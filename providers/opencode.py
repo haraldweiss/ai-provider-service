@@ -1,7 +1,12 @@
-"""Opencode.ai (Zen) Client — OpenAI-compatible hosted gateway.
-Auto-retry with free model variants when balance is insufficient.
-Discovers free models from the API periodically.
-Handles reasoning_content for models that output there.
+"""opencode.ai clients — OpenAI-compatible hosted gateways.
+
+``OpencodeClient``   — Zen / Console (pay-as-you-go, app-locked free tier).
+``OpencodeGoClient`` — Go / Go Plus (subscription-backed catalog).
+
+Shared by both: the client-specific User-Agent, the per-conversation
+``x-opencode-session`` header (mandatory upstream, AGENTS §3.12) and the
+reasoning_content fallback. Free-model discovery is Zen-only: Go serves the
+plan's catalog, free variants included, so nothing is filtered there.
 """
 
 from __future__ import annotations
@@ -195,12 +200,29 @@ def _extract_content(choice) -> str:
 
 
 class OpencodeClient(BaseClient):
+    """opencode.ai Zen / Console client.
+
+    Class attributes select the Config entries that supply the defaults, so a
+    variant endpoint only has to override those names (see OpencodeGoClient).
+    """
+
+    _base_url_attr = 'OPENCODE_BASE_URL'
+    _api_key_attr = 'OPENCODE_API_KEY'
+    _label = 'Opencode'
+    # Zen free-only sessions advertise nothing: the free tier is locked to the
+    # OpenCode app upstream (2026-09-18) and dead model IDs in pi / Open WebUI
+    # are worse than an absent model.
+    _hide_locked_free_models = True
+    # Zen retries a paid model with a free variant when the balance is gone.
+    _free_model_failover = True
+
     def __init__(self, config: dict):
         self._free_only = config.get('_free_only', False)
-        api_key = config.get('api_key') or Config.OPENCODE_API_KEY
+        api_key = config.get('api_key') or getattr(Config, self._api_key_attr, '')
         if not api_key:
-            raise ValueError("Opencode: api_key oder OPENCODE_API_KEY erforderlich")
-        base_url = config.get('api_endpoint') or Config.OPENCODE_BASE_URL
+            raise ValueError(
+                f"{self._label}: api_key oder {self._api_key_attr} erforderlich")
+        base_url = config.get('api_endpoint') or getattr(Config, self._base_url_attr, '')
         self.client = OpenAI(
             api_key=api_key, 
             base_url=base_url,
@@ -212,7 +234,7 @@ class OpencodeClient(BaseClient):
         try:
             all_models = sorted(m.id for m in self.client.models.list().data)
             if self._free_only:
-                if not _free_models_advertised():
+                if self._hide_locked_free_models and not _free_models_advertised():
                     logger.info(
                         'Opencode free-only mode: hiding %d free models '
                         '(free tier client-locked upstream since 2026-09-18)',
@@ -283,7 +305,7 @@ class OpencodeClient(BaseClient):
             }
         except AuthenticationError as e:
             err_body = str(e)
-            if not _BALANCE_ERR_RE.search(err_body):
+            if not self._free_model_failover or not _BALANCE_ERR_RE.search(err_body):
                 raise
 
             tried_models = []
@@ -336,3 +358,27 @@ class OpencodeClient(BaseClient):
             return True
         except Exception:
             return False
+
+
+class OpencodeGoClient(OpencodeClient):
+    """opencode.ai Go / Go Plus client (https://opencode.ai/zen/go/v1).
+
+    Subscription-backed catalog, added 2026-10-18 after OpenCode invalidated the
+    Console key with the breach response (AGENTS §7). Differences from Zen:
+
+    - key/endpoint defaults come from ``OPENCODE_GO_API_KEY`` /
+      ``OPENCODE_GO_BASE_URL``;
+    - no free-only gating — the Go plan covers its whole catalog;
+    - no balance→free-variant retry: an exhausted plan surfaces as 402/429 and
+      the dispatcher routes it to the configured fallback (AGENTS §3.11).
+
+    The inherited per-conversation ``x-opencode-session`` header and client
+    User-Agent are mandatory here — a request without the session header fails
+    upstream (verified 2026-10-18 against the Go endpoint: HTTP 500).
+    """
+
+    _base_url_attr = 'OPENCODE_GO_BASE_URL'
+    _api_key_attr = 'OPENCODE_GO_API_KEY'
+    _label = 'Opencode Go'
+    _hide_locked_free_models = False
+    _free_model_failover = False
