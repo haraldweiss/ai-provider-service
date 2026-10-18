@@ -91,6 +91,14 @@ _PRICING_USD_PER_MTOK: dict[tuple[str, str], dict[str, float]] = {
 # Provider, die immer als kostenfrei (lokal) gelten.
 _LOCAL_PROVIDERS = {'ollama', 'omlx'}
 
+# Provider, deren Token-Verbrauch durch ein Flatrate-Abo abgedeckt ist — es
+# entstehen keine Grenzkosten pro Request (Vorbild: die `cline-pass/*`-Modelle
+# in pricing_overrides_cline.json stehen auf $0). Achtung: schöpft ein Go-Abo
+# seine Monats-Limits aus und ist im Console "Use balance" aktiv, rechnet
+# OpenCode pay-as-you-go ab. Das ist pro Request nicht erkennbar, die
+# Usage-Events melden für opencode_go daher weiter 0.0.
+_SUBSCRIPTION_PROVIDERS = {'opencode_go'}
+
 # Pfade zu JSON-Override-Dateien (täglich via Cron aktualisierbar).
 # Getrennte Dateien pro Provider, damit der opencode-Daily-Cron die z.ai-Preise
 # nicht überschreibt (und umgekehrt).
@@ -175,7 +183,7 @@ def calc_cost_usd(
     fehlenden Token-Counts."""
     if input_tokens is None or output_tokens is None:
         return None
-    if provider_id in _LOCAL_PROVIDERS:
+    if provider_id in _LOCAL_PROVIDERS or provider_id in _SUBSCRIPTION_PROVIDERS:
         return 0.0
     # 'custom' Provider: pauschal als kostenpflichtig. Bei unbekanntem Modell
     # None — Sub-Projekt B kann das Endpoint-aware machen (lokale LM-Studio

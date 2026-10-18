@@ -62,6 +62,16 @@ class Config:
     OPENCODE_BASE_URL = os.getenv('OPENCODE_BASE_URL', 'https://opencode.ai/zen/v1')
     OPENCODE_API_KEY = os.getenv('OPENCODE_API_KEY', '')
 
+    # opencode.ai Go plan — separate, subscription-backed OpenAI-compatible
+    # endpoint. Distinct from the Zen/Console key above: Go serves the plan's
+    # model catalog (paid models included) and the x-opencode-session header is
+    # mandatory (AGENTS §3.12). An empty allowlist means the server key is open
+    # to all users, matching how `opencode` was funded before; set
+    # OPENCODE_GO_SERVER_KEY_ALLOWED_USERS to restrict a shared Go plan.
+    OPENCODE_GO_BASE_URL = os.getenv('OPENCODE_GO_BASE_URL', 'https://opencode.ai/zen/go/v1')
+    OPENCODE_GO_API_KEY = os.getenv('OPENCODE_GO_API_KEY', '')
+    OPENCODE_GO_SERVER_KEY_ALLOWED_USERS = os.getenv('OPENCODE_GO_SERVER_KEY_ALLOWED_USERS', '')
+
     # z.ai (Zhipu / GLM) provider — OpenAI-compatible endpoint.
     # The central ZAI_API_KEY is restricted to the owner (see
     # ZAI_SERVER_KEY_ALLOWED_USERS); all other users must configure their own
@@ -129,14 +139,11 @@ class Config:
     PROVIDER_DOCS_NOTIFY_EMAIL = os.getenv(
         'PROVIDER_DOCS_NOTIFY_EMAIL', 'harald.weiss@wolfinisoftware.de')
 
-    # Region-locked model exclusion — comma-separated entries. Each entry may
-    # be a bare model prefix (applies to every provider) or a `provider/prefix`
-    # pair (applies only to that provider). Hidden from /v1/models and blocked
-    # from dispatch. Default excludes the z.ai (Zhipu) China-hosted endpoint
-    # models; GLM models served via global gateways (opencode/openrouter)
-    # remain available. Set EXCLUDE_REGION_LOCKED_MODELS= to disable.
-    EVAL_JUDGE_PROVIDER = os.getenv('EVAL_JUDGE_PROVIDER', 'opencode')
-    EVAL_JUDGE_MODEL = os.getenv('EVAL_JUDGE_MODEL', 'big-pickle')
+    # LLM judge for the evaluation runner. The previous default (Zen
+    # `big-pickle`) stopped working when OpenCode invalidated the Console key
+    # with its 2026-10-17 breach response — see AGENTS §7.
+    EVAL_JUDGE_PROVIDER = os.getenv('EVAL_JUDGE_PROVIDER', 'opencode_go')
+    EVAL_JUDGE_MODEL = os.getenv('EVAL_JUDGE_MODEL', 'deepseek-v4.1-flash')
     EVAL_REQUEST_DELAY = os.getenv('EVAL_REQUEST_DELAY', '2.5')  # seconds between requests (rate limit protection)
     # Cap applied by the HTTP path (POST /eval/run) when the caller does not pass
     # max_models. Without it a single request would evaluate every advertised
@@ -148,6 +155,12 @@ class Config:
     # reap_stale_runs(), so the Hub tile never shows a permanent "running".
     EVAL_STALE_HOURS = os.getenv('EVAL_STALE_HOURS', '3')
 
+    # Region-locked model exclusion — comma-separated entries. Each entry may
+    # be a bare model prefix (applies to every provider) or a `provider/prefix`
+    # pair (applies only to that provider). Hidden from /v1/models and blocked
+    # from dispatch. Default excludes the z.ai (Zhipu) China-hosted endpoint
+    # models; GLM models served via global gateways (opencode/openrouter)
+    # remain available. Set EXCLUDE_REGION_LOCKED_MODELS= to disable.
     EXCLUDE_REGION_LOCKED_MODELS = [
         m.strip() for m in os.getenv('EXCLUDE_REGION_LOCKED_MODELS',
             'zai/glm-5,zai/glm-4.7,zai/glm-4.6,zai/glm-4.5,zai/glm-4-32b,'
