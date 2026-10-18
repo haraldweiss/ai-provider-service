@@ -402,6 +402,19 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
      Workspace-Modelle, Bewerbungstracker, Pi-Extension), müssen auf `opencode_go/<model>`
      umgestellt werden — `opencode/herst` liefert jetzt „unknown/unavailable". Der
      Open-WebUI-Modell-Sync läuft automatisch, gespeicherte Workspace-Modelle nicht.
+     **Bewerbungstracker: erledigt** (2026-10-18, Repo `Bewerbungstracker`, Commit
+     `da3010a` + CHANGELOG-Eintrag): Prod-User `harald.weiss@…` stand auf
+     `opencode`/`muse-spark-1.3-contributor-free` (163× `HTTP 410` in 3 Tagen, dazu 404er
+     auf Free-IDs, die es auf Ollama nie gab) → jetzt `opencode_go`/`deepseek-v4.1-flash`
+     (Backup bleibt `ollama`/`mistral-nemo-cc:latest`); zusätzlich `opencode_go` in
+     `VALID_PROVIDERS`/`USER_PROVIDERS`/`_DEFAULT_MODELS` + Wizard-Default + 5 neue Tests
+     (`pytest tests/` → 906 passed). Deploy: rsync → `build.sh da3010a` →
+     `IMAGE_TAG=da3010a setup-oracle-vm.sh rebuild` (5/5 Container auf `da3010a`,
+     Site 200). **E2E-Beweis** im Prod-Container: `POST /api/providers/chat` →
+     `200 {via: opencode_go, model: deepseek-v4.1-flash, fallback_used: false,
+     response: "OK"}`. **Offen dort:** User `ba3e37ac…` steht auf `claude` ohne Key →
+     0 von 2549 Job-Matches bewertet (Entscheidung offen: eigener Key oder `opencode_go`).
+     Bleibt: Open WebUI Workspace-Modelle + Pi-Extension.
   2. **DB-Fallbacks auf den toten Zen-Provider:** `fallback_provider=opencode` +
      `fallback_model=deepseek-v4-flash-free` (u.a. bei `lisa/ollama`, `pi-agent/ollama`,
      `wolfinichat/ollama`, `wolfini_de_web/ollama`, `harald/cline`) zeigt jetzt ins
