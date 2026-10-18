@@ -419,8 +419,11 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
      E2E `200 {via: openrouter, response: '{"score": 90, …}'}`. Der Free-Router
      `openrouter/free` wurde gemessen und **verworfen** (4 Probes: 1× valides JSON,
      2× leerer Body, 1× Safety-Modell-Antwort → leere Antworten bedeuten Score 0).
-     Bleibt offen dort: User `a82be5b8…` (`sarlakk@icloud.com`) auf `claude` ohne Key
-     (noch keine Matches). Bleibt hier: Open WebUI Workspace-Modelle + Pi-Extension.
+     **Ebenso umgestellt** (2026-10-18, Commit `dd4af40`): `a82be5b8…`
+     (`sarlakk@icloud.com`) auf dieselbe Einstellung; E2E `200 {via: openrouter,
+     response: '{"score": 85, …}'}`. Damit steht kein Bewerbungstracker-User mehr auf
+     einem Provider ohne funktionierenden Key. Bleibt hier: Open WebUI
+     Workspace-Modelle + Pi-Extension.
   2. **DB-Fallbacks auf den toten Zen-Provider:** `fallback_provider=opencode` +
      `fallback_model=deepseek-v4-flash-free` (u.a. bei `lisa/ollama`, `pi-agent/ollama`,
      `wolfinichat/ollama`, `wolfini_de_web/ollama`, `harald/cline`) zeigt jetzt ins
