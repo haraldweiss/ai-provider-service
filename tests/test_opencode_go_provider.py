@@ -164,6 +164,31 @@ def test_opencode_go_does_not_retry_free_variants_on_balance_error(mock_openai):
 
 
 @patch('providers.opencode.OpenAI')
+def test_opencode_go_get_free_models_comes_from_the_catalog(mock_openai, monkeypatch):
+    """get_free_models() must not re-use the Zen free-tier path: that one calls
+    models.list() on the chat base, which 404s for Go (it made
+    /providers/opencode_go/models return 502) and would clobber the Zen cache."""
+    import providers.opencode as opencode_module
+    monkeypatch.setattr(opencode_module.Config, 'OPENCODE_GO_BASE_URL',
+                        'https://opencode.ai/inference/go/openai/v1')
+    monkeypatch.setattr(opencode_module.Config, 'OPENCODE_GO_MODELS_BASE_URL',
+                        'https://opencode.ai/inference/go/v1')
+
+    chat_client = MagicMock()
+    models_client = MagicMock()
+    models_client.models.list.return_value = MagicMock(data=[
+        MagicMock(id='beam-free'), MagicMock(id='kimi-k3'),
+        MagicMock(id='longcat-2.5-preview-free'),
+    ])
+    # The chat base has no /models — any call there must not happen.
+    chat_client.models.list.side_effect = AssertionError('chat base has no /models')
+    mock_openai.side_effect = [chat_client, models_client]
+
+    client = opencode_module.OpencodeGoClient({'api_key': 'oc_sk_test'})
+    assert client.get_free_models() == ['beam-free', 'longcat-2.5-preview-free']
+
+
+@patch('providers.opencode.OpenAI')
 def test_opencode_go_health_uses_models_list(mock_openai):
     from providers.opencode import OpencodeGoClient
     client = OpencodeGoClient({'api_key': 'oc_sk_test'})

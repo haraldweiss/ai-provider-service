@@ -270,7 +270,7 @@ class OpencodeClient(BaseClient):
 
     def get_free_models(self) -> list[str]:
         if self._free_models is None:
-            self._free_models = _get_cached_free_models(self.client)
+            self._free_models = _get_cached_free_models(self._models_client)
         return self._free_models
 
     @classmethod
@@ -403,3 +403,15 @@ class OpencodeGoClient(OpencodeClient):
     _label = 'Opencode Go'
     _hide_locked_free_models = False
     _free_model_failover = False
+
+    def get_free_models(self) -> list[str]:
+        """Free-of-charge models from the Go catalog.
+
+        The inherited Zen implementation reads a separate free-tier cache and
+        calls models.list() on the Zen base; for Go that is the *chat* base, so
+        the request 404s — which made /providers/opencode_go/models answer 502
+        (and would have overwritten the Zen free-model cache with Go IDs).
+        Go's own catalog already marks free models with a ``-free`` suffix, so
+        derive them from the listing instead of doing Zen-style discovery.
+        """
+        return [m for m in self.get_models() if m.endswith('-free')]
