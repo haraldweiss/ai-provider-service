@@ -27,9 +27,14 @@
 # Options:
 #   --host HOST       ssh target              (default: oracle-vm, $AIPS_HOST)
 #   --env-file PATH   remote env file         (default: /etc/ai-provider/ai-provider.env)
-#   --base-url URL    probe base URL          (default: Go/Zen endpoint per variable)
+#   --base-url URL    probe chat base URL     (default: per variable, see below)
+#   --models-url URL  probe model-list URL    (default: per variable, see below)
 #   --no-probe        skip the live auth probe
 #   -h, --help        this text
+#
+# Probe defaults follow the app's config: OpenCode Go (v2) serves chat under
+# /inference/go/openai/v1 and the model list at /inference/go/v1/models; the Zen
+# endpoint serves both under one base.
 #
 # Exit codes: 0 ok · 2 usage/validation · 3 remote write failed
 #             4 verification mismatch · 5 live probe failed
@@ -44,21 +49,23 @@ HOST="${AIPS_HOST:-oracle-vm}"
 ENV_FILE="${AIPS_ENV_FILE:-/etc/ai-provider/ai-provider.env}"
 DO_PROBE=1
 BASE_URL=""
+MODELS_URL=""
 VAR=""
 
 usage() {
-    sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,44p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --host)     HOST="$2"; shift 2 ;;
-        --env-file) ENV_FILE="$2"; shift 2 ;;
-        --base-url) BASE_URL="$2"; shift 2 ;;
-        --no-probe) DO_PROBE=0; shift ;;
-        -h|--help)  usage; exit 0 ;;
-        -*)         echo "unknown option: $1" >&2; exit 2 ;;
-        *)          VAR="$1"; shift ;;
+        --host)       HOST="$2"; shift 2 ;;
+        --env-file)   ENV_FILE="$2"; shift 2 ;;
+        --base-url)   BASE_URL="$2"; shift 2 ;;
+        --models-url) MODELS_URL="$2"; shift 2 ;;
+        --no-probe)   DO_PROBE=0; shift ;;
+        -h|--help)    usage; exit 0 ;;
+        -*)           echo "unknown option: $1" >&2; exit 2 ;;
+        *)            VAR="$1"; shift ;;
     esac
 done
 VAR="${VAR:-OPENCODE_GO_API_KEY}"
@@ -69,6 +76,9 @@ case "$VAR" in
 esac
 case "$ENV_FILE" in
     *[!A-Za-z0-9/._-]*) echo "unsafe --env-file path: $ENV_FILE" >&2; exit 2 ;;
+esac
+case "$BASE_URL$MODELS_URL" in
+    *[!A-Za-z0-9:/._-]*) echo "unsafe --base-url/--models-url value" >&2; exit 2 ;;
 esac
 
 # --- read the secret (hidden prompt or stdin) --------------------------------
@@ -158,9 +168,15 @@ echo "✓ written (fp=$REMOTE_FP, len=$REMOTE_LEN) · backup: ${BACKUP:-none}"
 if [ "$DO_PROBE" -eq 1 ]; then
     if [ -z "$BASE_URL" ]; then
         case "$VAR" in
-            OPENCODE_GO_API_KEY) BASE_URL='https://opencode.ai/zen/go/v1' ;;
+            OPENCODE_GO_API_KEY) BASE_URL='https://opencode.ai/inference/go/openai/v1' ;;
             OPENCODE_API_KEY)    BASE_URL='https://opencode.ai/zen/v1' ;;
             *) DO_PROBE=0 ;;
+        esac
+    fi
+    if [ "$DO_PROBE" -eq 1 ] && [ -z "$MODELS_URL" ]; then
+        case "$VAR" in
+            OPENCODE_GO_API_KEY) MODELS_URL='https://opencode.ai/inference/go/v1/models' ;;
+            *)                   MODELS_URL="$BASE_URL/models" ;;
         esac
     fi
 fi
@@ -176,7 +192,8 @@ import sys
 import urllib.error
 import urllib.request
 
-var, base, env_file = sys.argv[1], sys.argv[2].rstrip('/'), sys.argv[3]
+var, base, models_url, env_file = (
+    sys.argv[1], sys.argv[2].rstrip('/'), sys.argv[3], sys.argv[4])
 
 token = ''
 with open(env_file) as fh:
@@ -209,9 +226,9 @@ def call(url, data=None):
         return 0, f'{type(exc).__name__}: {exc}'.encode()
 
 
-status, body = call(base + '/models')
+status, body = call(models_url)
 if status != 200:
-    print(f'PROBE FAIL {base}/models -> HTTP {status}: '
+    print(f'PROBE FAIL {models_url} -> HTTP {status}: '
           f'{body[:180].decode("utf-8", "replace")}')
     sys.exit(5)
 models = [m['id'] for m in json.loads(body).get('data', [])]
@@ -224,7 +241,7 @@ if not model:
 status, body = call(base + '/chat/completions', {
     'model': model,
     'messages': [{'role': 'user', 'content': 'reply with exactly: OK'}],
-    'max_tokens': 16,
+    'max_tokens': 64,
 })
 if status != 200:
     print(f'PROBE FAIL chat ({model}) -> HTTP {status}: '
@@ -237,7 +254,7 @@ except Exception:  # noqa: BLE001 — shape varies per provider
 print(f'PROBE ok chat HTTP 200 · model={model} content={text[:40]!r}')
 PY
     set +e
-    ssh "$HOST" "sudo python3 - '$VAR' '$BASE_URL' '$ENV_FILE'" < "$PROBE_PY"
+    ssh "$HOST" "sudo python3 - '$VAR' '$BASE_URL' '$MODELS_URL' '$ENV_FILE'" < "$PROBE_PY"
     PROBE_RC=$?
     set -e
     if [ "$PROBE_RC" -ne 0 ]; then

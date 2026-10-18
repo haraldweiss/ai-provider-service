@@ -208,6 +208,8 @@ class OpencodeClient(BaseClient):
 
     _base_url_attr = 'OPENCODE_BASE_URL'
     _api_key_attr = 'OPENCODE_API_KEY'
+    #: Base the OpenAI SDK appends `/models` to. Empty = same client as chat.
+    _models_base_url_attr = ''
     _label = 'Opencode'
     # Zen free-only sessions advertise nothing: the free tier is locked to the
     # OpenCode app upstream (2026-09-18) and dead model IDs in pi / Open WebUI
@@ -218,21 +220,37 @@ class OpencodeClient(BaseClient):
 
     def __init__(self, config: dict):
         self._free_only = config.get('_free_only', False)
-        api_key = config.get('api_key') or getattr(Config, self._api_key_attr, '')
-        if not api_key:
+        self._api_key = config.get('api_key') or getattr(Config, self._api_key_attr, '')
+        if not self._api_key:
             raise ValueError(
                 f"{self._label}: api_key oder {self._api_key_attr} erforderlich")
         base_url = config.get('api_endpoint') or getattr(Config, self._base_url_attr, '')
         self.client = OpenAI(
-            api_key=api_key, 
+            api_key=self._api_key,
             base_url=base_url,
             default_headers=_default_headers()
         )
+        # Some providers split the model-list endpoint from the chat endpoint
+        # (OpenCode v2 Go: /inference/go/v1/models vs /inference/go/openai/v1),
+        # so a second client is built only when the bases actually differ. A
+        # caller-supplied chat endpoint wins: a custom Go-compatible endpoint is
+        # assumed to serve both unless models_endpoint says otherwise.
+        models_base = config.get('models_endpoint') or ''
+        if not models_base and not config.get('api_endpoint'):
+            models_base = (getattr(Config, self._models_base_url_attr, '')
+                           if self._models_base_url_attr else '')
+        self._models_client = self.client
+        if models_base and models_base.rstrip('/') != base_url.rstrip('/'):
+            self._models_client = OpenAI(
+                api_key=self._api_key,
+                base_url=models_base,
+                default_headers=_default_headers()
+            )
         self._free_models: list[str] | None = None
 
     def get_models(self) -> list[str]:
         try:
-            all_models = sorted(m.id for m in self.client.models.list().data)
+            all_models = sorted(m.id for m in self._models_client.models.list().data)
             if self._free_only:
                 if self._hide_locked_free_models and not _free_models_advertised():
                     logger.info(
@@ -354,30 +372,33 @@ class OpencodeClient(BaseClient):
 
     def health(self) -> bool:
         try:
-            self.client.models.list()
+            self._models_client.models.list()
             return True
         except Exception:
             return False
 
 
 class OpencodeGoClient(OpencodeClient):
-    """opencode.ai Go / Go Plus client (https://opencode.ai/zen/go/v1).
+    """opencode.ai Go / Go Plus client.
 
     Subscription-backed catalog, added 2026-10-18 after OpenCode invalidated the
     Console key with the breach response (AGENTS §7). Differences from Zen:
 
     - key/endpoint defaults come from ``OPENCODE_GO_API_KEY`` /
-      ``OPENCODE_GO_BASE_URL``;
+      ``OPENCODE_GO_BASE_URL`` (+ ``OPENCODE_GO_MODELS_BASE_URL``, because the
+      v2 Go docs put chat and the model list on separate bases);
     - no free-only gating — the Go plan covers its whole catalog;
     - no balance→free-variant retry: an exhausted plan surfaces as 402/429 and
       the dispatcher routes it to the configured fallback (AGENTS §3.11).
 
     The inherited per-conversation ``x-opencode-session`` header and client
     User-Agent are mandatory here — a request without the session header fails
-    upstream (verified 2026-10-18 against the Go endpoint: HTTP 500).
+    upstream on both the v2 inference and the /zen/go/v1 route (verified
+    2026-10-18: HTTP 500).
     """
 
     _base_url_attr = 'OPENCODE_GO_BASE_URL'
+    _models_base_url_attr = 'OPENCODE_GO_MODELS_BASE_URL'
     _api_key_attr = 'OPENCODE_GO_API_KEY'
     _label = 'Opencode Go'
     _hide_locked_free_models = False

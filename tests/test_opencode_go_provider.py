@@ -30,22 +30,55 @@ def test_factory_returns_opencode_go_client():
 
 
 @patch('providers.opencode.OpenAI')
-def test_opencode_go_uses_go_endpoint_and_key(mock_openai, monkeypatch):
-    """The Go client must default to the Go endpoint/key, not the Zen ones."""
+def test_opencode_go_uses_v2_inference_endpoints(mock_openai, monkeypatch):
+    """OpenCode v2 documents two bases for Go: chat under /inference/go/openai/v1
+    and the model list at /inference/go/v1/models — not siblings, so the client
+    must build a second client for the model list instead of reusing chat's."""
     import providers.opencode as opencode_module
     monkeypatch.setattr(opencode_module.Config, 'OPENCODE_GO_BASE_URL',
-                        'https://opencode.ai/zen/go/v1')
+                        'https://opencode.ai/inference/go/openai/v1')
+    monkeypatch.setattr(opencode_module.Config, 'OPENCODE_GO_MODELS_BASE_URL',
+                        'https://opencode.ai/inference/go/v1')
     monkeypatch.setattr(opencode_module.Config, 'OPENCODE_BASE_URL',
                         'https://opencode.ai/zen/v1')
 
+    client = opencode_module.OpencodeGoClient({'api_key': 'oc_sk_test'})
+
+    assert mock_openai.call_count == 2
+    chat_kwargs = mock_openai.call_args_list[0].kwargs
+    models_kwargs = mock_openai.call_args_list[1].kwargs
+    assert chat_kwargs['base_url'] == 'https://opencode.ai/inference/go/openai/v1'
+    assert models_kwargs['base_url'] == 'https://opencode.ai/inference/go/v1'
+    assert chat_kwargs['api_key'] == models_kwargs['api_key'] == 'oc_sk_test'
+    # Client-specific UA; the session header is per-conversation, not global.
+    assert chat_kwargs['default_headers']['User-Agent'].startswith('ai-provider-service/')
+    assert 'x-opencode-session' not in chat_kwargs['default_headers']
+    # get_models() must read the model list, not the chat base.
+    client.get_models()
+    mock_openai.return_value.models.list.assert_called_once()
+
+
+@patch('providers.opencode.OpenAI')
+def test_opencode_go_single_client_when_bases_match(mock_openai, monkeypatch):
+    """A /zen/go/v1-style override (one base for both) must not build a second
+    client — that route serves /models and /chat/completions under one base."""
+    import providers.opencode as opencode_module
+    monkeypatch.setattr(opencode_module.Config, 'OPENCODE_GO_BASE_URL',
+                        'https://opencode.ai/zen/go/v1')
+    monkeypatch.setattr(opencode_module.Config, 'OPENCODE_GO_MODELS_BASE_URL',
+                        'https://opencode.ai/zen/go/v1')
+
     opencode_module.OpencodeGoClient({'api_key': 'oc_sk_test'})
 
-    _, kwargs = mock_openai.call_args
-    assert kwargs['base_url'] == 'https://opencode.ai/zen/go/v1'
-    assert kwargs['api_key'] == 'oc_sk_test'
-    # Client-specific UA; the session header is per-conversation, not global.
-    assert kwargs['default_headers']['User-Agent'].startswith('ai-provider-service/')
-    assert 'x-opencode-session' not in kwargs['default_headers']
+    assert mock_openai.call_count == 1
+
+
+@patch('providers.opencode.OpenAI')
+def test_opencode_zen_builds_one_client(mock_openai):
+    """Zen keeps a single client: its /models lives under the chat base."""
+    from providers.opencode import OpencodeClient
+    OpencodeClient({'api_key': 'sk-test'})
+    assert mock_openai.call_count == 1
 
 
 @patch('providers.opencode.OpenAI')

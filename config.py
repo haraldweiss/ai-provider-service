@@ -62,13 +62,25 @@ class Config:
     OPENCODE_BASE_URL = os.getenv('OPENCODE_BASE_URL', 'https://opencode.ai/zen/v1')
     OPENCODE_API_KEY = os.getenv('OPENCODE_API_KEY', '')
 
-    # opencode.ai Go plan — separate, subscription-backed OpenAI-compatible
-    # endpoint. Distinct from the Zen/Console key above: Go serves the plan's
-    # model catalog (paid models included) and the x-opencode-session header is
-    # mandatory (AGENTS §3.12). An empty allowlist means the server key is open
-    # to all users, matching how `opencode` was funded before; set
+    # opencode.ai Go plan — subscription-backed OpenAI-compatible endpoint.
+    # Distinct from the Zen/Console key above: Go serves the plan's model
+    # catalog (paid models included) and the x-opencode-session header is
+    # mandatory (AGENTS §3.12).
+    #
+    # OpenCode v2 documents two separate application-facing bases for Go (the
+    # "Endpoints" table in /v2/docs/console/go): chat lives under
+    # /inference/go/openai/v1, the model list at /inference/go/v1/models — they
+    # are not siblings, hence the second setting. The older /zen/go/v1 route
+    # (used by the OpenCode app itself) serves both and still works; override
+    # both vars to use it instead.
+    #
+    # An empty allowlist means the server key is open to all users, matching
+    # how `opencode` was funded before; set
     # OPENCODE_GO_SERVER_KEY_ALLOWED_USERS to restrict a shared Go plan.
-    OPENCODE_GO_BASE_URL = os.getenv('OPENCODE_GO_BASE_URL', 'https://opencode.ai/zen/go/v1')
+    OPENCODE_GO_BASE_URL = os.getenv(
+        'OPENCODE_GO_BASE_URL', 'https://opencode.ai/inference/go/openai/v1')
+    OPENCODE_GO_MODELS_BASE_URL = os.getenv(
+        'OPENCODE_GO_MODELS_BASE_URL', 'https://opencode.ai/inference/go/v1')
     OPENCODE_GO_API_KEY = os.getenv('OPENCODE_GO_API_KEY', '')
     OPENCODE_GO_SERVER_KEY_ALLOWED_USERS = os.getenv('OPENCODE_GO_SERVER_KEY_ALLOWED_USERS', '')
 
