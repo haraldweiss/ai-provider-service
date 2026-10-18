@@ -18,6 +18,8 @@ def _disable_server_keys(monkeypatch):
     for cfg in (Config, dispatcher.Config):
         monkeypatch.setattr(cfg, 'ANTHROPIC_API_KEY', '')
         monkeypatch.setattr(cfg, 'OPENCODE_API_KEY', '')
+        monkeypatch.setattr(cfg, 'OPENCODE_GO_API_KEY', '')
+        monkeypatch.setattr(cfg, 'OPENCODE_GO_SERVER_KEY_ALLOWED_USERS', '')
         monkeypatch.setattr(cfg, 'ZAI_API_KEY', '')
         monkeypatch.setattr(cfg, 'ZAI_SERVER_KEY_ALLOWED_USERS', '')
         monkeypatch.setattr(cfg, 'OPENROUTER_API_KEY', '')
@@ -44,9 +46,10 @@ def test_providers_hides_key_required_providers_without_user_key(client, monkeyp
     assert 'openrouter' in visible_ids
     assert 'openai' not in visible_ids
     assert 'ollama_cloud' not in visible_ids
-    assert {'claude', 'openai', 'opencode', 'zai', 'ollama_cloud', 'cline'} <= hidden_ids
+    assert {'claude', 'openai', 'opencode', 'opencode_go', 'zai', 'ollama_cloud',
+            'cline'} <= hidden_ids
     assert 'openrouter' not in hidden_ids
-    assert body['availability_hint']['hidden_provider_count'] == 6
+    assert body['availability_hint']['hidden_provider_count'] == 7
     assert 'API key' in body['availability_hint']['message']
 
 
