@@ -8,7 +8,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 
 ## Features
 
-- **9 Provider** out of the box: Claude, Ollama, oMLX, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), z.ai (GLM), Cline (api.cline.bot)
+- **10 Provider** out of the box: Claude, Ollama, oMLX, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), opencode.ai (Go), z.ai (GLM), Cline (api.cline.bot)
 - **Provider App Attribution Headers**: Alle Provider-Clients senden App-Identifikations-Header für Rankings, Tracking und Compliance (siehe Abschnitt "Provider App Attribution Headers" unten)
 - **Region-Lock Filter**: China-only z.ai Endpoint (`zai/glm-*`) wird per Default von `/v1/models` ausgeschlossen und blockt direkte Dispatch-Calls. GLM-Modelle via globale Gateways (opencode, cline, ollama) bleiben verfügbar. Konfigurierbar via `EXCLUDE_REGION_LOCKED_MODELS` Env-Var.
 - **Server-Key-Allowlist** für zentrale Provider-Keys (Claude, z.ai): der zentrale Key ist nur für gelistete User nutzbar; z.ai ist per Default auf `ADMIN_USER_ID` beschränkt — alle anderen brauchen einen eigenen Key (auch für die kostenlosen GLM-Flash-Modelle)
@@ -18,7 +18,7 @@ zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
   - **HTTP 429/402** (Rate Limit / Insufficient Balance) → Fallback auf nächsten verfügbaren Provider
   - **HTTP 400/422** (Bad Request) → kein Fallback (request-spezifischer Fehler, würde überall scheitern)
 - **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist
-- **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider; opencode erscheint nur mit persönlichem Key (Paid-Modelle) — die Free-Modelle sind seit 2026-09-18 versteckt, weil opencode.ai den Free-Tier nur noch innerhalb der OpenCode-App bedient (`OPENCODE_ADVERTISE_FREE_MODELS=1` stellt das alte Verhalten wieder her)
+- **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider. Seit dem OpenCode-Breach 2026-10-17 ist der **Zen**-Provider (`opencode`, Console-Key wurde invalidiert + Free-Tier weiterhin app-locked) tot; Modelle liefert **`opencode_go`** (Go/Go-Plus-Abo, `OPENCODE_GO_API_KEY`), dessen Katalog vollständig gelistet wird. Die alten Zen-Free-Modelle bleiben versteckt (`OPENCODE_ADVERTISE_FREE_MODELS=1` stellt das alte Verhalten wieder her, sobald upstream den Lock aufhebt)
 - **Async Model Cache**: Die `/v1/models`-Liste wird pro User gecacht (TTL `MODEL_CACHE_TTL_SEC`, Default 60s). Der Background-Worker refresht gecachte User bei halber TTL proaktiv; Health-Transitions (Provider up↔down) invalidieren sofort. Erster Request eines Users baut die Liste synchron (Cold-Miss) — danach bedient der Cache, ohne dass Requests auf Provider-`get_models()`-HTTP-Calls warten.
 - **Health-Monitoring**: Background-Worker pollt alle Provider regelmäßig
 - **Image Generation**: OpenAI-kompatible `/v1/images/generations` via OpenRouter
@@ -39,7 +39,7 @@ Alle Provider-Clients senden App-Identifikations-Header an die Provider-APIs. Di
 
 | Provider | Header | Status |
 |----------|--------|--------|
-| **OpenCode** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Pflicht** (Go; Session ab 09/06) |
+| **OpenCode (Zen + Go)** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Pflicht** (Session ab 09/06; ohne den Header antwortet Go mit HTTP 500) |
 | **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service`<br>`X-Task-ID: <uuid>` (nur Chat) | Optional (empfohlen) |
 | **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (empfohlen) |
 | **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (Request-Tracking) |
@@ -513,8 +513,8 @@ POST-Body Beispiel (OpenAI):
 }
 ```
 
-Persönliche Keys werden für `claude`, `opencode`, `openai`, `zai` und
-`ollama_cloud` unterstützt. Sie liegen Fernet-verschlüsselt in
+Persönliche Keys werden für `claude`, `opencode`, `opencode_go`, `openai`,
+`zai` und `ollama_cloud` unterstützt. Sie liegen Fernet-verschlüsselt in
 `ProviderConfig` und werden nie zurückgegeben; Responses enthalten nur
 `has_api_key`. Beispiel mit persönlichem User-Token:
 
@@ -629,15 +629,27 @@ ollama) bleiben verfügbar. Konfigurierbar via `EXCLUDE_REGION_LOCKED_MODELS`
 Env-Var (Provider-scoped: `zai/glm-5` blockt nur `zai/glm-5`, nicht
 `opencode/glm-5`).
 
-**Free-only Provider:** Ohne persönlichen opencode-API-Key listet opencode seit
-2026-09-18 keine Modelle mehr (Free-Tier ist upstream auf die OpenCode-App
-gelockt; jeder Gateway-Call endet in 403 FreeTierError). Mit persönlichem Key
-sind die Paid-Modelle sichtbar. OpenRouter ist ohne persönlichen Key
-ebenfalls sichtbar, listet dann aber nur dynamisch erkannte Free-Modelle.
-`flask refresh-free-models` aktualisiert beide Free-Modell-Caches; OpenRouter
-fällt bei einem Refresh-Fehler auf den letzten Cache zurück. Lokale
-Ollama-Modelle erscheinen automatisch, sobald sie auf einem Tunnel-Backend
-verfügbar sind (z.B. `ollama/ornith:latest`).
+**Free-only Provider:** Ohne persönlichen opencode-API-Key listet **Zen**
+(`opencode`) seit 2026-09-18 keine Modelle mehr (Free-Tier ist upstream auf die
+OpenCode-App gelockt; jeder Gateway-Call endet in 403 FreeTierError). Der
+Console-Key wurde zusätzlich mit dem OpenCode-Breach vom 2026-10-17
+invalidiert, und das Zen-Guthaben ist leer — Zen kann dem Gateway daher
+derzeit nichts liefern. Modelle kommen aus **`opencode_go`** (Go/Go-Plus-Abo,
+`OPENCODE_GO_API_KEY`): der gesamte Go-Katalog wird gelistet, inklusive der im
+Abo enthaltenen Modelle. Der Client nutzt die **v2-Dokumentierten
+App-Endpoints** — Chat `https://opencode.ai/inference/go/openai/v1` und
+Modellliste `https://opencode.ai/inference/go/v1/models`
+(`OPENCODE_GO_BASE_URL` / `OPENCODE_GO_MODELS_BASE_URL`; beide auf
+`https://opencode.ai/zen/go/v1` umstellbar, das bedient beides unter einer
+Basis). Der `x-opencode-session` Header ist dort Pflicht (ohne ihn HTTP 500).
+Eine eigene `opencode_go`-ProviderConfig schlägt den Server-Key; über
+`OPENCODE_GO_SERVER_KEY_ALLOWED_USERS` (leer = alle User) lässt sich das
+Abo-Kontingent einschränken.
+OpenRouter ist ohne persönlichen Key ebenfalls sichtbar, listet dann aber nur
+dynamisch erkannte Free-Modelle. `flask refresh-free-models` aktualisiert beide
+Free-Modell-Caches; OpenRouter fällt bei einem Refresh-Fehler auf den letzten
+Cache zurück. Lokale Ollama-Modelle erscheinen automatisch, sobald sie auf
+einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).
 
  Das Model-Format ist `provider/model_name`, z.B.:
 
@@ -645,7 +657,9 @@ verfügbar sind (z.B. `ollama/ornith:latest`).
  |---|---|
  | `ollama/qwen3.6:latest` | Lokales Ollama |
  | `ollama/ornith:latest` | Lokales Ollama |
- | `opencode/glm-5.1` | GLM via opencode (global gateway, persönlicher Key; Free-Modelle seit 2026-09-18 versteckt) |
+ | `opencode_go/deepseek-v4.1-flash` | opencode.ai Go-Abo (Subventioniert; Session-Header Pflicht) |
+ | `opencode_go/kimi-k3` | opencode.ai Go-Abo, weiteres Modell derselben Abo-Quelle |
+ | `opencode/glm-5.1` | GLM via opencode Zen (global gateway; seit dem Breach 2026-10-17 ohne gültigen Server-Key — Modelle nur mit persönlichem Key) |
  | `claude/claude-sonnet-4-6-20250514` | Claude, wenn konfiguriert und API-Key gesetzt |
  | `cline/anthropic/claude-sonnet-4-6` | Cline (api.cline.bot), wenn konfiguriert und API-Key gesetzt |
 
@@ -745,12 +759,12 @@ registriert den Service automatisch.
 
 Beispiel (non-streaming):
 ```bash
- curl -s https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"opencode/glm-5.1","messages":[{"role":"user","content":"Hallo"}],"stream":false}'
+ curl -s https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"opencode_go/deepseek-v4.1-flash","messages":[{"role":"user","content":"Hallo"}],"stream":false}'
 ```
 
 Beispiel (streaming):
 ```bash
- curl -sN https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"opencode/glm-5.1","messages":[{"role":"user","content":"Hallo"}],"stream":true}'
+ curl -sN https://<service>/v1/chat/completions   -H 'Authorization: Bearer <token>'   -H 'Content-Type: application/json'   -d '{"model":"opencode_go/deepseek-v4.1-flash","messages":[{"role":"user","content":"Hallo"}],"stream":true}'
 ```
 
 ### Pi-Einrichtung
@@ -765,7 +779,7 @@ Damit Pi den Service als OpenAI-kompatiblen Provider nutzen kann:
    AI_PROVIDER_SERVICE_URL=http://localhost:8767  # oder https://service.domain.de/ai-provider
    ```
   3. **Modelle** sind dann als `ai-provider-service/...` in Pi wählbar:
-     - `--model ai-provider-service/opencode/glm-5.1` — GLM via opencode (global gateway)
+     - `--model ai-provider-service/opencode_go/kimi-k3` — opencode.ai Go (global gateway)
      - `--model ai-provider-service/ollama/qwen3.6:latest` — Lokales Ollama
      - `--model ai-provider-service/claude/claude-sonnet-4-6-20250514` — Claude
 
@@ -904,7 +918,7 @@ GET  /recommend?category=coding  # Top-Modelle je Kategorie
 
 | Env-Var | Default | Bedeutung |
 |---|---|---|
-| `EVAL_JUDGE_PROVIDER` / `EVAL_JUDGE_MODEL` | `opencode` / `big-pickle` | LLM-Judge für den Qualitätsscore |
+| `EVAL_JUDGE_PROVIDER` / `EVAL_JUDGE_MODEL` | `opencode_go` / `deepseek-v4.1-flash` | LLM-Judge für den Qualitätsscore (vorher Zen `big-pickle` — seit dem Breach 2026-10-17 tot) |
 | `EVAL_REQUEST_DELAY` | `2.5` | Sekunden zwischen zwei Requests (Ratelimit-Schutz) |
 | `EVAL_MAX_MODELS` | `10` | Modell-Cap, wenn `max_models` fehlt |
 | `EVAL_STALE_HOURS` | `3` | Ab wann ein hängender Run als verwaist gilt |

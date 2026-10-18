@@ -91,7 +91,7 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - ✅ Build images with `build.sh` (tags `:<sha>` + `:latest`) so "what's running" is traceable and rollback is possible.
 
 ### 3.8 Personal provider keys are identity-bound
-- Personal keys for `claude`, `opencode`, `openai`, `zai`, and `ollama_cloud` authorize only their owning `user_id`; they bypass grants because the user bears the cost.
+- Personal keys for `claude`, `opencode`, `opencode_go`, `openai`, `zai`, and `ollama_cloud` authorize only their owning `user_id`; they bypass grants because the user bears the cost.
 - A personal key must take precedence over any server key. If it fails, never silently retry with an owner-funded key.
 - Never log, return, or render personal keys. User access tokens are hashed; plaintext is shown only on issuance/rotation.
 - User tokens must reject a different asserted path/query/body `user_id`. Token rotation or revocation must invalidate existing settings sessions.
@@ -159,7 +159,7 @@ All provider clients must send app identification headers where the provider sup
 
 | Provider | Headers | Status |
 |----------|---------|--------|
-| **OpenCode** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Required** (Go; session ab 09/06) |
+| **OpenCode (Zen + Go)** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Required** (session ab 09/06; ohne den Header antwortet Go mit HTTP 500) |
 | **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service`<br>`X-Task-ID: <uuid>` (nur Chat-Requests) | Optional (but recommended) |
 | **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (but recommended) |
 | **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (for request tracking) |
@@ -303,6 +303,123 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 ---
 
 ## 7. Handoff zone
+
+### 2026-10-18 — OpenCode-Breach: Console-Key invalidiert → `opencode_go` (Go-Abo) statt Zen-Free
+
+- **Trigger:** „check what happened to the available models in opencode" — `/v1/models`
+  enthielt **0 `opencode/*`-Modelle** (962 total: openrouter 471, cline 471, ollama 20).
+- **Ursache (extern):** OpenCode (Anomaly Innovations) hat am 2026-10-17 abends einen
+  Breach offengelegt (unauthorized access to a legacy system, „large scale distillation
+  attack", ~1,4 % der Console-User betroffen; **third-party provider keys in
+  Workspaces** potenziell exponiert). Im Zuge dessen wurden **Service-API-Keys
+  invalidiert**: `GET https://opencode.ai/zen/v1/models` antwortet seitdem mit
+  `HTTP 401 {"code":"api_key_expired"}` (auch der Key in `~/.local/share/opencode/auth.json`
+  des MacBooks — der CLI-Betrieb läuft über die separate OAuth-Device-Credential weiter).
+  Der Gateway-Provider `opencode` galt dadurch als unhealthy → `/v1/models` überspringt
+  ihn (`Skipping unhealthy provider opencode`) → 0 Modelle, und jeder `opencode/*`-Call
+  scheitert. Letzter erfolgreicher opencode-Call in `usage_events`: 2026-10-16 06:20
+  (`opencode-deepseek-v4-flash-free`, user `wolfini_de_web`).
+- **Zusätzlich geprüft (2026-10-18, mit gültiger OAuth-Credential):** Die Zen-Free-Tier
+  ist **weiterhin app-gelockt** (`403 FreeTierError: "free tier can only be used from
+  within OpenCode"` für `beam-free`, `deepseek-v4.1-flash-free`, `big-pickle`,
+  `nemotron-3.5-lightning-free`) und das Zen-Guthaben ist leer
+  (`402 "Insufficient account funds"`). Ein neuer Console-Key allein hätte Zen also
+  **nicht** wieder nutzbar gemacht.
+- **Was funktioniert:** **OpenCode Go** — 37 Modelle, `POST /chat/completions` → 200.
+  Beide Routen wurden live getestet: die **v2-App-Endpoints** (`https://opencode.ai/inference/go/openai/v1/chat/completions`
+  bzw. `/inference/go/v1/models`) und die App-Route `https://opencode.ai/zen/go/v1`
+  (eine Basis für beides). Der Gateway nutzt jetzt die v2-Endpoints (siehe unten).
+  Der neue Console-Service-Key (`oc_sk_…`,
+  „Keys → Add Service Account → Add API Key", Permission *Inference only*) wurde vom
+  User in `/etc/ai-provider/ai-provider.env` als **`OPENCODE_GO_API_KEY`** hinterlegt
+  (nicht in `OPENCODE_API_KEY` — der alte Zen-Key bleibt daneben liegen, weil der
+  root-Cron `opencode-models-check.sh` ihn liest; siehe „Offen").
+- **Code (neu `opencode_go`-Provider):**
+  - `providers/opencode.py` — `OpencodeClient` um Klassen-Attribute
+    (`_base_url_attr` / `_api_key_attr` / `_models_base_url_attr` / `_label` /
+    `_hide_locked_free_models` / `_free_model_failover`) refaktoriert; neuer
+    `OpencodeGoClient` überschreibt nur diese. Go erbt UA + `x-opencode-session`
+    (§3.12, upstream **Pflicht**: ohne den Header liefert Go **HTTP 500**, auf beiden
+    Routen geprüft), hat aber **keine** Free-only-Gate und **keinen**
+    Balance-→Free-Failover (Zen-Spezifika) — ein erschöpftes Go-Kontingent kommt als
+    402/429 an und geht in den Dispatch-Fallback (§3.11). Da die v2-Go-Basen für
+    Chat und Modellliste **nicht benachbart** sind, baut der Client einen zweiten
+    OpenAI-Client für `/models` (nur wenn sich die Basen unterscheiden; ein
+    caller-supplied `api_endpoint` bleibt Single-Base, Zen ist unberührt).
+  - `providers/__init__.py` — Registry-Eintrag `opencode_go` (`system: True`,
+    `personal_api_key: True`) + Factory-Zweig.
+  - `dispatcher._load_config` — `opencode_go` ⇒ `{'api_key': OPENCODE_GO_API_KEY}`
+    **ohne** `_free_only`; neue Allowlist `_is_opencode_go_server_key_allowed`
+    (`OPENCODE_GO_SERVER_KEY_ALLOWED_USERS`, leer = **offen für alle User**, weil das
+    Gateway opencode vorher server-finanziert für alle anbot).
+  - `config.py` — `OPENCODE_GO_BASE_URL` (Default `https://opencode.ai/inference/go/openai/v1`),
+    `OPENCODE_GO_MODELS_BASE_URL` (Default `https://opencode.ai/inference/go/v1`),
+    `OPENCODE_GO_API_KEY`, `OPENCODE_GO_SERVER_KEY_ALLOWED_USERS`. Der Zen-Provider
+    bleibt unverändert (Free-only + versteckte Modelle).
+  - `pricing.py` — neues `_SUBSCRIPTION_PROVIDERS = {'opencode_go'}` ⇒ Kosten **0.0**
+    (Abo-gedeckt, analog `cline-pass/*` = $0; Caveat im Code-Kommentar: „Use balance"
+    im Console ist pro Request nicht erkennbar).
+  - **Mitgefixt (gleiche Ursache):** `EVAL_JUDGE_PROVIDER`/`EVAL_JUDGE_MODEL` Default
+    war Zen `opencode`/`big-pickle` (tot) → jetzt `opencode_go`/`deepseek-v4.1-flash`
+    (`config.py` + Fallback in `eval/runner.py`). Außerdem einen falsch platzierten
+    Kommentarblock im `config.py` (Region-Lock-Beschreibung stand über den
+    Eval-Settings) an die richtige Stelle verschoben.
+  - **Neu `scripts/set-env-key.sh`** — Key-Rotation für die root-eigene Env-Datei ohne
+    Secret-Leak: Wert per verstecktem Prompt oder stdin, über ssh **stdin**
+    (nicht argv → nicht in `ps`), im Remote-Skript base64-kodiert, Backup nach
+    `/root/<datei>.bak-<UTC>`, ersetzt jede alte Zeile derselben Variablen
+    (keine Duplikate), atomar + `chmod 600`, Verifikation über sha256-Fingerprint,
+    danach Live-Probe (`/models` + Chat mit Session-Header). Exit 5 = „gespeichert,
+    aber upstream lehnt ab".
+- **Tests:** `tests/test_opencode_go_provider.py` (12) + `tests/test_dispatcher_opencode_go_gate.py` (6)
+  neu; `tests/test_provider_visibility.py` (hidden-Count 6→7, `OPENCODE_GO_API_KEY` neutralisiert).
+  **Volle Suite: 581 passed, 0 failed.**
+- **Deploy (oracle-vm, pull-based, running == committed `a9e78ea`):** Server-Repo ff auf
+  `a9e78ea`; Image `localhost/ai-provider:a9e78ea` (+ `:latest`) via `sudo ./build.sh a9e78ea`;
+  `sudo docker compose up -d --force-recreate ai-provider` (Pflicht — die neue
+  `OPENCODE_GO_API_KEY` wird nur beim Create gelesen). **Beleg:** Container `healthy`,
+  `RestartCount=0`, created `2026-10-18T07:39:20Z`; `grep -c "class OpencodeGoClient"`
+  im Container = 1.
+- **Verifiziert live (127.0.0.1:8767, Container):**
+  - `/health`: `opencode_go healthy=true reason=""`, `opencode` (Zen) `healthy=false`
+    (erwartet, Key invalidiert) — Overall `ok`.
+  - `/v1/models`: **999** total, `opencode_go 37`, openrouter 471, cline 471, ollama 20
+    (vorher 962 / 0 opencode).
+  - Chat `opencode_go/deepseek-v4.1-flash` → **HTTP 200**, `finish_reason=stop`,
+    content `OK`, `usage` gefüllt, `model` = angefragtes Modell.
+  - **Tool-Call** `opencode_go/kimi-k3` + `get_weather` → `finish_reason=tool_calls` mit
+    `tool_calls[0].function = {"name":"get_weather","arguments":"{\"city\": \"Berlin\"}"}`
+    (§3.13 erfüllt).
+  - **Streaming** (`stream=true`) → Zwischenchunks + Abschlusschunk mit
+    `finish_reason=stop` + `usage`, danach `data: [DONE]`.
+  - `usage_events` schreibt `provider_id=opencode_go`, tatsächliches Modell, Tokens,
+    `cost_usd=0` (Abo, siehe `_SUBSCRIPTION_PROVIDERS`), `status=success`.
+  - `scripts/set-env-key.sh` gegen den echten Key erneut gelaufen: `fp`/`len` passen,
+    Probe `37 models` + Chat 200; die Env-Datei ist danach **byte-identisch**
+    (sha256 `de834663b940…` vor und nach dem Lauf).
+- **Offen / bewusst nicht geändert:**
+  1. **Consumer-Modell-IDs:** Clients, die `opencode/<model>` referenzieren (Open WebUI
+     Workspace-Modelle, Bewerbungstracker, Pi-Extension), müssen auf `opencode_go/<model>`
+     umgestellt werden — `opencode/herst` liefert jetzt „unknown/unavailable". Der
+     Open-WebUI-Modell-Sync läuft automatisch, gespeicherte Workspace-Modelle nicht.
+  2. **DB-Fallbacks auf den toten Zen-Provider:** `fallback_provider=opencode` +
+     `fallback_model=deepseek-v4-flash-free` (u.a. bei `lisa/ollama`, `pi-agent/ollama`,
+     `wolfinichat/ollama`, `wolfini_de_web/ollama`, `harald/cline`) zeigt jetzt ins
+     Leere. Repoint auf `opencode_go/deepseek-v4.1-flash` (kostet Go-Kontingent) oder
+     besser auf `openrouter/*:free` (kostenlos) — Entscheidung steht aus.
+  3. **Zen-Key + Cron:** `OPENCODE_API_KEY` bleibt absichtlich (invalidiert) in der Env,
+     weil der root-Cron `opencode-models-check.sh` (täglich 04:30 UTC, Skript im
+     `wolfini_de_web`-Repo unter `scripts/oracle/opencode-models-check/`) ihn liest und
+     sonst mit „ERROR: OPENCODE_API_KEY missing" mailt. Dieses Skript hat außerdem den
+     False-Alarm vom 18.10. erzeugt („0 models → 47 removed"): es prüft nur „valides
+     JSON", nicht auf `{"error": ...}` / HTTP≠200, und überschreibt den Cache mit `{}`.
+     Fix dort: auf Fehler-Payload abbrechen + Alarm mailen, Cache behalten. Danach kann
+     der Zen-Key aus der Env (und das 401-Rauschen im Health-Poll) verschwinden.
+  4. **Breach-Exposure:** Keine Breach-Mail für `anubclaw@gmail.com` gefunden (Suche über
+     `opencode.ai`/`anoma.ly`-Absender, 5 Tage) ⇒ nicht unter den benachrichtigten 1,4 %;
+     User bestätigt, dass **keine** third-party Keys im OpenCode-Workspace lagen. Eigen-
+     check OpenRouter-Key: `usage_daily` $0, total $6,58 (kein Missbrauch erkennbar).
+     Severity: niedrig, kein Rotationsbedarf.
 
 ### 2026-10-12 — Memory-Timer wieder eingesetzt (oracle-vm/docker) + `MEMORY_FREE_MODELS` konfiguriert
 
