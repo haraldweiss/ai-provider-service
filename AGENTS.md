@@ -412,9 +412,15 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
      `IMAGE_TAG=da3010a setup-oracle-vm.sh rebuild` (5/5 Container auf `da3010a`,
      Site 200). **E2E-Beweis** im Prod-Container: `POST /api/providers/chat` →
      `200 {via: opencode_go, model: deepseek-v4.1-flash, fallback_used: false,
-     response: "OK"}`. **Offen dort:** User `ba3e37ac…` steht auf `claude` ohne Key →
-     0 von 2549 Job-Matches bewertet (Entscheidung offen: eigener Key oder `opencode_go`).
-     Bleibt: Open WebUI Workspace-Modelle + Pi-Extension.
+     response: "OK"}`. **Offen dort:** User `ba3e37ac…` stand auf `claude` ohne Key →
+     0 von 2549 Job-Matches bewertet; **behoben** (2026-10-18, Commit `c68b956`) auf
+     `openrouter`/`cohere/north-mini-code:free` im **free-only-Modus** des Service
+     (Server-Key, `cost_usd=0`, kein Guthaben nötig), Backup `ollama`/`mistral-nemo-cc:latest`;
+     E2E `200 {via: openrouter, response: '{"score": 90, …}'}`. Der Free-Router
+     `openrouter/free` wurde gemessen und **verworfen** (4 Probes: 1× valides JSON,
+     2× leerer Body, 1× Safety-Modell-Antwort → leere Antworten bedeuten Score 0).
+     Bleibt offen dort: User `a82be5b8…` (`sarlakk@icloud.com`) auf `claude` ohne Key
+     (noch keine Matches). Bleibt hier: Open WebUI Workspace-Modelle + Pi-Extension.
   2. **DB-Fallbacks auf den toten Zen-Provider:** `fallback_provider=opencode` +
      `fallback_model=deepseek-v4-flash-free` (u.a. bei `lisa/ollama`, `pi-agent/ollama`,
      `wolfinichat/ollama`, `wolfini_de_web/ollama`, `harald/cline`) zeigt jetzt ins
