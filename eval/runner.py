@@ -53,8 +53,8 @@ def discover_available_models(user_id: str) -> list[dict]:
 
 def _judge_dispatch(messages: list) -> str:
     """Dispatch a judge request using a strong model. Falls back gracefully."""
-    judge_provider = Config.EVAL_JUDGE_PROVIDER or 'opencode'
-    judge_model = Config.EVAL_JUDGE_MODEL or 'deepseek-v4-flash-free'
+    judge_provider = Config.EVAL_JUDGE_PROVIDER or 'opencode_go'
+    judge_model = Config.EVAL_JUDGE_MODEL or 'deepseek-v4.1-flash'
 
     cfg = _load_config(Config.ADMIN_USER_ID, judge_provider)
     if cfg is None:
