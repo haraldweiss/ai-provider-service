@@ -234,6 +234,27 @@ bash deploy.sh
 # → docker compose build + up -d
 ```
 
+### Provider-Keys setzen/rotieren (`scripts/set-env-key.sh`)
+
+Die Env-Datei `/etc/ai-provider/ai-provider.env` liegt root-geschützt auf
+oracle-vm und wird nur beim Container-*Create* gelesen. Der Helfer schreibt
+einen Wert dort hinein, ohne das Secret je in eine Kommandozeile (lokal **oder**
+remote), in die Shell-History oder in ein Log zu bringen:
+
+```bash
+./scripts/set-env-key.sh                              # OPENCODE_GO_API_KEY (versteckter Prompt)
+./scripts/set-env-key.sh --remove OPENCODE_API_KEY    # toten Key entfernen
+printf '%s' "$KEY" | ./scripts/set-env-key.sh SOME_API_KEY   # non-interactive
+```
+
+Er legt ein Backup unter `/root/<datei>.bak-<UTC>` an, ersetzt vorhandene Zeilen
+derselben Variablen (keine Duplikate), schreibt atomar mit `chmod 600`, prüft das
+Ergebnis über den sha256-Fingerprint und macht danach eine Live-Probe
+(`GET /models` + Chat mit `x-opencode-session`). Exit 5 heißt: Wert gespeichert,
+aber Upstream lehnt ihn ab. Danach den Container neu erstellen
+(`sudo docker compose up -d --force-recreate ai-provider`) — ein `restart`
+liest die Env **nicht** neu.
+
 ### First-Time Setup (oracle-vm)
 
 ```bash

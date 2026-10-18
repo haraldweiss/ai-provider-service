@@ -22,6 +22,7 @@
 #   scripts/set-env-key.sh                             # OPENCODE_GO_API_KEY
 #   scripts/set-env-key.sh OPENCODE_API_KEY
 #   scripts/set-env-key.sh --no-probe OPENCODE_GO_API_KEY
+#   scripts/set-env-key.sh --remove OPENCODE_API_KEY   # retire a dead key
 #   printf '%s' "$KEY_FROM_VAULT" | scripts/set-env-key.sh
 #
 # Options:
@@ -29,6 +30,7 @@
 #   --env-file PATH   remote env file         (default: /etc/ai-provider/ai-provider.env)
 #   --base-url URL    probe chat base URL     (default: per variable, see below)
 #   --models-url URL  probe model-list URL    (default: per variable, see below)
+#   --remove          delete every line for VAR (backup kept, no probe)
 #   --no-probe        skip the live auth probe
 #   -h, --help        this text
 #
@@ -48,12 +50,13 @@ set -euo pipefail
 HOST="${AIPS_HOST:-oracle-vm}"
 ENV_FILE="${AIPS_ENV_FILE:-/etc/ai-provider/ai-provider.env}"
 DO_PROBE=1
+REMOVE=0
 BASE_URL=""
 MODELS_URL=""
 VAR=""
 
 usage() {
-    sed -n '2,44p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -62,6 +65,7 @@ while [ $# -gt 0 ]; do
         --env-file)   ENV_FILE="$2"; shift 2 ;;
         --base-url)   BASE_URL="$2"; shift 2 ;;
         --models-url) MODELS_URL="$2"; shift 2 ;;
+        --remove)     REMOVE=1; DO_PROBE=0; shift ;;
         --no-probe)   DO_PROBE=0; shift ;;
         -h|--help)    usage; exit 0 ;;
         -*)           echo "unknown option: $1" >&2; exit 2 ;;
@@ -82,21 +86,23 @@ case "$BASE_URL$MODELS_URL" in
 esac
 
 # --- read the secret (hidden prompt or stdin) --------------------------------
-if [ -t 0 ]; then
-    printf 'Value for %s (input hidden, then Enter): ' "$VAR" >&2
-    IFS= read -rs SECRET || { echo >&2; echo 'aborted (no input)' >&2; exit 2; }
-    echo >&2
-else
-    SECRET="$(cat)"
-fi
+if [ "$REMOVE" -eq 0 ]; then
+    if [ -t 0 ]; then
+        printf 'Value for %s (input hidden, then Enter): ' "$VAR" >&2
+        IFS= read -rs SECRET || { echo >&2; echo 'aborted (no input)' >&2; exit 2; }
+        echo >&2
+    else
+        SECRET="$(cat)"
+    fi
 
-[ -n "$SECRET" ] || { echo 'refusing to write an empty value' >&2; exit 2; }
-case "$SECRET" in
-    *[[:space:]]*) echo 'value must not contain whitespace' >&2; exit 2 ;;
-    *'='*)         echo 'value must not contain "="' >&2; exit 2 ;;
-esac
-if [ "${#SECRET}" -lt 8 ]; then
-    echo "value is only ${#SECRET} chars — refusing (looks truncated)" >&2; exit 2
+    [ -n "$SECRET" ] || { echo 'refusing to write an empty value' >&2; exit 2; }
+    case "$SECRET" in
+        *[[:space:]]*) echo 'value must not contain whitespace' >&2; exit 2 ;;
+        *'='*)         echo 'value must not contain "="' >&2; exit 2 ;;
+    esac
+    if [ "${#SECRET}" -lt 8 ]; then
+        echo "value is only ${#SECRET} chars — refusing (looks truncated)" >&2; exit 2
+    fi
 fi
 
 fp_of() {
@@ -107,10 +113,15 @@ fp_of() {
         printf '%s' "$1" | shasum -a 256 | cut -c1-12
     fi
 }
-LOCAL_FP="$(fp_of "$SECRET")"
-B64="$(printf '%s' "$SECRET" | base64 | tr -d '\n')"
-
-echo "▶ ${HOST}: $VAR → $ENV_FILE (len=${#SECRET}, fp=${LOCAL_FP})"
+if [ "$REMOVE" -eq 1 ]; then
+    LOCAL_FP=""
+    B64=""
+    echo "▶ ${HOST}: removing $VAR from $ENV_FILE"
+else
+    LOCAL_FP="$(fp_of "$SECRET")"
+    B64="$(printf '%s' "$SECRET" | base64 | tr -d '\n')"
+    echo "▶ ${HOST}: $VAR → $ENV_FILE (len=${#SECRET}, fp=${LOCAL_FP})"
+fi
 
 # --- remote: backup, replace line atomically, mode 600 ----------------------
 # The script is fed over stdin; $SECRET_B64 is defined by the first line.
@@ -119,7 +130,10 @@ REMOTE_SCRIPT=$(cat <<'REMOTE'
 set -eu
 VAR="$1"
 ENV_FILE="$2"
-secret=$(printf '%s' "$SECRET_B64" | base64 -d)
+secret=""
+if [ "${SECRET_B64:-}" != "" ]; then
+    secret=$(printf '%s' "$SECRET_B64" | base64 -d)
+fi
 
 [ -f "$ENV_FILE" ] || { echo "REMOTE FAIL: $ENV_FILE does not exist" >&2; exit 3; }
 
@@ -132,7 +146,17 @@ case "$tmp" in "${ENV_FILE}".*) ;; *) echo "REMOTE FAIL: unsafe mktemp result" >
 
 # Drop every previous line for this variable (avoids duplicate definitions,
 # where the last one would silently win), then append the new value.
+before=$(grep -c "^${VAR}=" "$ENV_FILE" 2>/dev/null || true)
 grep -v "^${VAR}=" "$ENV_FILE" > "$tmp" || true
+if [ "${SECRET_B64:-}" = "" ]; then
+    chmod 600 "$tmp"
+    chown root:root "$tmp" 2>/dev/null || true
+    mv "$tmp" "$ENV_FILE"
+    remaining=$(grep -c "^${VAR}=" "$ENV_FILE" 2>/dev/null || true)
+    printf 'REMOVED lines=%s remaining=%s backup=%s\n' \
+        "${before:-0}" "${remaining:-0}" "$backup"
+    exit 0
+fi
 printf '%s=%s\n' "$VAR" "$secret" >> "$tmp"
 chmod 600 "$tmp"
 chown root:root "$tmp" 2>/dev/null || true
@@ -156,6 +180,25 @@ fi
 REMOTE_FP="$(printf '%s\n' "$REMOTE_OUT" | sed -n 's/.*WROTE fp=\([0-9a-f]*\).*/\1/p' | tail -1)"
 REMOTE_LEN="$(printf '%s\n' "$REMOTE_OUT" | sed -n 's/.*len=\([0-9]*\).*/\1/p' | tail -1)"
 BACKUP="$(printf '%s\n' "$REMOTE_OUT" | sed -n 's/.*backup=\([^ ]*\).*/\1/p' | tail -1)"
+
+if [ "$REMOVE" -eq 1 ]; then
+    REMOVED_LINES="$(printf '%s\n' "$REMOTE_OUT" | sed -n 's/.*REMOVED lines=\([0-9]*\).*/\1/p' | tail -1)"
+    REMAINING="$(printf '%s\n' "$REMOTE_OUT" | sed -n 's/.*remaining=\([0-9]*\).*/\1/p' | tail -1)"
+    if [ -z "$REMOVED_LINES" ] || [ "${REMAINING:-1}" != "0" ]; then
+        echo '✗ verification mismatch — removal not confirmed' >&2
+        printf '%s\n' "$REMOTE_OUT" >&2
+        exit 4
+    fi
+    if [ "$REMOVED_LINES" = "0" ]; then
+        echo "✓ nothing to do: $VAR was not present (backup: ${BACKUP:-none})"
+    else
+        echo "✓ removed $REMOVED_LINES line(s) for $VAR · backup: ${BACKUP:-none}"
+    fi
+    echo
+    echo "next: recreate the container so the env is re-read (AGENTS.md §6):"
+    echo "  cd /opt/ai-provider-service && sudo docker compose up -d --force-recreate ai-provider"
+    exit 0
+fi
 
 if [ -z "$REMOTE_FP" ] || [ "$REMOTE_FP" != "$LOCAL_FP" ] || [ "$REMOTE_LEN" != "${#SECRET}" ]; then
     echo '✗ verification mismatch — file not (or wrongly) written' >&2

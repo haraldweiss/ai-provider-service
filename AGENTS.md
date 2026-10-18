@@ -421,6 +421,60 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
      check OpenRouter-Key: `usage_daily` $0, total $6,58 (kein Missbrauch erkennbar).
      Severity: niedrig, kein Rotationsbedarf.
 
+#### Nachtrag (gleicher Tag) — tote Keys entfernt, CLI/Server aufgeräumt
+
+- **`scripts/set-env-key.sh` um `--remove` erweitert** (Backup + atomarer Rewrite ohne
+  die Variable, Verifikation über `remaining=0`), damit ein toter Key nicht per
+  Hand-`sed` verschwinden muss. Round-Trip auf oracle-vm mit Wegwerf-Variable geprüft:
+  Env-Datei danach **byte-identisch** (sha256 `de834663b940…`). Ein beim Editieren
+  versehentlich doppelt eingefügtes `printf` fiel genau durch diese Zählung auf
+  („removed 2 line(s)") — vor dem Commit gefixt.
+- **Server:** `OPENCODE_API_KEY` (invalidiert) aus der Env entfernt
+  (`./scripts/set-env-key.sh --remove OPENCODE_API_KEY`); die Konfig-Zeile
+  `harald/opencode` (enthielt denselben toten Key, `_free_only=True`) via
+  `DELETE /configs/harald/opencode` gelöscht. Die zwei übrigen `opencode`-Rows
+  (`wolfinichat`, `03bd2c3d…`) sind leere Configs ohne Key und bleiben.
+  Container recreated (healthy, `RestartCount=0`, created `2026-10-18T07:50:53Z`).
+  **Vorher:** alle 30 s `GET https://opencode.ai/zen/v1/models → 401` pro Worker.
+  **Nachher:** 0 × 401; `/health` nennt für Zen jetzt einen klaren Grund
+  (`ValueError: Opencode: api_key oder OPENCODE_API_KEY erforderlich`), Modelle
+  999 (opencode_go 37), Chat `opencode_go/deepseek-v4.1-flash` → 200,
+  `opencode/deepseek-v4.1-flash` (Zen) → 503 „nicht erreichbar" (klare Meldung).
+- **MacBook-CLI (`~/.local/share/opencode`):** Die abgelaufenen `opencode`- und
+  `opencode-go`-API-Keys durch den neuen `oc_sk_`-Key ersetzt — über die CLI selbst
+  (`opencode auth logout <integration> <cred-id>`, `opencode auth export` → lokale
+  Kopie patchen → `opencode auth import`), nicht per Hand in der DB. Belegt: der Store
+  zeigt für beide Integrationen `len=51 fp=11f073f07a`, die aktive
+  `opencode`-OAuth-Credential (Default) blieb unberührt; `opencode run --model
+  opencode-go/deepseek-v4.1-flash` antwortet „OK". Die **legacy v1-Dateien**
+  `auth.json`/`account.json` (seit Juli eingefroren, vom v2-Store `opencode.db`
+  abgelöst) wurden zu `*.legacy-20261018` umbenannt — danach funktioniert die CLI
+  unverändert, also las sie sie nicht mehr. Backups:
+  `~/opencode-auth-backup-20261018.json`, `~/opencode-{auth,account}.json.bak-20261018`.
+- **Befund Free-Modelle (mit dem neuen Service-Key, live geprüft):** Die
+  **Go**-Free-Modelle sind **außerhalb** des OpenCode-Clients nutzbar —
+  `beam-free` und `longcat-2.5-preview-free` → 200 auf `/inference/go/openai/v1`
+  **und** `/zen/go/v1`, und über das Gateway `opencode_go/beam-free` bzw.
+  `opencode_go/longcat-2.5-preview-free` → 200 „OK" (beide in `/v1/models`).
+  Einschränkungen: laut Doku „limited time"; **Beam Free** ist regionsbeschränkt
+  (nicht in ~21 Ländern/Regionen; Deutschland/Server-Region ok) und hält Daten
+  30 Tage. Die **Zen/Console-`*-free`**-Modelle bleiben draußen — und Zen ist aktuell
+  komplett tot: mit dem Service-Key liefern die Zen-Routen für *jedes* Modell einen
+  nackten **HTTP 500** (auch für Paid-Modelle), während sie vorher 402 („Insufficient
+  account funds") bzw. 403 (`FreeTierError`) antworteten. Der Free-Tier-Lock ist damit
+  nicht mehr beobachtbar, aber auf Zen ist ohnehin nichts nutzbar.
+- **Sibling-Repo (`wolfini_de_web`):** Der 04:30-Cron `opencode-models-check.sh` las
+  denselben entfernten Key und hat den Fehlalarm „0 added, 47 removed" erzeugt
+  (prüfte nur „valides JSON", nicht HTTP-Status/`"error"`-Payload, und überschrieb den
+  Cache mit `{}`). Fix als **PR #225**: Token `OPENCODE_GO_API_KEY` (Fallback Zen-Key),
+  Endpoint v2 `/inference/go/v1/models`, Abbruch + Alarm bei HTTP ≠ 200 oder
+  Error-Payload **ohne** Cache-Änderung. Auf oracle-vm installiert und verifiziert:
+  Cache mit der Go-Liste (37 Modelle) geseedet → Lauf „No model changes", rc=0, keine
+  Mail; Guard-Test gegen eine 401-URL → ERROR, rc=1, **Cache-Hash unverändert**
+  (`10817e2251d18cba`). *Achtung: installiert, aber noch nicht gemergt — PR #225 offen,
+  also „installed ≠ main".*
+
+
 ### 2026-10-12 — Memory-Timer wieder eingesetzt (oracle-vm/docker) + `MEMORY_FREE_MODELS` konfiguriert
 
 - **Trigger:** Beim Aufräumen auf ionos-vps fielen zwei verwaiste Units auf (`ai-provider-summary.timer`, `ai-provider-vault-render.timer`, beide `Requires=ai-provider.service`, das dort nicht mehr existiert → Boot-Fehler). Die Jobs liefen dadurch **nirgends** mehr; §6 behauptete „run inside the container", was auf `worker.py` (health-check/drain/free-model/model-cache) nicht zutraf.
