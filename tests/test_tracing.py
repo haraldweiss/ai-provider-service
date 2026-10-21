@@ -115,3 +115,42 @@ def test_span_marks_failures_and_reraises(span_exporter):
     (recorded,) = span_exporter.get_finished_spans()
     assert recorded.status.status_code.name == 'ERROR'
     assert dict(recorded.attributes)['error.type'] == 'RuntimeError'
+
+
+def test_prompt_capture_is_off_by_default(span_exporter, monkeypatch):
+    import observability.tracing as tracing
+
+    monkeypatch.delenv('OTEL_CAPTURE_PROMPTS', raising=False)
+
+    with tracing.llm_call_span('ollama', 'm') as span:
+        tracing.record_llm_io(span, [{'role': 'user', 'content': 'SECRET PROMPT'}],
+                              'SECRET ANSWER')
+
+    (recorded,) = span_exporter.get_finished_spans()
+    attrs = dict(recorded.attributes)
+    assert 'input.value' not in attrs
+    assert 'output.value' not in attrs
+
+
+def test_prompt_capture_records_and_truncates(span_exporter, monkeypatch):
+    import observability.tracing as tracing
+
+    monkeypatch.setenv('OTEL_CAPTURE_PROMPTS', 'true')
+    monkeypatch.setenv('OTEL_CAPTURE_MAX_CHARS', '20')
+
+    long_prompt = 'x' * 50
+    with tracing.llm_call_span('ollama', 'm') as span:
+        tracing.record_llm_io(span, [{'role': 'user', 'content': long_prompt}],
+                              'y' * 50)
+
+    (recorded,) = span_exporter.get_finished_spans()
+    attrs = dict(recorded.attributes)
+    assert attrs['input.mime_type'] == 'application/json'
+    assert attrs['output.mime_type'] == 'text/plain'
+    # prompt is JSON-serialised, so it starts with '[' — the content must still be there
+    assert attrs['input.value'].startswith('[')
+    assert len(attrs['input.value']) < 60          # capped at 20 chars + marker
+    assert 'truncated' in attrs['input.value']
+    assert 'truncated' in attrs['output.value']
+    assert attrs['output.value'].startswith('y')
+
