@@ -2590,3 +2590,15 @@ workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.
 - **Doku:** AGENTS §3.14 (neu) + dieser Eintrag; README „Per-Call Timeout und Fehler-Priorität im Pool"; `.env.example` (`# OLLAMA_TIMEOUT=120`).
 - **Git:** `Fix:` `980b0e4` (Code+Tests) und `Docs:` auf `main` → push.
 
+### 2026-10-21 — Optionales LLM-Tracing (OpenTelemetry → Arize Phoenix)
+
+- **Anlass:** Im Zuge des Node-Security-Audits im Sibling `wolfini_de_web` wurde Langfuse (EOL, Node 20, 0 Traces) stillgelegt; Ersatz ist **Arize Phoenix** auf oracle-vm (`arizephoenix/phoenix:20.23.0`, loopback 6006, Netzwerk `ai-provider-service_default`, SQLite, 30 Tage Retention).
+- **Code:** neue `observability/tracing.py` — `init_tracing()` baut OTLP/HTTP-Exporter + BatchSpanProcessor und instrumentiert Flask (`health` ausgeschlossen); `llm_call_span()` + `record_llm_usage()` setzen `gen_ai.{system,request.model,response.model,usage.input_tokens,usage.output_tokens}` sowie `wolfini.{user_id,origin_app,latency_ms,cost_usd}`. Fehler markieren den Span als `ERROR` und werden weitergeworfen. **Strikt no-op** ohne `OTEL_EXPORTER_OTLP_ENDPOINT` — Tests und Instanzen ohne Collector verhalten sich unverändert.
+- **Seam:** `dispatcher._execute()` — dort läuft jeder Provider-Call durch (inkl. Fallback-Pfad). `app.create_app()` ruft `init_tracing(app)` am Ende.
+- **Env (oracle-vm, `/etc/ai-provider/ai-provider.env`):** `OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix:6006`, `OTEL_SERVICE_NAME=ai-provider`. Env wird nur beim **Create** gelesen → `docker compose up -d` nach Änderung. Backup `/root/ai-provider.env.bak-20261021-otel`.
+- **Abhängigkeiten:** `opentelemetry-api/-sdk`, `opentelemetry-exporter-otlp-proto-http`, `opentelemetry-instrumentation-flask` in `requirements.txt` (Image wächst ~15 MB).
+- **Verifiziert:** lokale Tests `tests/test_tracing.py` → **6 passed** (no-op ohne Env, fehlende Pakete, GenAI-Attribute, `ERROR`+Reraise, Endpoint-Normalisierung); Dispatcher-/Chat-Suiten 50 passed, 1 failed = **vorbestehend** (`test_memory_disabled_skips_audit` fails auch auf sauberem HEAD, mit gestashten Änderungen reproduziert). Deploy: `docker compose build` + `up -d`, Log `tracing enabled -> http://phoenix:6006/v1/traces (service=ai-provider)`. Live-`/chat` (`ollama/oracle-llama3.2:3b`, „SPAN OK") erzeugt in Phoenix `span_kind=LLM`, `name=chat ollama/oracle-llama3.2:3b`, `cumulative_llm_token_count_prompt=32`, `completion=3`, Attribute `gen_ai.*` + `wolfini.latency_ms=20046`.
+- **Hinweis:** Phoenix erkennt die Spans nur deshalb als LLM-Spans, weil die `gen_ai.*`-Attribute exakt den SemConv-Namen folgen — beim Umbenennen bricht die Token-Auswertung, nicht die Anzeige.
+- **Deploy-Rollback:** `OTEL_EXPORTER_OTLP_ENDPOINT` aus der Env entfernen + Container neu erstellen (Code bleibt, Tracing ist dann no-op).
+- **Git:** `Add:` `60a2a9b` → `Merge:` `d68c48e` auf `main` → push.
+

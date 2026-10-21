@@ -476,6 +476,33 @@ Kleinere Macs (z.B. M4 mini mit 24 GB unified memory) sollten reduzierte
   auf 32 GB+ vom q5 (10 GB). Schon ein GB Headroom entscheidet zwischen
   3-7s/Call und 60-90s/Call (swap-death).
 
+## LLM-Tracing (OpenTelemetry → Arize Phoenix)
+
+Tracing ist **optional** und standardmäßig aus: ohne `OTEL_EXPORTER_OTLP_ENDPOINT`
+sind alle Helfer in `observability/tracing.py` strikt no-op.
+
+```bash
+# /etc/ai-provider/ai-provider.env (wird nur beim Container-Create gelesen)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix:6006   # Basis-URL oder .../v1/traces
+OTEL_SERVICE_NAME=ai-provider                     # optional
+```
+
+Anschließend `docker compose build && docker compose up -d`. Der Container muss
+im selben Docker-Netz wie der Collector laufen (im Wolfini-Setup:
+`ai-provider-service_default`, Container `phoenix` auf oracle-vm,
+UI `https://ai-admin.wolfinisoftware.de/phoenix/`).
+
+Was getraced wird:
+
+| Ebene | Span | Attribute |
+|---|---|---|
+| HTTP-Request | `POST /chat`, `POST /v1/chat/completions`, … (Flask) | URL, Status (`/health` ist ausgenommen) |
+| Provider-Call | `chat <provider>/<model>` | `gen_ai.system`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `wolfini.user_id`, `wolfini.origin_app`, `wolfini.latency_ms`, `wolfini.cost_usd` |
+
+Fehler markieren den Span als `ERROR` (mit `error.type` + Exception-Event) und
+werden unverändert weitergereicht — Tracing darf das Verhalten nie ändern.
+Weitere Details und Betriebsgrenzen: `AGENTS.md` §7 (2026-10-21).
+
 ## API-Übersicht
 
 Alle Endpoints (außer `/health`) brauchen einen Bearer-Token. Unterstützt sind
