@@ -15,6 +15,7 @@ from storage.models import ProviderConfig, RequestQueue
 from providers import get_client, PROVIDER_REGISTRY
 from config import Config
 import health_tracker
+from observability.tracing import llm_call_span, record_llm_usage
 
 logger = logging.getLogger(__name__)
 
@@ -293,28 +294,35 @@ def _execute(
     chat_request_id = uuid.uuid4().hex
     started = datetime.now(timezone.utc)
     try:
-        result = client.create_message(model, messages, max_tokens, tools=tools)
-        latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
-        health_tracker.set_status(provider_id, True)
-        usage = (result or {}).get('usage') or {}
-        _log_usage_event(
-            user_id, provider_id, result.get('balance_failover_model') or result.get('model') or model,
-            usage.get('input_tokens'), usage.get('output_tokens'),
-            'success', origin_app=origin_app, reported_cost=usage.get('cost_usd'),
-            cache_usage=usage,
-        )
-        prompt_text = _join_messages(messages)
-        response_text = _extract_response_text(result)
-        try:
-            _write_audit_note(
-                user_id=user_id, provider_id=provider_id, origin_app=origin_app,
-                chat_request_id=chat_request_id,
-                prompt_text=prompt_text, response_text=response_text,
-                usage=usage, cost_eur=0.0, latency_ms=latency_ms,
+        with llm_call_span(provider_id, model, user_id=user_id,
+                           origin_app=origin_app) as span:
+            result = client.create_message(model, messages, max_tokens, tools=tools)
+            latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            health_tracker.set_status(provider_id, True)
+            usage = (result or {}).get('usage') or {}
+            record_llm_usage(
+                span, usage,
+                model=result.get('balance_failover_model') or result.get('model') or model,
+                latency_ms=latency_ms,
             )
-        except Exception:
-            logger.warning('memory audit write failed in _execute', exc_info=True)
-        return result
+            _log_usage_event(
+                user_id, provider_id, result.get('balance_failover_model') or result.get('model') or model,
+                usage.get('input_tokens'), usage.get('output_tokens'),
+                'success', origin_app=origin_app, reported_cost=usage.get('cost_usd'),
+                cache_usage=usage,
+            )
+            prompt_text = _join_messages(messages)
+            response_text = _extract_response_text(result)
+            try:
+                _write_audit_note(
+                    user_id=user_id, provider_id=provider_id, origin_app=origin_app,
+                    chat_request_id=chat_request_id,
+                    prompt_text=prompt_text, response_text=response_text,
+                    usage=usage, cost_eur=0.0, latency_ms=latency_ms,
+                )
+            except Exception:
+                logger.warning('memory audit write failed in _execute', exc_info=True)
+            return result
     except Exception as e:
         status_code = _client_error_status(e)
         if status_code is not None:

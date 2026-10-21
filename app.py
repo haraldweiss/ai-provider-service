@@ -190,6 +190,11 @@ def create_app() -> Flask:
     if os.getenv('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
         worker.start(app)
 
+    # Optional OpenTelemetry tracing (Arize Phoenix). No-op without
+    # OTEL_EXPORTER_OTLP_ENDPOINT, so tests/dev are unaffected.
+    from observability.tracing import init_tracing
+    init_tracing(app)
+
     return app
 
 
