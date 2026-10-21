@@ -15,7 +15,7 @@ from storage.models import ProviderConfig, RequestQueue
 from providers import get_client, PROVIDER_REGISTRY
 from config import Config
 import health_tracker
-from observability.tracing import llm_call_span, record_llm_usage
+from observability.tracing import llm_call_span, record_llm_io, record_llm_usage
 
 logger = logging.getLogger(__name__)
 
@@ -313,6 +313,7 @@ def _execute(
             )
             prompt_text = _join_messages(messages)
             response_text = _extract_response_text(result)
+            record_llm_io(span, messages, response_text)
             try:
                 _write_audit_note(
                     user_id=user_id, provider_id=provider_id, origin_app=origin_app,

@@ -22,6 +22,7 @@ Usage (in the dispatcher):
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from contextlib import contextmanager
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SERVICE_NAME = 'ai-provider'
 DEFAULT_EXCLUDED_URLS = 'health'
+DEFAULT_CAPTURE_MAX_CHARS = 4000
 
 # Module-level tracer handle; None means tracing is disabled (no-op helpers).
 _state: dict[str, Any] = {'tracer': None}
@@ -159,4 +161,56 @@ def record_llm_usage(span, usage: Optional[dict], *, model: Optional[str] = None
             span.set_attribute('wolfini.cost_usd', float(reported_cost))
     except Exception:
         logger.debug('failed to set LLM span attributes', exc_info=True)
+
+
+
+def capture_prompts_enabled() -> bool:
+    """True when OTEL_CAPTURE_PROMPTS explicitly enables prompt/response capture.
+
+    Off by default: prompts contain user content, and storing them in a tracing
+    backend is a deliberate privacy decision (memory audit notes are a separate,
+    MEMORY_ENABLED-gated store).
+    """
+    raw = os.getenv('OTEL_CAPTURE_PROMPTS', 'false')
+    return raw.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _truncate(text: str, limit: int) -> str:
+    if text is None:
+        return ''
+    text = str(text)
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return f'{text[:limit]}…[truncated {len(text) - limit} chars]'
+
+
+def record_llm_io(span, messages, response_text, *, max_chars: Optional[int] = None) -> None:
+    """Attach prompt/response text to an LLM span (only with OTEL_CAPTURE_PROMPTS).
+
+    Uses the OpenInference attribute names Phoenix renders as Input/Output
+    (`input.value`, `input.mime_type`, `output.value`, `output.mime_type`).
+    Both sides are truncated to OTEL_CAPTURE_MAX_CHARS (default 4000) so a
+    web-search prompt with ~180 documents cannot bloat the trace store.
+    """
+    if span is None or not capture_prompts_enabled():
+        return
+    try:
+        limit = max_chars if max_chars is not None else int(
+            os.getenv('OTEL_CAPTURE_MAX_CHARS') or DEFAULT_CAPTURE_MAX_CHARS
+        )
+    except ValueError:
+        limit = DEFAULT_CAPTURE_MAX_CHARS
+
+    try:
+        prompt_json = json.dumps(messages, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        prompt_json = str(messages)
+
+    try:
+        span.set_attribute('input.mime_type', 'application/json')
+        span.set_attribute('input.value', _truncate(prompt_json, limit))
+        span.set_attribute('output.mime_type', 'text/plain')
+        span.set_attribute('output.value', _truncate(response_text, limit))
+    except Exception:
+        logger.debug('failed to set LLM input/output attributes', exc_info=True)
 
