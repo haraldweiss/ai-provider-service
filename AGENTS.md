@@ -299,6 +299,7 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 | Vault | `VAULT_PATH=/app/data/vault` (container env; `MEMORY_ENABLED=true`). Cache; regen via `flask vault-render --rebuild` inside the container. |
 | Timers | Host: `wolfini-daily-roundup.timer` (daily ~04:02 GMT), plus `ai-provider-summary.timer` (nightly 02:30 UTC, `flask summary-job --period=day --yesterday`) and `ai-provider-vault-render.timer` (2 min after boot, then every 10 min, `flask vault-render --check-stale`) — both run `docker exec ai-provider …` against the container and log to the journal only (re-added 2026-10-12; the IONOS originals died with that host). Host root crontab (oracle-vm) also runs daily jobs against the container: `0 5` `flask refresh-free-models`, `0 6` `flask update-zai-pricing`, `0 6` `flask check-cline-catalog` (Cline model-change notification, added 2026-08-16) and `30 6` `flask check-provider-docs` (OpenCode/Cline client-rule docs watcher, added 2026-09-23 — emails on required-header/free-tier doc changes). Server repo git fetch needs `sudo` (pack-object permission quirk); use `sudo git fetch origin && git merge --ff-only origin/main`. |
 | Apache | Host `httpd` reverse-proxies `:8767` → `ai-admin.wolfinisoftware.de` and `ai-provider-service.wolfinisoftware.de/` (`/etc/httpd/conf.d/`) |
+| OpenRouter daily monitor | `/etc/cron.d/ai-provider-openrouter`, **02:00 UTC** daily. Root-owned host script `/usr/local/libexec/ai-provider/check_openrouter_models.py`; snapshot `/var/lib/ai-provider-monitor/openrouter.json`; log `/var/log/ai-provider-openrouter-check.log` (daily/14 rotations). Host sendmail alerts on changes/problems/recovery. No ChatGPT dependency. |
 
 ---
 
@@ -338,6 +339,18 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   `tests/test_worker.py::test_start_and_stop` (thread still alive after 3s);
   reproduced without the new tests: 583 passed, same one failure. No gateway
   application code was changed to work around this unrelated worker-test issue.
+- **Installed/verified:** server checkout `9e56b8f`; installed host script
+  byte-matches the committed source. `crond` active; cron/logrotate/script
+  root:root 0644, snapshot directory 0700, snapshot 0600, log 0640. Initial run
+  and repeat under the actual root cron command both returned 0: 468 models,
+  three `ok` probes, no stale or missing configured gateway IDs. Logrotate
+  debug validation passed. Gateway remains healthy, zero restarts, unchanged
+  runtime image. Codex heartbeat `check-openrouter-model-availability` is
+  **PAUSED**, so the server job is the sole daily monitor.
+- **CI:** [run 39549980677](https://github.com/haraldweiss/ai-provider-service/actions/runs/39549980677)
+  passed both pytest/coverage and Docker build/boot/health/provider smoke on
+  `9e56b8f` (Python 3.12); the local Python 3.14 worker-test timeout above does
+  not reproduce in this CI run.
 
 ### 2026-10-21 — OpenRouter availability check and summary model-chain repair
 
