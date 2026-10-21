@@ -501,6 +501,23 @@ Was getraced wird:
 
 Fehler markieren den Span als `ERROR` (mit `error.type` + Exception-Event) und
 werden unverändert weitergereicht — Tracing darf das Verhalten nie ändern.
+
+**Prompt/Response-Capture (optional).** Phoenix kann zusätzlich den tatsächlichen
+Prompt und die Antwort anzeigen:
+
+```bash
+OTEL_CAPTURE_PROMPTS=true      # default: false
+OTEL_CAPTURE_MAX_CHARS=4000    # default: 4000
+```
+
+Der Span bekommt dann `input.value`/`input.mime_type=application/json` und
+`output.value`/`output.mime_type=text/plain` (OpenInference-Namen, die Phoenix als
+Input/Output-Panes rendert). Beide Seiten werden auf `OTEL_CAPTURE_MAX_CHARS`
+gekürzt (`…[truncated N chars]`), damit ein Websuche-Prompt mit ~180 Dokumenten
+den Trace-Store nicht aufbläht. **Achtung:** Damit landen Nutzer-Prompts und
+Antworten im Phoenix-SQLite (30 Tage Retention) — bewusst einschalten, nicht
+nebenbei; `false` + Container neu erstellen schaltet es restlos ab.
+
 Weitere Details und Betriebsgrenzen: `AGENTS.md` §7 (2026-10-21).
 
 ## API-Übersicht

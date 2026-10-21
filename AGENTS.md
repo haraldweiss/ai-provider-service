@@ -2602,3 +2602,14 @@ workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.
 - **Deploy-Rollback:** `OTEL_EXPORTER_OTLP_ENDPOINT` aus der Env entfernen + Container neu erstellen (Code bleibt, Tracing ist dann no-op).
 - **Git:** `Add:` `60a2a9b` → `Merge:` `d68c48e` auf `main` → push.
 
+
+### 2026-10-21 (2) — Prompt/Response-Capture in LLM-Spans (opt-in, gekürzt)
+
+- **Anlass:** Phoenix zeigte Tokens/Latenz, aber nicht Prompt/Antwort („is there anything needed … then please add this").
+- **Code (`observability/tracing.py` + `dispatcher._execute`):** neue `record_llm_io(span, messages, response_text)` setzt die **OpenInference**-Attribute `input.value` / `input.mime_type=application/json` / `output.value` / `output.mime_type=text/plain` — genau die Namen, die Phoenix als Input/Output-Panes rendert.
+- **Bewusst opt-in:** `OTEL_CAPTURE_PROMPTS` (Default `false`). Prompts sind Nutzerinhalt, und `_write_audit_note` schreibt nur bei `MEMORY_ENABLED` — die Trace-Ablage ist also eine **eigene** Speicherentscheidung, kein Nebeneffekt. Kürzung auf `OTEL_CAPTURE_MAX_CHARS` (Default 4000) je Seite mit `…[truncated N chars]`, sonst bläht ein Websuche-Prompt mit ~180 Dokumenten den Store.
+- **Tests:** `tests/test_tracing.py` → **8 passed** (Capture standardmäßig aus, Attribute + Truncation bei `true`). Dispatcher-Suite unverändert (1 Fehlschlag = vorbestehend: `test_execute_does_not_mark_provider_unhealthy_when_request_is_rejected`, per `git stash` auf sauberem HEAD reproduziert).
+- **Doku:** README-Abschnitt „LLM-Tracing" um die Capture-Env + Datenschutz-Hinweis erweitert.
+- **Sibling wolfini_de_web:** `OPEN_WEBUI_FIXES` §4 enthält jetzt den fünften Bind-Mount (`instrumentors.py`) + Regenerations-Schritt; `scripts/open-webui/verify-upgrade.sh` prüft Mount-md5, `sqlalchemy_instrumentor_calls=0`, die OTel-Env und die Erreichbarkeit des Ingest-Endpoints.
+- **Git:** `Add:` `93d7b96` → Merge auf `main` → push.
+
