@@ -1,0 +1,5 @@
+# Install root-owned, mode 0644 as /etc/cron.d/ai-provider-openrouter.
+# Server timezone is UTC/GMT; run before the 02:30 UTC nightly summaries.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 2 * * * root /usr/bin/timeout 600 /usr/bin/flock -n /run/lock/ai-provider-openrouter.lock /usr/bin/python3 /usr/local/libexec/ai-provider/check_openrouter_models.py >> /var/log/ai-provider-openrouter-check.log 2>&1

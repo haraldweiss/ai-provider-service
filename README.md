@@ -1131,6 +1131,52 @@ Täglich ausführen (06:00 UTC, Host-Crontab gegen den Container):
 die Baseline, danach mailt der Job nur bei tatsächlichen Änderungen.
 
 
+### OpenRouter daily server check
+
+Oracle runs `scripts/check_openrouter_models.py` daily at **02:00 UTC**,
+before the 02:30 UTC summary job. It uses host cron and host sendmail; no
+Codex, ChatGPT, or running Mac is required. The host needs only Python 3.9+,
+Docker, `timeout`, `flock`, and `/usr/sbin/sendmail`.
+
+The monitor compares model IDs, pricing, context sizes, modalities and supported
+parameters with its last successful catalog snapshot. It also checks whether
+configured free models disappeared from the gateway, and makes short synthetic
+completions against the OpenRouter models in `MEMORY_FREE_MODELS` and DB fallback
+settings. Only models with explicitly zero pricing and text output are probed;
+dynamic-price routers (`-1`) and paid models are never called. Up to eight free
+models are probed concurrently (three workers), with one retry on failure;
+excess models are reported as unchecked without suppressing catalog changes.
+HTTP 200 error payloads, empty completions and truncated responses are failures.
+
+Model changes, confirmed availability problems and recoveries are mailed to
+`harald.weiss@wolfinisoftware.de`. Unchanged healthy runs only write the log.
+Invalid/empty catalogs, collection errors and failed notification submission
+preserve the previous snapshot. The monitor never edits routing or production
+configuration. The existing 05:00 UTC `refresh-free-models` cron remains active.
+
+Install/update from the committed server checkout as root:
+
+```bash
+sudo install -d -m 0755 /usr/local/libexec/ai-provider
+sudo install -d -m 0700 /var/lib/ai-provider-monitor
+sudo install -o root -g root -m 0644 scripts/check_openrouter_models.py /usr/local/libexec/ai-provider/check_openrouter_models.py
+sudo install -o root -g root -m 0644 deploy/ai-provider-openrouter.cron /etc/cron.d/ai-provider-openrouter
+sudo install -o root -g root -m 0644 deploy/ai-provider-openrouter.logrotate /etc/logrotate.d/ai-provider-openrouter
+sudo /usr/bin/timeout 600 /usr/bin/flock -n /run/lock/ai-provider-openrouter.lock /usr/bin/python3 /usr/local/libexec/ai-provider/check_openrouter_models.py
+```
+
+Snapshot: `/var/lib/ai-provider-monitor/openrouter.json` (root-only directory,
+atomic updates). Log: `/var/log/ai-provider-openrouter-check.log` (14 daily
+rotations). `--snapshot`, `--recipient`, and `--container` override the defaults.
+The first healthy run seeds the baseline without email; first-run model failures
+still alert. Exit 0 means checks passed; exit 1 means a problem or failed check.
+
+The root-owned host script streams its collector into the container's Python
+using `docker exec -i ... python - --collect`. It reads the container's `Config`
+and DB settings without putting secrets in argv, writing files into the image,
+or starting an extra Flask worker. This is a host monitoring utility: installing
+it does not modify the gateway application and needs no image rebuild/restart.
+
 ### Tokens
 
 | Token | Role | `user_id` resolution |

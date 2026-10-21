@@ -304,6 +304,41 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-10-21 — OpenRouter daily monitor moved from Codex to server cron
+
+- **User request:** run the daily check on the server, independently of ChatGPT.
+  Added host monitor `scripts/check_openrouter_models.py`, installation templates
+  `deploy/ai-provider-openrouter.cron` / `.logrotate`, and behavioral tests.
+  Run **02:00 UTC** via `/etc/cron.d/ai-provider-openrouter` (before the 02:30
+  summary timer), with `timeout 600` and a non-overlapping `flock`.
+- **Deployment:** install the committed monitor as root-owned mode 0644
+  `/usr/local/libexec/ai-provider/check_openrouter_models.py`; host Python 3.9
+  streams its `--collect` mode to the existing container's Python. No source
+  patch in the container and no app/image/restart change. Reinstall the host
+  copy when updating the monitor; README includes exact installation commands.
+- **Checks:** catalog ID/pricing/context/modalities/parameter diff; configured
+  free model visibility through the gateway; short free-only text probes of
+  `MEMORY_FREE_MODELS` and OpenRouter DB fallbacks. Three concurrent probes,
+  maximum eight eligible models, one retry per failed model. Over-budget IDs
+  are reported, without aborting catalog comparison. Paid/dynamic routers are
+  never probed. Upstream `-1` prices are valid catalog sentinels, not bad data.
+  HTTP 200 with `error`, empty text, or truncated finish is a failed probe.
+- **State/alerts:** root-only `/var/lib/ai-provider-monitor/openrouter.json`,
+  atomic replacement only after successful collection/notification submission.
+  Invalid/empty data or transport failure preserves the baseline. Host sendmail
+  alerts the existing owner address on changes, confirmed failures, or recovery;
+  healthy unchanged runs do not mail. Log
+  `/var/log/ai-provider-openrouter-check.log`, logrotate daily/14 copies.
+  Existing 05:00 UTC free-model cache refresh remains in place. No automatic
+  routing or env changes. The earlier Codex heartbeat is superseded.
+- **Verification before installation:** 19 focused tests passed (test-first),
+  Python compilation and code/Python reviews passed. Live collector: 468 models,
+  all three configured free probes `ok`, no stale gateway IDs. Full local suite
+  on Python 3.14: 602 passed, one existing failure
+  `tests/test_worker.py::test_start_and_stop` (thread still alive after 3s);
+  reproduced without the new tests: 583 passed, same one failure. No gateway
+  application code was changed to work around this unrelated worker-test issue.
+
 ### 2026-10-21 — OpenRouter availability check and summary model-chain repair
 
 - **Trigger:** model failures today. Live OpenRouter `/models` and authenticated
