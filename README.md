@@ -672,6 +672,16 @@ Free-Modell-Caches; OpenRouter fällt bei einem Refresh-Fehler auf den letzten
 Cache zurück. Lokale Ollama-Modelle erscheinen automatisch, sobald sie auf
 einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).
 
+Ein Katalogeintrag garantiert keine erfolgreiche Completion: OpenRouter kann
+ein Modell weiterhin listen, obwohl dessen Upstream 404, Rate Limits oder
+Kapazitätsfehler liefert (am 2026-10-21 bei
+`nvidia/nemotron-3-super-120b-a12b:free` bzw. Nano Omni beobachtet).
+Bei Störungen neben `/models` eine kurze Completion mit dem betroffenen
+Modell prüfen; auch bei HTTP 200 auf `error`, nicht-leeren Content und
+`finish_reason` achten. Für Betriebsjobs nur aktuell erfolgreich geprüfte
+Modelle in `MEMORY_FREE_MODELS` verwenden; die Liste wird beim Containerstart
+gelesen. Details zum Check vom 2026-10-21 stehen in `AGENTS.md` §7.
+
  Das Model-Format ist `provider/model_name`, z.B.:
 
  | Model-ID | Provider |
@@ -1193,7 +1203,7 @@ MEMORY_ENABLED=true
 VAULT_PATH=/app/data/vault
 SUMMARY_PROFILE=cheap-first
 SUMMARY_MAX_NOTES_PER_DAY=200
-MEMORY_FREE_MODELS=openrouter::nvidia/nemotron-3-super-120b-a12b:free,ollama::oracle-llama3.2:3b
+MEMORY_FREE_MODELS=openrouter::cohere/north-mini-code:free,openrouter::poolside/laguna-s-2.1:free,openrouter::nvidia/nemotron-3-ultra-550b-a55b:free,ollama::oracle-llama3.2:3b
 ```
 
 `MEMORY_FREE_MODELS` is read at container start (change it with

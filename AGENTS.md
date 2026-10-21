@@ -304,6 +304,50 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-10-21 — OpenRouter availability check and summary model-chain repair
+
+- **Trigger:** model failures today. Live OpenRouter `/models` and authenticated
+  gateway `/v1/models?user_id=harald` both returned **468 OpenRouter IDs**, with
+  no stale or missing IDs. The free-model cache contained the current **20
+  zero prompt/completion-price entries** already; refreshed it explicitly.
+  The 2026-10-18 total of 471 is historical, not the current count.
+- **Serving failures despite catalog presence:**
+  `nvidia/nemotron-3-super-120b-a12b:free` returned HTTP 404 in a fresh synthetic
+  completion, matching six errors today (four nightly summary attempts and
+  two `harald` requests). Nano Omni returned an HTTP 200 **error payload**
+  (`ResourceExhausted`, no choices/content); Xing4 returned 429. Do not treat
+  catalog presence, an endpoint listing, or HTTP 200 alone as completion success.
+- **Verified working, synthetic prompt, reported cost $0:** Cohere North Mini
+  Code, Nemotron Ultra, Poolside Laguna S, Liquid LFM 2.5, and MiniMax M3.1
+  Flash all returned text. Cohere, Poolside and Ultra additionally returned
+  valid JSON through the live gateway with `max_tokens=600` (HTTP 200).
+  Existing eight DB fallback rows already use Cohere; no DB edits needed.
+- **Runtime change:** root-owned `/etc/ai-provider/ai-provider.env`
+  `MEMORY_FREE_MODELS` now orders
+  `openrouter::cohere/north-mini-code:free`,
+  `openrouter::poolside/laguna-s-2.1:free`,
+  `openrouter::nvidia/nemotron-3-ultra-550b-a55b:free`,
+  `ollama::oracle-llama3.2:3b`. Removes the failing Super/Nano routes from this
+  job; supersedes the 2026-10-12 chain below. Backup:
+  `/root/ai-provider.env.bak-20261021T044654Z-openrouter-availability`.
+  All other env lines preserved, root owner/mode 600 verified. Recreated via
+  `sudo docker compose up -d --force-recreate --no-build ai-provider` using the
+  unchanged image `localhost/ai-provider:ffad4e7` (also tagged `latest`).
+  No runtime source code changed; no image rebuild required for this env update.
+- **Post-change verification:** `/health` HTTP 200, `status=ok`, OpenRouter
+  healthy; container healthy with zero restarts; active model chain matches
+  the env update. Refreshed free cache = 20 entries; gateway/upstream catalog
+  comparison remains 468/468 with no differences. Post-recreate Cohere chat
+  returned HTTP 200, non-empty content and `finish_reason=stop`.
+- **Nightly outcome:** all six `day:2026-10-20` summary jobs completed; four
+  used Poolside after Super failed, two had `model_used=none`. No rerun needed.
+  The isolated `meta/muse-image` error was followed by a success today.
+- **Scope/caveat:** upstream still advertises the failing free models, so they
+  remain discoverable. Capacity/rate limits can change; the probes establish
+  availability at check time, not a permanent guarantee. No global denylist
+  was added. `skill_manage view` is unavailable in this Codex environment;
+  used the supplied skill catalog and project `ai-provider-workflow` skill.
+
 ### 2026-10-18 — OpenCode-Breach: Console-Key invalidiert → `opencode_go` (Go-Abo) statt Zen-Free
 
 - **Trigger:** „check what happened to the available models in opencode" — `/v1/models`
