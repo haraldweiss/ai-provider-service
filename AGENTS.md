@@ -305,6 +305,32 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-10-25 — Serialize SQLite startup before connecting
+
+- CI exposed two cold-start races with the standard two Gunicorn workers:
+  simultaneous `PRAGMA journal_mode=WAL` could fail with `database is locked`;
+  `_safe_create_all()` swallowed `table already exists`, skipped remaining
+  tables, then FTS failed because `memory_notes` did not exist yet.
+- `database.sqlite_startup()` takes a per-database POSIX `flock` on the
+  resolved `<DB-path>.startup.lock` before the first connection, then holds it
+  across WAL activation, full schema creation, additive email migration and
+  FTS setup. Connection-local timeout/synchronous pragmas remain. Schema
+  errors propagate; no blind retry or worker-count reduction. DB paths still
+  come from the configured SQLAlchemy engine, including SQLite URI handling.
+- Keep the lock sidecar in place while the service runs; deleting it can
+  split waiters across inodes. The DB directory must be writable by the
+  service account. In-memory databases have no sidecar.
+- Regression checks: `pytest tests/test_sqlite_startup.py` uses fresh temp
+  databases and independent Python processes, controlled connection/DDL
+  barriers, existing encrypted rows/email migration, and failure recovery.
+  No production database or provider credentials are used.
+- Verified locally: **616 tests passed, 85.05% coverage**. Isolated Docker on
+  oracle-vm: **10 fresh-database cold boots + 10 existing-database restarts**
+  with the standard two Gunicorn workers; `/health` and authenticated
+  `/providers` returned 200, OpenCode was listed, WAL/integrity/three FTS
+  triggers passed, no startup tracebacks. Test containers had no network,
+  published ports or mounted volumes. Production has not been changed.
+
 ### 2026-10-21 — OpenRouter daily monitor moved from Codex to server cron
 
 - **User request:** run the daily check on the server, independently of ChatGPT.

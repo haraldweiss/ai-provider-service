@@ -1321,7 +1321,7 @@ CLI:
   ausgelegt. Bei Last-Bedarf später auf PostgreSQL + Redis migrieren.
   Gegen **Schreibkonflikte innerhalb** einer Instanz ist die DB gehärtet:
   `database.configure_sqlite_engine()` setzt pro Verbindung
-  `journal_mode=WAL`, `busy_timeout=30000` und `synchronous=NORMAL` (dazu
+  `busy_timeout=30000` und `synchronous=NORMAL` (dazu
   `connect_args={'timeout': 30}` aus `Config.SQLALCHEMY_ENGINE_OPTIONS`) —
   ohne das verliert der Verlierer eines Schreibrennens seine Zeile mit
   „database is locked“, still und nur als Warnung im Log (2026-09-29: 54
@@ -1329,6 +1329,15 @@ CLI:
   Eval-Run Ergebnisse schrieb). WAL legt `-wal`/`-shm`-Dateien neben der DB
   an — wer die DB im Betrieb per Datei-Kopie sichert, muss vorher
   `PRAGMA wal_checkpoint(TRUNCATE)` ausführen oder alle drei Dateien kopieren.
+  Beim Start sperrt `database.sqlite_startup()` die Sidecar-Datei
+  `<DB-Pfad>.startup.lock`, bevor eine Verbindung geöffnet wird. Innerhalb
+  dieser Sperre werden WAL aktiviert, sämtliche Tabellen angelegt, die
+  additive E-Mail-Migration ausgeführt und die FTS-Trigger installiert.
+  Weitere Gunicorn-Worker warten, bis das Schema vollständig ist; Fehler
+  brechen den Start ab. Die Sperre wird auch bei Fehlern/Prozessende freigegeben.
+  Das DB-Verzeichnis muss für den Dienst schreibbar sein; die Sidecar-Datei
+  bleibt bestehen und darf während des Betriebs nicht gelöscht werden.
+  In-Memory-SQLite benötigt keine Datei-Sperre.
 - **Health-Cache pro Worker:** bei mehreren Gunicorn-Workern hat jeder einen
   eigenen Health-Cache (akzeptabel — Stale-Detection ist konservativ).
 - **Keine Cost-Tracking-API:** Cost-Logs bleiben in der Konsumenten-App
