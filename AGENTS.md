@@ -2613,3 +2613,10 @@ workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.
 - **Sibling wolfini_de_web:** `OPEN_WEBUI_FIXES` §4 enthält jetzt den fünften Bind-Mount (`instrumentors.py`) + Regenerations-Schritt; `scripts/open-webui/verify-upgrade.sh` prüft Mount-md5, `sqlalchemy_instrumentor_calls=0`, die OTel-Env und die Erreichbarkeit des Ingest-Endpoints.
 - **Git:** `Add:` `93d7b96` → Merge auf `main` → push.
 
+
+### 2026-10-25 — Obsolete LiteLLM deployment templates retired
+
+- LiteLLM was removed from both production hosts in August 2026; Open WebUI calls ai-provider-service directly via `/v1`.
+- The coupled LiteLLM, Postgres, and old Open WebUI Quadlets plus config/env examples now live under `deploy/open-webui/archive/litellm-stack/` with non-installable `.example` suffixes. Archived Quadlets have no `[Install]` target. Do not restore them as a deployment path.
+- `deploy/open-webui/README.md` replaces the obsolete install/update commands with links to the maintained `wolfini_de_web` Open WebUI runbook. The shared network remains because the SearXNG example references it.
+- Validation: retirement/reference assertions and `git diff --check`; no service restart, provider/data change, or production deployment.

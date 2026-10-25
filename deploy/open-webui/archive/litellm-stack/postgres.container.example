@@ -1,10 +1,6 @@
-# Quadlet: PostgreSQL für LiteLLM-Spend-Tracking.
-#
-# Wird ausschließlich von LiteLLM intern genutzt (Spend-Logs, virtuelle Keys,
-# Budget-Limits). Kein externer Zugriff, kein Host-Port-Mapping.
-#
-# Datei nach /etc/containers/systemd/ kopieren, dann:
-#   systemctl daemon-reload && systemctl start postgres.service
+# ARCHIVED 2026-10-25: retired LiteLLM stack; historical reference only.
+# Not an installable Quadlet. Do not rename/copy to /etc/containers/systemd/.
+# See ../../README.md for the maintained Open WebUI deployment procedure.
 
 [Unit]
 Description=PostgreSQL (LiteLLM spend tracking)
@@ -34,6 +30,3 @@ LogDriver=journald
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=120
-
-[Install]
-WantedBy=default.target

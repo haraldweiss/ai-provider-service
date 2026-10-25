@@ -6,6 +6,11 @@ Multi-Provider AI-Gateway mit Fallback-Routing und Queue-Persistenz für lokale 
 (Bewerbungstracker, loganonymizer, …) eigene API-Key-Verwaltung + CORS-Handling
 zu geben, läuft dieser Service einmal zentral und alle Apps fragen ihn an.
 
+Open WebUI nutzt dieses Gateway direkt über die OpenAI-kompatible `/v1`-API.
+Der frühere LiteLLM-/Postgres-Stack ist stillgelegt; die zugehörigen Quadlets
+sind nur noch [nicht installierbare Archivbeispiele](deploy/open-webui/README.md).
+Die aktuelle Open-WebUI-Betriebsanleitung ist dort verlinkt.
+
 ## Features
 
 - **10 Provider** out of the box: Claude, Ollama, oMLX, OpenAI, Mammouth, Custom (OpenAI-kompatibel), opencode.ai (Zen), opencode.ai (Go), z.ai (GLM), Cline (api.cline.bot)

@@ -1,7 +1,6 @@
-# Quadlet: LiteLLM-Proxy. Übersetzt OpenAI-Wire (von Open WebUI) → natives Anthropic.
-#
-# Datei nach /etc/containers/systemd/ kopieren, dann:
-#   systemctl daemon-reload && systemctl start litellm.service
+# ARCHIVED 2026-10-25: retired LiteLLM stack; historical reference only.
+# Not an installable Quadlet. Do not rename/copy to /etc/containers/systemd/.
+# See ../../README.md for the maintained Open WebUI deployment procedure.
 
 [Unit]
 Description=LiteLLM proxy for Open WebUI
@@ -26,6 +25,3 @@ LogDriver=journald
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=180
-
-[Install]
-WantedBy=default.target

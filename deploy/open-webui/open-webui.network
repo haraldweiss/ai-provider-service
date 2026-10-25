@@ -1,4 +1,5 @@
-# Quadlet: gemeinsames Container-Netz für Open WebUI + LiteLLM.
+# Quadlet: historisches Open-WebUI-Netz; noch von deploy/searxng referenziert.
+# Die zugehörigen LiteLLM-Stack-Container sind archiviert; siehe README.md.
 # Container-Namen sind im Netz per DNS auflösbar.
 
 [Network]
