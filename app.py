@@ -5,29 +5,12 @@ import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-from sqlalchemy.exc import OperationalError
-
 from config import Config
-from database import db, configure_sqlite_engine
+from database import db, configure_sqlite_engine, sqlite_startup
 import worker
 from api.notifications import init_notification_service
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_create_all(db_) -> None:
-    """Run create_all() tolerating the concurrent-worker race on a fresh DB.
-
-    Multiple gunicorn workers can call create_all() simultaneously on a fresh
-    SQLite file; the loser sees 'table ... already exists'. The end state is
-    correct, so swallow that — but re-raise any other OperationalError.
-    """
-    try:
-        db_.create_all()
-    except OperationalError as e:
-        if 'already exists' not in str(e).lower():
-            raise
-        logger.info('db.create_all race tolerated (table already exists): %s', e)
 
 
 def _ensure_user_profiles_email_column(db_) -> None:
@@ -38,19 +21,16 @@ def _ensure_user_profiles_email_column(db_) -> None:
     OperationalError (no such column) and 500 the admin overview. SQLite can
     only ADD columns, so create_all() will not fix this — patch it explicitly.
     """
-    try:
-        inspector = db_.inspect(db_.engine)
-        if 'user_profiles' not in inspector.get_table_names():
-            return
-        existing = {c['name'] for c in inspector.get_columns('user_profiles')}
-        if 'email' not in existing:
-            with db_.engine.begin() as conn:
-                conn.execute(db_.text(
-                    'ALTER TABLE user_profiles ADD COLUMN email VARCHAR(255)'
-                ))
-            logger.info('schema self-heal: added user_profiles.email column')
-    except Exception as e:  # pragma: no cover - defensive, never fatal at boot
-        logger.warning('schema self-heal skipped for user_profiles.email: %s', e)
+    inspector = db_.inspect(db_.engine)
+    if 'user_profiles' not in inspector.get_table_names():
+        return
+    existing = {c['name'] for c in inspector.get_columns('user_profiles')}
+    if 'email' not in existing:
+        with db_.engine.begin() as conn:
+            conn.execute(db_.text(
+                'ALTER TABLE user_profiles ADD COLUMN email VARCHAR(255)'
+            ))
+        logger.info('schema self-heal: added user_profiles.email column')
 
 
 def create_app() -> Flask:
@@ -81,7 +61,7 @@ def create_app() -> Flask:
 
     db.init_app(app)
 
-    # Register the SQLite pragmas (WAL + busy_timeout) BEFORE the first
+    # Register connection-local SQLite pragmas BEFORE the first
     # connection is created: create_all()/FTS below already open pooled
     # connections, and a listener added later would only affect new ones.
     configure_sqlite_engine(app)
@@ -93,10 +73,11 @@ def create_app() -> Flask:
             UserProfile, UserAccessToken, EvalTask, EvalRun, EvalResult,
         )
         from storage.memory_models import MemoryNote, SummaryJob  # noqa: F401
-        _safe_create_all(db)
-        _ensure_user_profiles_email_column(db)
-        from storage.fts import ensure_fts
-        ensure_fts()
+        with sqlite_startup(db.engine):
+            db.create_all()
+            _ensure_user_profiles_email_column(db)
+            from storage.fts import ensure_fts
+            ensure_fts()
 
     # Blueprints
     from api.providers_api import providers_bp

@@ -42,7 +42,7 @@ class Config:
     # SQLite sees concurrent writers (gunicorn workers + the health/queue worker
     # + the eval run thread): without a busy timeout the loser of a write race
     # drops its row with "database is locked". WAL + the 30 s busy timeout are
-    # applied per connection by database.configure_sqlite_engine().
+    # configured by database.configure_sqlite_engine()/sqlite_startup().
     if DATABASE_URL.startswith('sqlite'):
         SQLALCHEMY_ENGINE_OPTIONS = {
             'pool_pre_ping': True,
