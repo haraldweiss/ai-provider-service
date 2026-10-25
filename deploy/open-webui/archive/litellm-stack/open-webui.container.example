@@ -1,7 +1,6 @@
-# Quadlet: Open WebUI. An 127.0.0.1:3000 gebunden, Apache vorgeschaltet.
-#
-# Datei nach /etc/containers/systemd/ kopieren, dann:
-#   systemctl daemon-reload && systemctl start open-webui.service
+# ARCHIVED 2026-10-25: retired LiteLLM stack; historical reference only.
+# Not an installable Quadlet. Do not rename/copy to /etc/containers/systemd/.
+# See ../../README.md for the maintained Open WebUI deployment procedure.
 
 [Unit]
 Description=Open WebUI
@@ -45,6 +44,3 @@ LogDriver=journald
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=300
-
-[Install]
-WantedBy=default.target

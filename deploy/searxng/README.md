@@ -63,5 +63,7 @@ sudo systemctl restart searxng.service
 - Secret rotieren:
   `sudo sed -i "s/^  secret_key:.*/  secret_key: \"$(openssl rand -hex 32)\"/" /opt/searxng/settings.yml && sudo systemctl restart searxng.service`
 - Logs: `sudo journalctl -u searxng.service -f`.
-- Network: hängt im `open-webui.network` (gemeinsam mit open-webui + litellm),
-  damit der WebUI-Container searxng per DNS-Name auflösen kann.
+- Network: Dieses Quadlet-Beispiel referenziert weiterhin `open-webui.network`.
+  Der frühere LiteLLM-Stack ist [archiviert](../open-webui/README.md); die aktuelle
+  Open-WebUI-Installation nutzt `search-net`. Für den bestehenden Produktionsstack
+  die dort verlinkte Betriebsanleitung verwenden.

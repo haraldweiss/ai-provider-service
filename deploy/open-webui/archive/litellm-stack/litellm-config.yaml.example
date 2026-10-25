@@ -1,3 +1,6 @@
+# ARCHIVED: retired LiteLLM configuration; historical reference only.
+# Model IDs and settings below are historical, not current recommendations.
+
 # LiteLLM-Proxy-Konfiguration für Open WebUI.
 #
 # LiteLLM übersetzt OpenAI-kompatible Requests aus Open WebUI in die
