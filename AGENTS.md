@@ -305,6 +305,12 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-10-26 — Repository maintenance files
+
+- Imported the supplied security/community policies where applicable and added Dependabot configuration against the actual manifest paths. See README community links.
+- Validation: Dependabot JSON schema and manifest paths, actionlint for new workflows, and execution of each new workflow run step. No production deployment.
+
+
 ### 2026-10-25 — Serialize SQLite startup before connecting
 
 - CI exposed two cold-start races with the standard two Gunicorn workers:
