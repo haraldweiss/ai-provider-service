@@ -1352,3 +1352,8 @@ CLI:
   `requirements.txt` auf `>=50.0.0,<51.0` angehoben. Keine Code-Änderung
   nötig (Fernet-Nutzung in `storage/encryption.py` nicht betroffen).
   Deployed auf oracle-vm (Image `localhost/ai-provider:612f4af`).
+
+
+## Community and maintenance
+
+[Security policy](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Dependency updates](.github/dependabot.yml).
