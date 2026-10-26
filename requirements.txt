@@ -13,6 +13,6 @@ trafilatura>=2.0.0,<3.0
 # Optional OpenTelemetry tracing (Arize Phoenix). Disabled unless
 # OTEL_EXPORTER_OTLP_ENDPOINT is set — see observability/tracing.py.
 opentelemetry-api>=1.30.0,<2.0
-opentelemetry-sdk>=1.30.0,<2.0
+opentelemetry-sdk>=1.45.1,<2.0
 opentelemetry-exporter-otlp-proto-http>=1.30.0,<2.0
 opentelemetry-instrumentation-flask>=0.51b0,<1.0
