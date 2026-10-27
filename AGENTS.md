@@ -2659,4 +2659,4 @@ workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.
 - Consolidates Dependabot #33–#43 after adjacent requirement/workflow edits conflicted with the checkout update #32. Updates the provider SDKs, Gunicorn, SQLAlchemy and compatible patch/minor dependencies; setup-python uses v7.
 - Python 3.11+ is required by SQLAlchemy 2.1; Docker/CI remain Python 3.12.
 - Validation: 616 tests passed, 85.05% coverage; actual OpenAI 3.39.0 and Anthropic 2.3.0 clients exercised through synthetic HTTP transports; Gunicorn 26.2 gthread configuration passed. No live provider credentials or production deployment.
-- Sibling Bewerbungstracker maintenance keeps bcrypt 5 and Jest updates separate pending compatibility fixes.
+- Merged maintenance: [ai-provider-service #44](https://github.com/haraldweiss/ai-provider-service/pull/44); sibling [Bewerbungstracker #68](https://github.com/haraldweiss/Bewerbungstracker/pull/68) keeps bcrypt 5 and Jest updates separate pending compatibility fixes.
