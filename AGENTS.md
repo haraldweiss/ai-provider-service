@@ -23,7 +23,7 @@ If `user.email` is unset, empty, or contains `@anthropic` / `@example.com` — *
 - Per-user config with Fernet-encrypted API keys, automatic fallback, SQLite-backed queue for offline resilience
 - Multi-Mac Ollama pool mode with predictive per-model routing
 - Deployed as a Docker container (`ai-provider`) on **oracle-vm** (Oracle Cloud, 92.5.18.29); three local Macs serve Ollama via reverse-SSH tunnels (the IONOS VPS is retired — see §3.3/§6)
-- **Python 3.9+** (Flask, SQLAlchemy, Flask-CORS), SQLite, gunicorn + systemd
+- **Python 3.11+** (Flask, SQLAlchemy, Flask-CORS), SQLite, gunicorn + systemd
 
 ---
 
@@ -2652,3 +2652,11 @@ workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.
 - The coupled LiteLLM, Postgres, and old Open WebUI Quadlets plus config/env examples now live under `deploy/open-webui/archive/litellm-stack/` with non-installable `.example` suffixes. Archived Quadlets have no `[Install]` target. Do not restore them as a deployment path.
 - `deploy/open-webui/README.md` replaces the obsolete install/update commands with links to the maintained `wolfini_de_web` Open WebUI runbook. The shared network remains because the SearXNG example references it.
 - Validation: retirement/reference assertions and `git diff --check`; no service restart, provider/data change, or production deployment.
+
+
+### 2026-10-27 — Dependabot Python maintenance
+
+- Consolidates Dependabot #33–#43 after adjacent requirement/workflow edits conflicted with the checkout update #32. Updates the provider SDKs, Gunicorn, SQLAlchemy and compatible patch/minor dependencies; setup-python uses v7.
+- Python 3.11+ is required by SQLAlchemy 2.1; Docker/CI remain Python 3.12.
+- Validation: 616 tests passed, 85.05% coverage; actual OpenAI 3.39.0 and Anthropic 2.3.0 clients exercised through synthetic HTTP transports; Gunicorn 26.2 gthread configuration passed. No live provider credentials or production deployment.
+- Sibling Bewerbungstracker maintenance keeps bcrypt 5 and Jest updates separate pending compatibility fixes.

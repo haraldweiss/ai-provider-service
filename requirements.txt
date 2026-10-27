@@ -1,18 +1,18 @@
-Flask>=3.1.0,<4.0
-Flask-CORS>=6.0.0,<7.0
+Flask>=3.1.3,<4.0
+Flask-CORS>=6.0.5,<7.0
 Flask-SQLAlchemy>=3.1.1,<4.0
-SQLAlchemy>=2.0.36,<3.0
-cryptography>=50.0.0,<51.0
+SQLAlchemy>=2.1.6,<3.0
+cryptography>=50.0.2,<51.0
 requests>=2.34.0,<3.0
-anthropic>=0.40.0,<1.0
-openai>=1.55.3,<2.0
-python-dotenv>=1.2.0,<2.0
-gunicorn>=23.0.0,<24.0
-httpx>=0.27.0,<1.0
+anthropic>=2.2.0,<3.0
+openai>=3.37.0,<4.0
+python-dotenv>=1.2.4,<2.0
+gunicorn>=26.2.0,<27.0
+httpx>=0.28.1,<1.0
 trafilatura>=2.0.0,<3.0
 # Optional OpenTelemetry tracing (Arize Phoenix). Disabled unless
 # OTEL_EXPORTER_OTLP_ENDPOINT is set — see observability/tracing.py.
 opentelemetry-api>=1.30.0,<2.0
-opentelemetry-sdk>=1.30.0,<2.0
+opentelemetry-sdk>=1.45.1,<2.0
 opentelemetry-exporter-otlp-proto-http>=1.30.0,<2.0
 opentelemetry-instrumentation-flask>=0.51b0,<1.0

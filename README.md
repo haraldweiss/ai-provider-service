@@ -184,7 +184,7 @@ aufhebt, genügt `OPENCODE_ADVERTISE_FREE_MODELS=1`.
 
 ## Voraussetzungen
 
-- **Python 3.9+** (auf VPS aktuell 3.12 — Rocky 9 Standard-Repos)
+- **Python 3.11+** (auf VPS aktuell 3.12 — Rocky 9 Standard-Repos)
 - SQLite (im Standard-Library-Set)
 - Optional: Ollama lokal für Local-LLM-Provider
 
@@ -202,7 +202,7 @@ aufhebt, genügt `OPENCODE_ADVERTISE_FREE_MODELS=1`.
 git clone <this-repo>
 cd ai-provider-service
 
-python3.12 -m venv venv     # oder python3, mindestens 3.9
+python3.12 -m venv venv     # oder python3, mindestens 3.11
 . venv/bin/activate
 pip install -r requirements.txt
 
