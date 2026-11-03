@@ -305,6 +305,14 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-11-03 — Compatible Dependabot refresh
+
+- Combined Dependabot PRs #46–#53 on `codex/dependabot-20261103`: Requests 2.34.2, Anthropic 2.3.0, OpenAI 3.41.0, Trafilatura 2.3.1 and aligned OpenTelemetry 1.45.2 / Flask instrumentation 0.66b2 minimums. Existing upper major-version bounds retained.
+- Fresh isolated Python 3.11: **616 tests passed**, coverage **85.04%** (80% gate), `pip check` clean. All eight source PRs had green pytest and Docker build/boot/health CI; the combined PR must pass the same gates before merge/deploy.
+- GitHub reported **zero open Dependabot security alerts**. This is version maintenance, not a claim of vulnerability remediation.
+- Not deployed during preparation. Follow SHA-tagged `build.sh` and Compose recreate; preserve the root-owned env and verify the Bewerbungstracker gateway token without printing it. Sibling maintenance: `haraldweiss/Bewerbungstracker`, branch `codex/dependabot-compatible-20261103`.
+
+
 ### 2026-10-26 — Repository maintenance files
 
 - Imported the supplied security/community policies where applicable and added Dependabot configuration against the actual manifest paths. See README community links.
