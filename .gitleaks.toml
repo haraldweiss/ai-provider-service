@@ -1,0 +1,39 @@
+title = "Repository secrets, including credentials recorded by coding agents"
+[extend]
+useDefault = true
+
+[[rules]]
+id = "agent-shell-password"
+description = "Literal password stored in a shell command"
+regex = '''(?i)\b(?:PGPASSWORD|MYSQL_PWD|DB_PASSWORD|SSH_PASSWORD)\s*=\s*["']?([^\s"'`\\;]{3,})'''
+secretGroup = 1
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$''', '''^<[A-Z][A-Z0-9_]*>$''', '''(?i)^(?:test[-_].*|dummy[-_].*|example[-_].*|your[-_].*|password_here|changeme|REDACTED)$''']
+
+[[rules]]
+id = "agent-sshpass-password"
+description = "Literal password stored in an sshpass command"
+regex = '''\bsshpass\s+-p\s*["']?([^\s"'`\\;]{3,})'''
+secretGroup = 1
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$''', '''^<[A-Z][A-Z0-9_]*>$''', '''(?i)^(?:test[-_].*|dummy[-_].*|example[-_].*|your[-_].*|changeme|REDACTED)$''']
+
+[[rules]]
+id = "agent-mysql-password"
+description = "Literal password stored in a MySQL command"
+regex = '''\b(?:mysql|mariadb)\s+[^\r\n]*?\s(?:--password=|-p)["']?([^\s"'`\\;]{3,})'''
+secretGroup = 1
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$''', '''^<[A-Z][A-Z0-9_]*>$''', '''(?i)^(?:test[-_].*|dummy[-_].*|example[-_].*|your[-_].*|changeme|REDACTED)$''']
+
+[[rules]]
+id = "agent-bearer-literal"
+description = "Literal bearer credential, including inside agent settings"
+regex = '''(?i)Authorization\s*:\s*Bearer\s+([^\s"'`\\;,){}]{4,})'''
+secretGroup = 1
+[[rules.allowlists]]
+regexTarget = "secret"
+regexes = ['''^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$''', '''^<[A-Z][A-Z0-9_]*>$''', '''(?i)^(?:test(?:[-_].*)?|dummy(?:[-_].*)?|example(?:[-_].*)?|your[-_].*|changeme|REDACTED)$''']
