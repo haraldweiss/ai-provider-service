@@ -2668,3 +2668,14 @@ workspace models referencing `opencode/*` IDs still 403 — client-side cleanup.
 - Python 3.11+ is required by SQLAlchemy 2.1; Docker/CI remain Python 3.12.
 - Validation: 616 tests passed, 85.05% coverage; actual OpenAI 3.39.0 and Anthropic 2.3.0 clients exercised through synthetic HTTP transports; Gunicorn 26.2 gthread configuration passed. No live provider credentials or production deployment.
 - Merged maintenance: [ai-provider-service #44](https://github.com/haraldweiss/ai-provider-service/pull/44); sibling [Bewerbungstracker #68](https://github.com/haraldweiss/Bewerbungstracker/pull/68) keeps bcrypt 5 and Jest updates separate pending compatibility fixes.
+
+### Coding-agent credential safety (2026-11-09)
+
+Local Claude permission rules and saved agent transcripts may contain literal
+credentials. Keep them outside Git; shared `.claude/settings.json` must use
+variable references rather than secrets. `Secret safety` CI rejects tracked local
+agent state and scans introduced commits with Gitleaks, including documentation,
+example files, and password-bearing commands. Existing history was audited
+separately; this CI job is not a claim that historical credentials are safe.
+If a credential was committed, revoke or rotate it before considering the leak
+resolved. Do not print secret values in scan logs, reviews, or handoffs.
