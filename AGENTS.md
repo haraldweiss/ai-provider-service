@@ -2679,3 +2679,5 @@ example files, and password-bearing commands. Existing history was audited
 separately; this CI job is not a claim that historical credentials are safe.
 If a credential was committed, revoke or rotate it before considering the leak
 resolved. Do not print secret values in scan logs, reviews, or handoffs.
+
+Related secret-safety CI changes: [wolfini_de_web](https://github.com/haraldweiss/wolfini_de_web/pull/258), [Claude-KI-Usage-Tracker](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/pull/101), [ai-provider-service](https://github.com/haraldweiss/ai-provider-service/pull/55), [Bewerbungstracker](https://github.com/haraldweiss/Bewerbungstracker/pull/94).
