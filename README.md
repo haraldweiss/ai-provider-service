@@ -1358,6 +1358,12 @@ CLI:
 
 [Security policy](SECURITY.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Dependency updates](.github/dependabot.yml).
 
+The 10 November 2026 dependency refresh raises the compatible minimums to
+SQLAlchemy 2.1.8, OpenAI 3.46.0 and Anthropic 2.6.0, retaining each existing major
+upper bound. Python 3.12 verification passes all 616 tests with 85.05% coverage;
+CI also builds and boots the container and checks health/provider discovery.
+Repository dependency merges do not deploy the running gateway.
+
 ### Coding-agent credential safety (2026-11-09)
 
 Local Claude permission rules and saved agent transcripts may contain literal
