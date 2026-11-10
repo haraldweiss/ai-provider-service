@@ -2681,3 +2681,14 @@ If a credential was committed, revoke or rotate it before considering the leak
 resolved. Do not print secret values in scan logs, reviews, or handoffs.
 
 Related secret-safety CI changes: [wolfini_de_web](https://github.com/haraldweiss/wolfini_de_web/pull/258), [Claude-KI-Usage-Tracker](https://github.com/haraldweiss/Claude-KI-Usage-Tracker/pull/101), [ai-provider-service](https://github.com/haraldweiss/ai-provider-service/pull/55), [Bewerbungstracker](https://github.com/haraldweiss/Bewerbungstracker/pull/94).
+
+
+### 2026-11-10 — Compatible Dependabot requirements and checkout update
+
+- Merged checkout 7.0.1 (#56), SQLAlchemy >=2.1.8 (#57) and OpenAI >=3.46.0 (#58)
+  with independently reviewed diffs and successful exact-head CI. Anthropic
+  >=2.6.0 (#59) is reapplied on merged main after adjacent requirements edits
+  conflicted. Preserve the existing major-version upper bounds.
+- Combined Python 3.12 tests: 616 passed, 85.05% coverage (80% gate). Fresh PR CI
+  still verifies Docker build/start, /health and opencode provider discovery before
+  merge. No deployment or live provider requests.
