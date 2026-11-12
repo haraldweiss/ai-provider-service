@@ -316,6 +316,48 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-11-12 — Six-hour host provider documentation monitor
+
+- User requested regular server-side documentation checks to reduce surprise
+  provider failures. The old 06:30 UTC root cron ran `flask check-provider-docs`
+  in a container with **no sendmail**; its email helper swallowed delivery errors.
+  Host Postfix/Sendmail is available and active.
+- [PR #63](https://github.com/haraldweiss/ai-provider-service/pull/63) merged as
+  `592bd17` after [CI 43305003667](https://github.com/haraldweiss/ai-provider-service/actions/runs/43305003667)
+  passed pytest/coverage, Docker build/boot/health/providers smoke and secret
+  safety. Added `scripts/check_provider_docs.py`, cron/logrotate templates and
+  behavioral tests. Clean local suite: **652 passed, 85.38% coverage**; 48
+  focused tests, Ruff and Python 3.9 syntax passed. Code/Python reviews approved.
+- **Installed on oracle-vm:** root-owned 0644
+  `/usr/local/libexec/ai-provider/check_provider_docs.py` byte-matches committed
+  source. `/etc/cron.d/ai-provider-docs` runs at
+  **00:17/06:17/12:17/18:17 UTC** with `timeout 600` and `flock`.
+  Root state `/var/lib/ai-provider-monitor/provider-docs.json` is 0600 in a
+  0700 directory; log `/var/log/ai-provider-docs-check.log` is 0640, daily/14
+  rotations. Logrotate debug validation and host Python compilation passed.
+- Removed exactly one legacy `check-provider-docs` root-crontab entry after
+  healthy seeding. All other entries preserved byte-for-byte. Secure backup:
+  `/root/root-crontab-before-provider-docs-20261112T205754Z`.
+  Standalone OpenRouter catalog/free-model monitor remains daily at 02:00 UTC.
+- Two runs of the exact cron command returned 0: **13 sources, zero errors,
+  notifications=0**. Covers OpenCode Zen/Go/inference, Cline auth/models,
+  OpenAI, Claude, OpenRouter auth/client, Z.AI, Ollama API/Cloud auth and oMLX.
+  Public sources only: no keys, inference or routing changes. Mammouth/custom
+  still require a verified API-docs URL. HTML inline prose and soft-wrapped
+  Markdown requirements are preserved; expected API text/nonempty rules and the
+  actual OpenCode pricing parser act as canaries. Responses have bounded reads.
+- Alerts use checked host Sendmail on rule changes, new source/collector
+  problems and recovery; unchanged failures are quiet. Retain last good rules
+  on failures. Do not advance changed state if notification submission fails.
+  Malformed saved state alerts and is preserved for inspection. First healthy
+  run seeds silently; no test email was sent. Mail submission is tested with
+  doubles; real host transport was checked active without sending a message.
+- Host utility installation only; gateway remains image `f6b42a4` (same image ID),
+  healthy with zero restarts and HTTP 200. No image rebuild, container restart,
+  provider/env edit or persistent container-source patch. Reinstall the host
+  script when updating it. Monitoring gives early warning, not guaranteed
+  availability or automatic repairs.
+
 ### 2026-11-12 — OpenCode Console docs scraper repair
 
 - OpenCode moved Zen/Go documentation to `/docs/console/models/` and
