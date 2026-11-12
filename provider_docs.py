@@ -30,8 +30,8 @@ NOTIFY_EMAIL = 'harald.weiss@wolfinisoftware.de'
 
 # Documentation pages that define how our provider clients must behave.
 PROVIDER_DOC_SOURCES = [
-    {'id': 'opencode-go', 'label': 'OpenCode Go', 'url': 'https://opencode.ai/docs/go/'},
-    {'id': 'opencode-zen', 'label': 'OpenCode Zen', 'url': 'https://opencode.ai/docs/zen/'},
+    {'id': 'opencode-go', 'label': 'OpenCode Go', 'url': 'https://opencode.ai/docs/console/go/'},
+    {'id': 'opencode-zen', 'label': 'OpenCode Console models', 'url': 'https://opencode.ai/docs/console/models/'},
     {'id': 'cline-auth', 'label': 'Cline API authentication',
      'url': 'https://docs.cline.bot/api/authentication'},
     {'id': 'cline-models', 'label': 'Cline API models',
@@ -49,6 +49,9 @@ RULE_WATCH_TERMS = (
     'x-task-id',
     'session id',
     'session-id',
+    'session header',
+    'session information',
+    'free-tier',
     'free tier',
     'free model',
     'free usage',
@@ -72,9 +75,17 @@ def fetch_text(url: str, timeout: int = 30) -> str:
 
 
 def html_to_text(markup: str) -> str:
-    """Crude HTML → text conversion; enough to diff documentation prose."""
+    """Keep prose blocks intact across inline links, code and emphasis."""
     text = re.sub(r'(?is)<(script|style|svg|noscript)[^>]*>.*?</\1>', ' ', markup)
-    text = re.sub(r'(?s)<[^>]+>', '\n', text)
+    # Source formatting whitespace is not a semantic line break. Only block
+    # boundaries separate rules; inline tags must preserve the whole sentence.
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(
+        r'(?i)</?(?:p|div|li|ul|ol|h[1-6]|tr|td|th|table|section|article|'
+        r'header|footer|nav|main|blockquote|pre|br|hr)\b[^>]*>',
+        '\n', text,
+    )
+    text = re.sub(r'<[^>]+>', '', text)
     text = html.unescape(text)
     lines = [re.sub(r'\s+', ' ', line).strip() for line in text.splitlines()]
     return '\n'.join(line for line in lines if line)

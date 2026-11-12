@@ -174,12 +174,15 @@ All provider clients must send app identification headers where the provider sup
 3. **OpenRouter** (`providers/openrouter.py`): Should include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` for app attribution.
 4. **OpenAI** (`providers/openai_client.py`): May include `X-Client-Request-Id` for request tracking (optional).
 
-**Console pricing scraper (2026-11-12):** Pricing sync reads
-`https://opencode.ai/docs/console/models/` and requires actual model IDs from a
-nonempty endpoint table. Ignore `<del>` old prices and reject incomplete/unreadable
-rows before overwriting the cache. Do not inject historical free-model IDs.
-Context tiers still collapse to one rate per model (last listed tier), pending
-context-aware pricing support.
+**Console docs scraper (2026-11-12):** Canonical sources are
+`https://opencode.ai/docs/console/go/` and
+`https://opencode.ai/docs/console/models/`; keep the existing `opencode-zen`
+snapshot ID for baseline continuity. Rule extraction must retain complete prose
+across inline links/code, including `free-tier` and native session-header rules.
+Pricing sync requires actual model IDs from a nonempty endpoint table, ignores `<del>`
+old prices, and must reject incomplete/unreadable rows before overwriting the
+cache. Do not inject historical free-model IDs. Context tiers still collapse to
+one rate per model (last listed tier), pending context-aware pricing support.
 
 **Keeping these rules current:** `flask check-provider-docs` (daily cron, §6) fetches the OpenCode/Cline docs that define these headers, snapshots the rule-relevant lines and emails on change — when it fires, re-check `providers/opencode.py` / `providers/cline.py` and this table. OpenCode's free tier was live-tested on 2026-09-23 against all 9 discovered free models and is still client-locked (`403 FreeTierError`) even with an `opencode/*` User-Agent, so free models stay hidden; set `OPENCODE_ADVERTISE_FREE_MODELS=1` only if the upstream lock lifts.
 
