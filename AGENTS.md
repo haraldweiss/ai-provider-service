@@ -342,12 +342,26 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   `tests/test_worker.py::test_start_and_stop` (thread alive after 3s),
   85.25% coverage; this known workspace/timing-sensitive test was not changed.
   Ruff only reports the existing unrelated unused `catalog` in the Cline CLI.
-- Committed on `codex/opencode-docs-scraper-20261112`; **not pushed or deployed**.
-  No live snapshots/overrides were written and no notifications were sent by
-  verification. Before merge/deploy, run the normal pytest and Docker
-  build/boot/health CI gates, then follow SHA-tagged `build.sh` and Compose
-  recreate. `skill_manage view` is unavailable; used the supplied catalog and
-  project `ai-provider-workflow` skill.
+- **Deployed 2026-11-12** at the user's request. [PR #61](https://github.com/haraldweiss/ai-provider-service/pull/61)
+  merged as `f6b42a4` after [CI 43300863017](https://github.com/haraldweiss/ai-provider-service/actions/runs/43300863017)
+  passed pytest/coverage and Docker build/boot/health/providers smoke; secret
+  safety also passed. Server clean main fast-forwarded from `23a137a`, built
+  with `sudo bash build.sh f6b42a4`, and recreated using
+  `sudo docker compose up -d --force-recreate --no-build ai-provider`.
+  Runtime image `localhost/ai-provider:f6b42a4` (also `:latest`), image ID
+  `sha256:df0efbce9845ccde111fcf49391b6500e6146d7e1e613273b623a5cdb459cfd5`.
+  Previous `localhost/ai-provider:23a137a` remains available for rollback.
+- Post-deploy: container healthy, zero restarts, local/authenticated/public
+  HTTPS checks HTTP 200, `opencode_go` healthy/listed; DB quick-check OK and
+  provider/memory/summary tables readable. All 92 live prices and all four
+  docs sources fetched successfully; discounted rates, actual Claude IDs and
+  complete session/free-tier prose verified. Running `cli.py` and
+  `provider_docs.py` hashes match the committed sources; no startup traceback
+  markers. Apache/bridge active, env remains root:root 0600. No provider/env
+  edits, persistent snapshot/price updates, or notifications during verification.
+  Docs verification used a temporary snapshot. `skill_manage view` is
+  unavailable; used the supplied catalog and project `ai-provider-workflow`
+  skill.
 
 ### 2026-11-03 — Compatible Dependabot refresh
 

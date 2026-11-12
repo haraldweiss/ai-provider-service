@@ -164,6 +164,9 @@ kontextabhängige Preisberechnung. Die Regressionfixture
 `tests/fixtures/opencode_console_models.html` enthält die Endpoint- und
 Preistabellen vom 2026-11-12; Tests prüfen auch, dass eine fehlende ID-Tabelle
 oder teilweise unlesbare Preise die vorhandene Override-Datei erhalten.
+Die Console-Scraper sind seit 2026-11-12 mit Image `f6b42a4` auf oracle-vm
+aktiv ([PR #61](https://github.com/haraldweiss/ai-provider-service/pull/61));
+live geprüft: 92 Preis-IDs und alle vier Doku-Quellen, Gateway gesund.
 
 ### OpenCode Free-Tier (Stand 2026-09-23)
 
