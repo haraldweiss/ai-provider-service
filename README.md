@@ -162,6 +162,27 @@ Gateway-Neustart oder Image-Rebuild ist zur Installation nötig. Host benötigt
 Python 3.9+, Docker und Sendmail. `--snapshot`, `--recipient` und `--container`
 überschreiben die Defaults.
 
+Installation auf oracle-vm aus dem committed Checkout:
+
+```bash
+sudo install -d -m 0755 /usr/local/libexec/ai-provider
+sudo install -d -m 0700 /var/lib/ai-provider-monitor
+sudo install -o root -g root -m 0644 scripts/check_provider_docs.py /usr/local/libexec/ai-provider/check_provider_docs.py
+sudo install -o root -g root -m 0644 deploy/ai-provider-docs.logrotate /etc/logrotate.d/ai-provider-docs
+sudo /usr/bin/timeout 600 /usr/bin/flock -n /run/lock/ai-provider-docs.lock /usr/bin/python3 /usr/local/libexec/ai-provider/check_provider_docs.py
+# Nach erfolgreichem Erstlauf: Root-Crontab sicher sichern und nur den alten
+# aktiven check-provider-docs-Eintrag entfernen; andere Jobs erhalten.
+sudo install -o root -g root -m 0644 deploy/ai-provider-docs.cron /etc/cron.d/ai-provider-docs
+sudo logrotate --debug /etc/logrotate.d/ai-provider-docs
+```
+
+Zeitplan: **00:17, 06:17, 12:17, 18:17 UTC**, mit `timeout 600` und
+nicht überlappendem `flock`. Log: `/var/log/ai-provider-docs-check.log`,
+14 tägliche Rotationen (0640). Snapshot:
+`/var/lib/ai-provider-monitor/provider-docs.json` (0600 in root-only Verzeichnis).
+Exit 0 = gesund; Exit 1 = Problem/fehlgeschlagener Check. Der eigenständige
+OpenRouter-Modellmonitor um 02:00 UTC bleibt zusätzlich aktiv.
+
 Der Legacy-CLI bleibt für manuelle OpenCode/Cline-Snapshots verfügbar
 (`PROVIDER_DOCS_SNAPSHOT`, Default neben `VAULT_PATH`):
 ```bash
