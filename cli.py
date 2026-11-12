@@ -6,11 +6,13 @@ Commands:
   grants-bootstrap: insert one active grant per existing (user_id, provider_id)
     in provider_configs where provider_id is NOT in Config.UNGATED_PROVIDERS.
     Idempotent.
-  update-opencode-pricing: fetch opencode.ai Zen rate card and persist as JSON.
+  update-opencode-pricing: fetch OpenCode Console rate card and persist as JSON.
 """
 
 from __future__ import annotations
 import json
+import math
+from html import unescape
 import os
 import re
 import tempfile
@@ -54,76 +56,86 @@ def grants_bootstrap_command():
     click.echo(f'Created {n} new grants.')
 
 
-OPencode_PRICING_URL = 'https://opencode.ai/docs/zen/'
+def _opencode_cell_text(markup: str) -> str:
+    """Read the current visible value, excluding crossed-out old prices."""
+    markup = re.sub(r'(?is)<del\b[^>]*>.*?</del>', '', markup)
+    return ' '.join(unescape(re.sub(r'<[^>]+>', '', markup)).split())
+
+
+def _opencode_table_rows(table: str) -> list[list[str]]:
+    return [
+        [_opencode_cell_text(cell) for cell in re.findall(
+            r'<td\b[^>]*>(.*?)</td>', row, re.DOTALL | re.IGNORECASE
+        )]
+        for row in re.findall(r'<tr\b[^>]*>.*?</tr>', table, re.DOTALL | re.IGNORECASE)
+        if re.search(r'<td\b', row, re.IGNORECASE)
+    ]
+
+
+OPencode_PRICING_URL = 'https://opencode.ai/docs/console/models/'
 
 
 def _parse_opencode_pricing(html: str) -> dict[str, dict[str, float]]:
-    """Parse the Zen pricing table from opencode.ai docs HTML.
+    """Read Console rates using the endpoint table's actual model IDs.
 
-    Returns dict keyed by 'opencode::{model_id}' with {'in': X, 'out': Y}.
+    Context tiers still share one override; the last listed tier wins, as in
+    the legacy scraper. Reject partial extraction before replacing the cache.
     """
+    tables = []
+    model_ids = {}
+    for table in re.findall(r'<table\b[^>]*>.*?</table>', html, re.DOTALL | re.IGNORECASE):
+        headers = [
+            _opencode_cell_text(cell).lower()
+            for cell in re.findall(r'<th\b[^>]*>(.*?)</th>', table, re.DOTALL | re.IGNORECASE)
+        ]
+        rows = _opencode_table_rows(table)
+        tables.append((headers, rows))
+        if 'model' in headers and 'model id' in headers:
+            for row in rows:
+                if len(row) != len(headers):
+                    raise ValueError('Incomplete model ID table in OpenCode Console docs')
+                model_ids[row[headers.index('model')]] = row[headers.index('model id')]
+
+    for headers, rows in tables:
+        if 'input' in headers and 'output' in headers:
+            break
+    else:
+        raise ValueError('Pricing table not found in OpenCode Console docs')
+
+    if not model_ids:
+        raise ValueError('Model ID table not found or empty in OpenCode Console docs')
+
     models_list = {}
-    # Find the pricing table: the table whose header contains Input/Output columns.
-    # There are multiple tables in the Pricing section; the first is the endpoints
-    # table (Model ID, Endpoint, SDK Package). We want the second one (pricing).
-    table_match = re.search(
-        r'<table[^>]*>(?:(?!</table>).)*?<th[^>]*>Input</th>.*?<th[^>]*>Output</th>.*?</table>',
-        html, re.DOTALL | re.IGNORECASE
-    )
-    if not table_match:
-        raise ValueError('Pricing table not found in opencode.ai Zen docs')
-
-    table_html = table_match.group(0)
-    rows = re.findall(
-        r'<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>'
-        r'(?:Free|\$?([\d.]+))</td>\s*<td[^>]*>'
-        r'(?:Free|\$?([\d.]+))</td>',
-        table_html, re.DOTALL
-    )
-
-    for match in rows:
-        model_name = match[0].strip()
-        inp_str = match[1] if match[1] else '0.0'
-        out_str = match[2] if match[2] else '0.0'
-        model_id = _model_name_to_id(model_name)
-        inp = float(inp_str)
-        out = float(out_str)
-        models_list[f'opencode::{model_id}'] = {'in': inp, 'out': out}
+    for row in rows:
+        if len(row) != len(headers):
+            raise ValueError('Incomplete pricing row in OpenCode Console docs')
+        name = row[headers.index('model') if 'model' in headers else 0]
+        base_name = re.sub(r'\s*\([^)]*\)\s*', '', name).strip()
+        model_id = model_ids.get(base_name)
+        if not model_id:
+            raise ValueError(f'Pricing model has no endpoint ID: {name!r}')
+        rates = {}
+        for column, key in (('input', 'in'), ('output', 'out')):
+            cell = row[headers.index(column)]
+            if cell.lower() == 'free':
+                rates[key] = 0.0
+            elif re.fullmatch(r'\$?(?:\d+(?:\.\d+)?|\.\d+)', cell):
+                rate = float(cell.lstrip('$'))
+                if not math.isfinite(rate):
+                    raise ValueError(f'Non-finite pricing rate for {name!r}')
+                rates[key] = rate
+            else:
+                raise ValueError(f'Pricing table contains no parseable {column} rate for {name!r}')
+        models_list[f'opencode::{model_id}'] = rates
 
     if not models_list:
         raise ValueError('Pricing table contains no parseable model rates')
-
-    # Ensure free models (re.findall may not match "Free" with $)
-    free_ids = [
-        'big-pickle', 'deepseek-v4-flash-free', 'mimo-v2.5-free',
-        'nemotron-3-super-free', 'qwen3.6-plus-free', 'minimax-m2.5-free',
-    ]
-    for fid in free_ids:
-        key = f'opencode::{fid}'
-        if key not in models_list:
-            models_list[key] = {'in': 0.0, 'out': 0.0}
-
     return models_list
 
 
-def _model_name_to_id(name: str) -> str:
-    """Convert display name like 'GPT 5.4 Mini' to model id 'gpt-5.4-mini'."""
-    # Handle context-length variants: keep only the base name
-    name = re.sub(r'\s*\([^)]*\)\s*', '', name)
-    name = name.strip().lower()
-    name = re.sub(r'[^\w\s.-]', '', name)
-    name = re.sub(r'\s+', '-', name)
-    name = re.sub(r'-+', '-', name)
-    # Specific overrides for names that don't match model IDs
-    overrides = {
-        'qwen3.7-max': 'qwen3.7-max',
-        'claude-haiku-3.5': 'claude-3-5-haiku',
-    }
-    return overrides.get(name, name)
-
 
 def fetch_opencode_pricing() -> dict[str, dict[str, float]]:
-    """Fetch and parse the opencode.ai Zen pricing page."""
+    """Fetch and parse the OpenCode Console pricing page."""
     req = urllib.request.Request(
         OPencode_PRICING_URL,
         headers={'User-Agent': 'ai-provider-service/1.0 (pricing sync)'},
@@ -155,9 +167,9 @@ def save_opencode_pricing(data: dict[str, dict[str, float]]) -> Path:
 
 @click.command('update-opencode-pricing')
 def update_opencode_pricing_command():
-    """Fetch opencode.ai Zen rate card and persist as JSON override."""
+    """Fetch OpenCode Console rate card and persist as JSON override."""
     try:
-        click.echo('Fetching opencode.ai Zen pricing ...')
+        click.echo('Fetching OpenCode Console pricing ...')
         data = fetch_opencode_pricing()
         path = save_opencode_pricing(data)
         click.echo(f'{len(data)} models written to {path}')

@@ -145,6 +145,15 @@ docker exec ai-provider flask check-provider-docs --no-notify   # report only
 Bei Änderung: `providers/opencode.py` / `providers/cline.py` und
 `AGENTS.md` §3.12 anpassen.
 
+`flask update-opencode-pricing` liest die Console-Preistabelle unter
+`https://opencode.ai/docs/console/models/` und schreibt `pricing_overrides.json`.
+Durchgestrichene Altpreise (`<del>`) werden ignoriert; Modell-IDs kommen aus der
+Endpoint-Tabelle. Nur tatsächlich aufgeführte Free-Modelle werden übernommen.
+Unvollständige oder unlesbare Preiszeilen brechen den Sync ab und erhalten die
+vorhandene Override-Datei. Kontextstaffeln teilen weiterhin einen Eintrag pro
+Modell; wie bisher gilt die zuletzt aufgeführte Staffel. Dies ist keine
+kontextabhängige Preisberechnung.
+
 ### OpenCode Free-Tier (Stand 2026-09-23)
 
 opencode.ai liefert die Free-Modelle nur noch an die OpenCode-App
