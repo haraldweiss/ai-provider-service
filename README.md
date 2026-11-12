@@ -160,7 +160,10 @@ Endpoint-Tabelle. Nur tatsächlich aufgeführte Free-Modelle werden übernommen.
 Unvollständige oder unlesbare Preiszeilen brechen den Sync ab und erhalten die
 vorhandene Override-Datei. Kontextstaffeln teilen weiterhin einen Eintrag pro
 Modell; wie bisher gilt die zuletzt aufgeführte Staffel. Dies ist keine
-kontextabhängige Preisberechnung.
+kontextabhängige Preisberechnung. Die Regressionfixture
+`tests/fixtures/opencode_console_models.html` enthält die Endpoint- und
+Preistabellen vom 2026-11-12; Tests prüfen auch, dass eine fehlende ID-Tabelle
+oder teilweise unlesbare Preise die vorhandene Override-Datei erhalten.
 
 ### OpenCode Free-Tier (Stand 2026-09-23)
 

@@ -315,6 +315,40 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-11-12 — OpenCode Console docs scraper repair
+
+- OpenCode moved Zen/Go documentation to `/docs/console/models/` and
+  `/docs/console/go/`; the old URLs still redirect. The current docs retain
+  the own-User-Agent and stable conversation-session requirements and explicitly
+  restrict free-tier chat models to OpenCode. No provider authentication or
+  endpoint configuration was changed.
+- Pricing regex silently skipped six discounted rows containing `<del>`
+  old prices; display-name guessing produced wrong Claude IDs and historical
+  free IDs were injected. The scraper now reads current cell values, requires
+  a nonempty endpoint-ID table, and rejects incomplete/unreadable rows before
+  replacing the override. No guessed IDs or injected free IDs remain.
+  Live HTML has 109 pricing rows / 92 distinct model IDs; all 92 match the
+  endpoint table with zero missing/extra IDs. Context-tier flattening remains
+  the documented last-listed-tier behavior.
+- Docs watcher preserves complete prose across inline links/code and watches
+  hyphenated free-tier and native session-header rules. Keep snapshot ID
+  `opencode-zen` for continuity. The first deployed run may notify once because
+  full sentences now replace the old fragments.
+- Verified: 26 focused tests; live read-only fetches of both canonical pages;
+  code/Python reviews passed. Clean archived checkout of committed fixes:
+  **630 passed, 85.23% coverage**, Python 3.14, using a temporary pytest-cov
+  installation. Fresh unchanged `7a0c7b4` baseline: 616 passed. Existing local
+  workspace twice gave 629 passed plus
+  `tests/test_worker.py::test_start_and_stop` (thread alive after 3s),
+  85.25% coverage; this known workspace/timing-sensitive test was not changed.
+  Ruff only reports the existing unrelated unused `catalog` in the Cline CLI.
+- Committed on `codex/opencode-docs-scraper-20261112`; **not pushed or deployed**.
+  No live snapshots/overrides were written and no notifications were sent by
+  verification. Before merge/deploy, run the normal pytest and Docker
+  build/boot/health CI gates, then follow SHA-tagged `build.sh` and Compose
+  recreate. `skill_manage view` is unavailable; used the supplied catalog and
+  project `ai-provider-workflow` skill.
+
 ### 2026-11-03 — Compatible Dependabot refresh
 
 - Combined Dependabot PRs #46–#53 on `codex/dependabot-20261103`: Requests 2.34.2, Anthropic 2.3.0, OpenAI 3.41.0, Trafilatura 2.3.1 and aligned OpenTelemetry 1.45.2 / Flask instrumentation 0.66b2 minimums. Existing upper major-version bounds retained.
