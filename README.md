@@ -176,6 +176,11 @@ sudo install -o root -g root -m 0644 deploy/ai-provider-docs.cron /etc/cron.d/ai
 sudo logrotate --debug /etc/logrotate.d/ai-provider-docs
 ```
 
+**Installiert und geprüft am 2026-11-12** ([PR #63](https://github.com/haraldweiss/ai-provider-service/pull/63)):
+Erstlauf und Wiederholung unter dem echten Cron-Kommando: 13 Quellen,
+keine Fehler, keine Mail. Der alte tägliche Root-Cron wurde gesichert und
+ersetzt; alle anderen Jobs sind erhalten. Gateway-Image `f6b42a4` unverändert.
+
 Zeitplan: **00:17, 06:17, 12:17, 18:17 UTC**, mit `timeout 600` und
 nicht überlappendem `flock`. Log: `/var/log/ai-provider-docs-check.log`,
 14 tägliche Rotationen (0640). Snapshot:
