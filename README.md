@@ -132,7 +132,7 @@ Wenn du einen neuen Provider integrierst:
 
 Provider ändern ihre Client-Regeln (Pflicht-Header, Free-Tier-Policy,
 Modell-Endpoints) ohne Ankündigung. `provider_docs.py` fetcht die
-regel-definierenden Doku-Seiten (OpenCode Go/Zen, Cline Auth/Models),
+regel-definierenden Doku-Seiten (OpenCode Console Go/Models, Cline Auth/Models),
 snapshotet die regel-relevanten Zeilen (`x-opencode-session`, `HTTP-Referer`,
 `X-Task-ID`, `free model`, …) und mailt bei jeder Änderung an
 `PROVIDER_DOCS_NOTIFY_EMAIL`. Snapshot:
@@ -144,6 +144,26 @@ docker exec ai-provider flask check-provider-docs --no-notify   # report only
 
 Bei Änderung: `providers/opencode.py` / `providers/cline.py` und
 `AGENTS.md` §3.12 anpassen.
+
+Seit dem Console-Relaunch nutzt der Watcher direkt
+`https://opencode.ai/docs/console/go/` und
+`https://opencode.ai/docs/console/models/`. Inline-Links und Code-Tags bleiben
+im Satz erhalten; auch `free-tier` und native Session-Header werden erfasst.
+Die Snapshot-ID `opencode-zen` bleibt für vorhandene Baselines erhalten.
+Beim ersten Lauf nach diesem Update ist durch die vollständigeren Sätze eine
+Änderungsmeldung zu erwarten.
+
+`flask update-opencode-pricing` liest die Console-Preistabelle unter
+`https://opencode.ai/docs/console/models/` und schreibt `pricing_overrides.json`.
+Durchgestrichene Altpreise (`<del>`) werden ignoriert; Modell-IDs kommen aus der
+Endpoint-Tabelle. Nur tatsächlich aufgeführte Free-Modelle werden übernommen.
+Unvollständige oder unlesbare Preiszeilen brechen den Sync ab und erhalten die
+vorhandene Override-Datei. Kontextstaffeln teilen weiterhin einen Eintrag pro
+Modell; wie bisher gilt die zuletzt aufgeführte Staffel. Dies ist keine
+kontextabhängige Preisberechnung. Die Regressionfixture
+`tests/fixtures/opencode_console_models.html` enthält die Endpoint- und
+Preistabellen vom 2026-11-12; Tests prüfen auch, dass eine fehlende ID-Tabelle
+oder teilweise unlesbare Preise die vorhandene Override-Datei erhalten.
 
 ### OpenCode Free-Tier (Stand 2026-09-23)
 

@@ -23,6 +23,45 @@ def test_html_to_text_strips_markup_and_scripts():
     assert '<h1>' not in text
 
 
+def test_rule_extraction_keeps_inline_session_and_free_tier_context():
+    markup = """<main>
+    <ol><li>Identify itself with its own user agent, such as
+    <code>my-coding-agent/1.0</code>, rather than a generic SDK or HTTP-library name.</li>
+    <li>Send a stable session ID in <code>x-opencode-session</code>
+    for each conversation so we can optimize routing and prompt caching.</li></ol>
+    <p>Free-tier chat models require <a href="/docs/">OpenCode</a>;
+    use paid models or <a href="/docs/console/go/">Go</a> from other clients.</p>
+    <table><tr><td>Codex</td><td>Go recognizes its native session header.
+    Some versions and proxy setups still omit it; preserve the session header
+    when forwarding requests.</td></tr></table>
+    </main>"""
+    rules = pd.extract_rule_lines(pd.html_to_text(markup))
+    assert rules == [
+        'Identify itself with its own user agent, such as my-coding-agent/1.0, '
+        'rather than a generic SDK or HTTP-library name.',
+        'Send a stable session ID in x-opencode-session for each conversation '
+        'so we can optimize routing and prompt caching.',
+        'Free-tier chat models require OpenCode; use paid models or Go from other clients.',
+        'Go recognizes its native session header. Some versions and proxy setups '
+        'still omit it; preserve the session header when forwarding requests.',
+    ]
+
+
+def test_run_check_detects_inline_rule_change(snapshot_path):
+    pages = _pages()
+    pages[GO_URL] = '<p>Send <code>x-opencode-session</code> per conversation.</p>'
+    pd.run_check(fetcher=_fetcher(pages))
+    pages[GO_URL] = '<p>Send <code>x-opencode-session</code> per request.</p>'
+    result = pd.run_check(fetcher=_fetcher(pages))
+    assert result['changed'] is True
+    assert result['diff']['opencode-go']['added'] == [
+        'Send x-opencode-session per request.',
+    ]
+    assert result['diff']['opencode-go']['removed'] == [
+        'Send x-opencode-session per conversation.',
+    ]
+
+
 def test_extract_rule_lines_filters_by_watch_terms():
     text = (
         'Some unrelated sentence about pricing.\n'

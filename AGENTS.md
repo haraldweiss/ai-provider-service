@@ -174,6 +174,16 @@ All provider clients must send app identification headers where the provider sup
 3. **OpenRouter** (`providers/openrouter.py`): Should include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` for app attribution.
 4. **OpenAI** (`providers/openai_client.py`): May include `X-Client-Request-Id` for request tracking (optional).
 
+**Console docs scraper (2026-11-12):** Canonical sources are
+`https://opencode.ai/docs/console/go/` and
+`https://opencode.ai/docs/console/models/`; keep the existing `opencode-zen`
+snapshot ID for baseline continuity. Rule extraction must retain complete prose
+across inline links/code, including `free-tier` and native session-header rules.
+Pricing sync requires actual model IDs from a nonempty endpoint table, ignores `<del>`
+old prices, and must reject incomplete/unreadable rows before overwriting the
+cache. Do not inject historical free-model IDs. Context tiers still collapse to
+one rate per model (last listed tier), pending context-aware pricing support.
+
 **Keeping these rules current:** `flask check-provider-docs` (daily cron, §6) fetches the OpenCode/Cline docs that define these headers, snapshots the rule-relevant lines and emails on change — when it fires, re-check `providers/opencode.py` / `providers/cline.py` and this table. OpenCode's free tier was live-tested on 2026-09-23 against all 9 discovered free models and is still client-locked (`403 FreeTierError`) even with an `opencode/*` User-Agent, so free models stay hidden; set `OPENCODE_ADVERTISE_FREE_MODELS=1` only if the upstream lock lifts.
 
 **Adding a new provider:**
@@ -304,6 +314,40 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 ---
 
 ## 7. Handoff zone
+
+### 2026-11-12 — OpenCode Console docs scraper repair
+
+- OpenCode moved Zen/Go documentation to `/docs/console/models/` and
+  `/docs/console/go/`; the old URLs still redirect. The current docs retain
+  the own-User-Agent and stable conversation-session requirements and explicitly
+  restrict free-tier chat models to OpenCode. No provider authentication or
+  endpoint configuration was changed.
+- Pricing regex silently skipped six discounted rows containing `<del>`
+  old prices; display-name guessing produced wrong Claude IDs and historical
+  free IDs were injected. The scraper now reads current cell values, requires
+  a nonempty endpoint-ID table, and rejects incomplete/unreadable rows before
+  replacing the override. No guessed IDs or injected free IDs remain.
+  Live HTML has 109 pricing rows / 92 distinct model IDs; all 92 match the
+  endpoint table with zero missing/extra IDs. Context-tier flattening remains
+  the documented last-listed-tier behavior.
+- Docs watcher preserves complete prose across inline links/code and watches
+  hyphenated free-tier and native session-header rules. Keep snapshot ID
+  `opencode-zen` for continuity. The first deployed run may notify once because
+  full sentences now replace the old fragments.
+- Verified: 26 focused tests; live read-only fetches of both canonical pages;
+  code/Python reviews passed. Clean archived checkout of committed fixes:
+  **630 passed, 85.23% coverage**, Python 3.14, using a temporary pytest-cov
+  installation. Fresh unchanged `7a0c7b4` baseline: 616 passed. Existing local
+  workspace twice gave 629 passed plus
+  `tests/test_worker.py::test_start_and_stop` (thread alive after 3s),
+  85.25% coverage; this known workspace/timing-sensitive test was not changed.
+  Ruff only reports the existing unrelated unused `catalog` in the Cline CLI.
+- Committed on `codex/opencode-docs-scraper-20261112`; **not pushed or deployed**.
+  No live snapshots/overrides were written and no notifications were sent by
+  verification. Before merge/deploy, run the normal pytest and Docker
+  build/boot/health CI gates, then follow SHA-tagged `build.sh` and Compose
+  recreate. `skill_manage view` is unavailable; used the supplied catalog and
+  project `ai-provider-workflow` skill.
 
 ### 2026-11-03 — Compatible Dependabot refresh
 
@@ -1594,7 +1638,8 @@ only loads plugins from `wp-content/plugins/`. Moved and activated via
   deletion, `UserProfile` union query for discovered users
 
 **Pricing entries for opencode.ai:** populated via `flask update-opencode-pricing`
-CLI command which fetches the current Zen rate card from opencode.ai/docs/zen/
+CLI command which fetches the current Console rate card from
+https://opencode.ai/docs/console/models/
 and writes `pricing_overrides.json`. Merged with static `pricing.py` dict at
 runtime. A daily cron (06:00 UTC) keeps pricing up to date.
 See `pricing.py:_load_merged_pricing()` and `cli.py:fetch_opencode_pricing()`.
