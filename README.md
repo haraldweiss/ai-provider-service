@@ -128,30 +128,67 @@ Wenn du einen neuen Provider integrierst:
 3. Verwende konsistente Werte: `https://ai-provider-service.wolfinisoftware.de` für URLs, `ai-provider-service` für Namen
 4. Dokumentiere die Header in diesem README und in `AGENTS.md` §3.12
 
-### Täglicher Provider-Regel-Check (`flask check-provider-docs`)
+### Provider-Dokumentation überwachen
 
-Provider ändern ihre Client-Regeln (Pflicht-Header, Free-Tier-Policy,
-Modell-Endpoints) ohne Ankündigung. `provider_docs.py` fetcht die
-regel-definierenden Doku-Seiten (OpenCode Console Go/Models, Cline Auth/Models),
-snapshotet die regel-relevanten Zeilen (`x-opencode-session`, `HTTP-Referer`,
-`X-Task-ID`, `free model`, …) und mailt bei jeder Änderung an
-`PROVIDER_DOCS_NOTIFY_EMAIL`. Snapshot:
-`PROVIDER_DOCS_SNAPSHOT` (Default neben `VAULT_PATH`).
+`scripts/check_provider_docs.py` läuft auf dem Host und nutzt dessen Sendmail.
+Der Container enthält kein `/usr/sbin/sendmail`; den alten täglichen
+`flask check-provider-docs`-Cron deshalb nicht für Benachrichtigungen verwenden.
+
+Der Monitor prüft 13 öffentliche Quellen für OpenCode Zen/Go, Cline, OpenAI,
+Claude, OpenRouter, Z.AI, Ollama einschließlich Cloud-Authentifizierung und
+oMLX. Quellen und erwartete API-Merkmale stehen in `SOURCES`. Für Mammouth
+und benutzerdefinierte Endpoints ist noch keine verifizierte API-Doku-Quelle
+hinterlegt. Neue Provider mit öffentlicher API-Doku hier ergänzen.
+
+Vier parallele Fetches mit je einem Transport-Retry lesen begrenzte Antworten;
+Markdown-Absätze und HTML-Prosa bleiben über Zeilenumbrüche/Inline-Tags hinweg
+vollständig. Header, Authentifizierung, Endpoints, Limits und Deprecations werden
+verglichen. Die OpenCode-Preisseite muss zusätzlich den produktiven Preisparser
+bestehen. Fehlende API-Merkmale, leere Regeln oder Fetch-Fehler gelten als
+Monitorproblem; zuletzt gültige Regeln bleiben erhalten.
+
+Host-Sendmail informiert `harald.weiss@wolfinisoftware.de` bei Änderungen,
+neuen Problemen und Erholung. Gleiche Probleme und gesunde unveränderte Läufe
+bleiben still. Eine fehlgeschlagene Mail-Übergabe erhält die alte Baseline für
+den nächsten Versuch. Der erste gesunde Lauf legt die Baseline ohne Mail an.
+Monitoring senkt das Risiko, kann Ausfälle aber nicht ausschließen: Anbieter
+können unangekündigt ändern.
+Es verändert keine Provider-Konfiguration, ruft keine bezahlten Completions auf
+und deployed keine Reparaturen. Meldungen erfordern Review und Tests.
+
+Der Host streamt den Collector mit `docker exec -i ai-provider python - --collect`
+in den bestehenden Container. Keine Dateien im Container werden gepatcht, kein
+Gateway-Neustart oder Image-Rebuild ist zur Installation nötig. Host benötigt
+Python 3.9+, Docker und Sendmail. `--snapshot`, `--recipient` und `--container`
+überschreiben die Defaults.
+
+Installation auf oracle-vm aus dem committed Checkout:
 
 ```bash
-docker exec ai-provider flask check-provider-docs --no-notify   # report only
+sudo install -d -m 0755 /usr/local/libexec/ai-provider
+sudo install -d -m 0700 /var/lib/ai-provider-monitor
+sudo install -o root -g root -m 0644 scripts/check_provider_docs.py /usr/local/libexec/ai-provider/check_provider_docs.py
+sudo install -o root -g root -m 0644 deploy/ai-provider-docs.logrotate /etc/logrotate.d/ai-provider-docs
+sudo /usr/bin/timeout 600 /usr/bin/flock -n /run/lock/ai-provider-docs.lock /usr/bin/python3 /usr/local/libexec/ai-provider/check_provider_docs.py
+# Nach erfolgreichem Erstlauf: Root-Crontab sicher sichern und nur den alten
+# aktiven check-provider-docs-Eintrag entfernen; andere Jobs erhalten.
+sudo install -o root -g root -m 0644 deploy/ai-provider-docs.cron /etc/cron.d/ai-provider-docs
+sudo logrotate --debug /etc/logrotate.d/ai-provider-docs
 ```
 
-Bei Änderung: `providers/opencode.py` / `providers/cline.py` und
-`AGENTS.md` §3.12 anpassen.
+Zeitplan: **00:17, 06:17, 12:17, 18:17 UTC**, mit `timeout 600` und
+nicht überlappendem `flock`. Log: `/var/log/ai-provider-docs-check.log`,
+14 tägliche Rotationen (0640). Snapshot:
+`/var/lib/ai-provider-monitor/provider-docs.json` (0600 in root-only Verzeichnis).
+Exit 0 = gesund; Exit 1 = Problem/fehlgeschlagener Check. Der eigenständige
+OpenRouter-Modellmonitor um 02:00 UTC bleibt zusätzlich aktiv.
 
-Seit dem Console-Relaunch nutzt der Watcher direkt
-`https://opencode.ai/docs/console/go/` und
-`https://opencode.ai/docs/console/models/`. Inline-Links und Code-Tags bleiben
-im Satz erhalten; auch `free-tier` und native Session-Header werden erfasst.
-Die Snapshot-ID `opencode-zen` bleibt für vorhandene Baselines erhalten.
-Beim ersten Lauf nach diesem Update ist durch die vollständigeren Sätze eine
-Änderungsmeldung zu erwarten.
+Der Legacy-CLI bleibt für manuelle OpenCode/Cline-Snapshots verfügbar
+(`PROVIDER_DOCS_SNAPSHOT`, Default neben `VAULT_PATH`):
+```bash
+docker exec ai-provider flask check-provider-docs --no-notify
+```
+Dieser Befehl schreibt den Legacy-Snapshot, verschickt aber keine Mail.
 
 `flask update-opencode-pricing` liest die Console-Preistabelle unter
 `https://opencode.ai/docs/console/models/` und schreibt `pricing_overrides.json`.
