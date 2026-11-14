@@ -171,6 +171,7 @@ All provider clients must send app identification headers where the provider sup
 
 1. **OpenCode** (`providers/opencode.py`): Must send `x-opencode-session` per chat request. OpenCode Go's docs require the value to be a **stable session ID per conversation** (routing + prompt-cache affinity), not one global constant — `_conversation_session_id()` derives a sha256 of the stable prefix (system prompt + first user turn), so turns of one conversation share an ID while different conversations differ. The client must also send its **own User-Agent** (`ai-provider-service/<Config.SERVICE_VERSION>`) instead of the generic OpenAI-SDK UA (`_default_headers()`). Starting 2026-09-06, requests without the session header error.
 2. **Cline** (`providers/cline.py`): Sends `HTTP-Referer` and `X-Title` for app attribution, plus an optional unique `X-Task-ID` on chat requests.
+   Cline also sends `X-Response-Format: openai`, required by the current API for standard non-streaming OpenAI response shape, including ClinePass.
 3. **OpenRouter** (`providers/openrouter.py`): Should include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` for app attribution.
 4. **OpenAI** (`providers/openai_client.py`): May include `X-Client-Request-Id` for request tracking (optional).
 
@@ -330,6 +331,31 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 - Live Ollama tags/health were reachable; earlier large agent requests timed
   out on both Macs. Tiny direct completions succeeded on all three endpoints.
   A health result alone does not establish that a large Pi prompt can finish.
+- **Deployed:** [PR #65](https://github.com/haraldweiss/ai-provider-service/pull/65)
+  merged as `6b7e119`; [CI 43566216028](https://github.com/haraldweiss/ai-provider-service/actions/runs/43566216028)
+  passed **653 tests, 85.40% coverage**, Docker build/boot/health/providers smoke;
+  secret safety passed. Clean archived local suite also passed all 653 tests.
+  The original workspace reproduced the known worker-stop timing failure
+  (652 passed); no worker code was changed. Focused Python tests (35), Node Pi
+  registration test, Ruff and code review passed.
+- Built on oracle-vm using `sudo bash build.sh 6b7e119`, then recreated with
+  `sudo docker compose up -d --force-recreate --no-build ai-provider`.
+  Image tags `:6b7e119` and `:latest` share ID
+  `sha256:b7b2b337e91bbf2cf6daad3bf23d35925183ef5394cbb7746d82bb36dbf74e18`.
+  Previous `:f6b42a4` image retained. Local/public health HTTP 200, healthy,
+  zero restarts; Apache/bridge active, env root:root 0600, DB quick-check OK,
+  no startup traceback markers. Cline source/catalog hashes match Git.
+- Live gateway lists **15 Pass IDs** and completed Cline Pass GLM 5.3 Flash
+  and Ollama Mistral Nemo CC requests. Pi itself returned `OK` through direct
+  Ollama and through `ai-provider-service` with Cline Pass. Model discovery in
+  Pi confirmed all 15 Pass IDs. Tiny 16-token Pass probe returned upstream 500
+  `empty response content`; a 256-token probe and normal Pi request succeeded.
+- Installed canonical extension in `~/.pi/agent/extensions/`, backed up Pi's
+  `models.json`, `settings.json` and extension. Direct Ollama registry now
+  matches the nine installed chat models (embeddings omitted); removed stale
+  IDs, retained exact `:latest` scoped IDs and capped direct context at 32768.
+  Existing Pi chats need `/reload` or a restart. No credentials committed,
+  provider-env changes or persistent container-source patches.
 
 ### 2026-11-12 — Six-hour host provider documentation monitor
 

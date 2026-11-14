@@ -1220,6 +1220,12 @@ oracle-vm via Host-Crontab gegen den Docker-Container:
 
 Die gepflegte [Pi-Extension](integrations/pi/README.md) kennzeichnet Abo-Modelle
 als `Cline Pass · <model>`; API-IDs bleiben `cline/cline-pass/<model>`.
+Installiert und live verifiziert am 2026-11-14:
+[PR #65](https://github.com/haraldweiss/ai-provider-service/pull/65), Gateway-Image
+`:6b7e119`. Pi findet 15 aktuelle Pass-Modelle; direkte Ollama- und ClinePass-
+Anfragen durch Pi erfolgreich. Die lokale Ollama-Liste entspricht neun
+installierten Chat-Modellen; Embeddings und veraltete IDs sind ausgeblendet.
+
 Direktes Ollama benötigt für Pis `openai-completions` den Base-URL
 `http://localhost:11434/v1`. Nach Installation oder Konfigurationsänderungen
 `/reload` in Pi ausführen. Neue Ollama-Modelle erhalten konservativ 32768 Tokens
