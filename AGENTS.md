@@ -316,6 +316,21 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-11-14 — Pi Ollama URL and Cline Pass discovery
+
+- Pi direct Ollama `openai-completions` requires `http://localhost:11434/v1`;
+  its old server-root URL returns 404. Canonical gateway extension and install
+  instructions now live in `integrations/pi/`; labels distinguish Cline Pass,
+  and unknown Ollama context defaults to 32768 rather than 128000.
+- Cline's authenticated public `/models` returns the regular catalog but omits
+  Pass IDs. Merge only maintained `cline-pass/` IDs into that live catalog;
+  never restore stale paid aliases. Pass catalog refreshed against official
+  docs on 2026-11-14 (15 models; deprecated IDs removed). Send
+  `X-Response-Format: openai` for non-streaming completions.
+- Live Ollama tags/health were reachable; earlier large agent requests timed
+  out on both Macs. Tiny direct completions succeeded on all three endpoints.
+  A health result alone does not establish that a large Pi prompt can finish.
+
 ### 2026-11-12 — Six-hour host provider documentation monitor
 
 - User requested regular server-side documentation checks to reduce surprise

@@ -60,6 +60,7 @@ class ClineClient(BaseClient):
             'Authorization': f'Bearer {self._api_key}',
             'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
             'X-Title': 'ai-provider-service',
+            'X-Response-Format': 'openai',
         }
         if task_id:
             headers['X-Task-ID'] = task_id
@@ -104,7 +105,11 @@ class ClineClient(BaseClient):
     def get_models(self) -> list[str]:
         models = self._models_from_api()
         if models:
-            return models
+            # Public /models omits the separately documented subscription catalog.
+            # Preserve only maintained Pass IDs; stale paid aliases must stay hidden.
+            pass_models = [m for m in self._models_from_override()
+                           if m.startswith('cline-pass/')]
+            return sorted(set(models).union(pass_models))
         return self._models_from_override()
 
     def create_message(self, model: str, messages: list[dict], max_tokens: int = 600, *, tools: list[dict] | None = None) -> dict:
