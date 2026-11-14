@@ -9,8 +9,9 @@ import pytest
 from providers import get_client, PROVIDER_REGISTRY
 
 
+@patch('providers.cline.ClineClient._models_from_override', return_value=[])
 @patch('providers.cline.httpx.Client')
-def test_model_cache_does_not_cross_keys_or_endpoints(http):
+def test_model_cache_does_not_cross_keys_or_endpoints(http, override):
     from providers import cline
     cline._live_models_cache.update({'ts': 0.0, 'models': []})
     response = http.return_value.__enter__.return_value.get.return_value
@@ -125,6 +126,7 @@ def test_create_message_sends_attribution_and_task_id_headers(mock_httpx_client)
     headers = inst.post.call_args[1]['headers']
     assert headers['HTTP-Referer'] == 'https://ai-provider-service.wolfinisoftware.de'
     assert headers['X-Title'] == 'ai-provider-service'
+    assert headers['X-Response-Format'] == 'openai'
     assert headers['X-Task-ID']
     assert headers['Authorization'] == 'Bearer sk-test'
 
@@ -137,8 +139,9 @@ def test_get_headers_omits_task_id_by_default(mock_httpx_client):
     assert 'X-Task-ID' not in headers
 
 
+@patch('providers.cline.ClineClient._models_from_override', return_value=['Qwen/Qwen3-235B-A22B'])
 @patch('providers.cline.httpx.Client')
-def test_get_models_uses_live_api(mock_httpx_client):
+def test_get_models_uses_live_api(mock_httpx_client, mock_override):
     """get_models() prefers Cline's live /models list over the override file."""
     from providers import cline as cline_mod
     cline_mod._live_models_cache.update({'ts': 0.0, 'models': []})
@@ -164,6 +167,20 @@ def test_get_models_uses_live_api(mock_httpx_client):
     ]
     # The live list must NOT contain the stale override-only casing.
     assert 'Qwen/Qwen3-235B-A22B' not in models
+
+
+@patch('providers.cline.httpx.Client')
+def test_live_catalog_preserves_only_maintained_pass_models(mock_httpx_client, tmp_path, monkeypatch):
+    """A nonempty public catalog must not hide the separate subscription catalog."""
+    from providers import cline as cline_mod
+    cline_mod._live_models_cache.update({'ts': 0.0, 'models': []})
+    override = tmp_path / 'cline.json'
+    override.write_text('{"cline::cline-pass/glm-5.3": {"in": 0, "out": 0}, "cline::stale/paid": {"in": 1, "out": 2}}')
+    monkeypatch.setattr(cline_mod, '_OVERRIDE_PATH', override)
+    response = mock_httpx_client.return_value.__enter__.return_value.get.return_value
+    response.json.return_value = {'data': [{'id': 'live/paid'}]}
+    models = cline_mod.ClineClient({'api_key': 'sk-test'}).get_models()
+    assert models == ['cline-pass/glm-5.3', 'live/paid']
 
 
 @patch('providers.cline.httpx.Client')

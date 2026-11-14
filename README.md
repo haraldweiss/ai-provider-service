@@ -1216,11 +1216,24 @@ oracle-vm via Host-Crontab gegen den Docker-Container:
 0 6 * * * docker exec ai-provider flask update-zai-pricing >> /var/log/ai-provider-zai-pricing.log 2>&1
 ```
 
+### Pi: Ollama und Cline Pass
+
+Die gepflegte [Pi-Extension](integrations/pi/README.md) kennzeichnet Abo-Modelle
+als `Cline Pass · <model>`; API-IDs bleiben `cline/cline-pass/<model>`.
+Direktes Ollama benötigt für Pis `openai-completions` den Base-URL
+`http://localhost:11434/v1`. Nach Installation oder Konfigurationsänderungen
+`/reload` in Pi ausführen. Neue Ollama-Modelle erhalten konservativ 32768 Tokens
+Kontext; lange Cloud-Chats vor dem Wechsel kompaktieren.
+
 ### Cline Modell-Sync + Tägliche Änderungs-Benachrichtigung
 
-Cline (api.cline.bot) hat keinen öffentlichen `/models`-Endpoint (auth-walled), daher
-wird die gezeigte/berechnete Modellliste manuell aus Clines OSS-Modellkatalog
-(`cline/cline`, `sdk/packages/llms/src/catalog/catalog.generated.ts`) gepflegt:
+Cline (api.cline.bot) liefert seinen regulären Katalog über `/models`.
+Die separate ClinePass-Liste fehlt dort und wird aus den offiziellen
+[ClinePass-Docs](https://docs.cline.bot/getting-started/clinepass) in
+`pricing_overrides_cline.json` gepflegt und zur Live-Liste ergänzt. Nur Pass-IDs
+werden ergänzt; veraltete bezahlte Aliase bleiben ausgeblendet.
+Nicht-streamende Requests senden `X-Response-Format: openai`.
+Die OSS-Katalog-Werkzeuge bleiben für Review und Preispflege verfügbar:
 
 - `flask update-cline-catalog` — fetcht den aktuellen OSS-Katalog, parst ihn
   (pure-Python, kein Node nötig) und **berichtet** neue/geänderte Modelle und den
