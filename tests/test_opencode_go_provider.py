@@ -58,6 +58,25 @@ def test_opencode_go_uses_v2_inference_endpoints(mock_openai, monkeypatch):
     mock_openai.return_value.models.list.assert_called_once()
 
 
+def test_opencode_go_defaults_never_use_the_pay_as_you_go_base():
+    """Guard the billing-critical routing decision (AGENTS §3.12, 2026-11-18).
+
+    The Console "Inference API" page advertises one generic base per model
+    family (``/inference/openai/v1`` …). That route is pay-as-you-go and bills
+    the workspace balance (402 when empty), while ``/inference/go/*`` is covered
+    by the Go subscription. A well-meaning "align with the docs" change must not
+    silently move Go traffic onto the generic bases.
+    """
+    from pathlib import Path
+
+    config_py = Path(__file__).resolve().parents[1] / 'config.py'
+    source = config_py.read_text()
+    assert "'https://opencode.ai/inference/go/openai/v1'" in source
+    assert "'https://opencode.ai/inference/go/v1'" in source
+    assert "'https://opencode.ai/inference/openai/v1'" not in source
+    assert "'https://opencode.ai/inference/v1'" not in source
+
+
 @patch('providers.opencode.OpenAI')
 def test_opencode_go_single_client_when_bases_match(mock_openai, monkeypatch):
     """A /zen/go/v1-style override (one base for both) must not build a second
