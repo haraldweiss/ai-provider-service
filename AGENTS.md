@@ -338,6 +338,65 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-11-18 — Branch/queue hygiene: 51 remote branches removed, ruleset narrowed to `main`
+
+- **Trigger:** „check the remote branches not merged if there is anything useful,
+  the stale ones probably can be deleted … clean up what can be cleaned without
+  impacting function". Every branch was audited before deletion
+  (`git cherry` for patch-equivalence, PR state, and version deltas for the
+  Dependabot heads).
+- **Judged redundant (18 deleted):** 12 `dependabot/pip/*` + 
+  `dependabot/github_actions/actions/setup-python-7`, whose proposed pins are all
+  **older than or equal to `main`** (e.g. `openai 1.55/3.37/3.41` vs `3.50`,
+  `gunicorn 23/26.2` vs `27.0.1`, `anthropic 0.40/2.2/2.6` vs `2.8.0`);
+  `codex/fix-ollama-cline-pass` + `codex/provider-fix-deployment-record`
+  (patch-equivalent, PRs #65/#66 merged); `fix/opencode-system-provider-persist`
+  (0 unique patches); `claude/kind-keller-ee1f0d` (2 AGENTS.md doc commits whose
+  content is already in `main`); `fix/admin-login-auto-redirect`
+  (**deliberately not revived** — it makes `/admin/ui/login` redirect to
+  `?token=<ADMIN_TOKEN>`, i.e. the admin token lands in URLs/history);
+  `wip/ollama-model-lifecycle` (scraper-based `OllamaModelRegistry` sync,
+  superseded by live `/api/tags` discovery + the parent repo's `model-manager`).
+  Recovery SHAs (pre-delete tips): `claude/kind-keller-ee1f0d 2853d703`,
+  `codex/fix-ollama-cline-pass b69932a3`, `codex/provider-fix-deployment-record
+  c67752eb`, `dependabot/github_actions/actions/setup-python-7 cb4c0dbc`,
+  `dependabot/pip/anthropic-gte-2.2.0 67873fd2`, `…-gte-2.6.0 5dd9712a`,
+  `cryptography-gte-50.0.2 d7bf1ba6`, `flask-cors-gte-6.0.5 c170b64f`,
+  `flask-gte-3.1.3 7a74975f`, `gunicorn-gte-26.2.0 87fdc44c`,
+  `httpx-gte-0.28.1 b391364b`, `openai-gte-3.37.0 03571e9b`,
+  `opentelemetry-sdk-gte-1.45.1 d30638f9`, `python-dotenv-gte-1.2.4 857480ee`,
+  `sqlalchemy-gte-2.1.6 c87e31e0`, `fix/admin-login-auto-redirect 17fc1805`,
+  `fix/opencode-system-provider-persist dc98ddbe`,
+  `wip/ollama-model-lifecycle 50a85762`.
+- **Judged redundant (33 more deleted):** every other remote head was **fully
+  contained in `main`** (`git rev-list --count origin/main..origin/<b>` = 0), so
+  removing them discarded no commit. Remote is now **`main` only**.
+- **Archived instead of lost (2 tags, pushed):**
+  `archive/wip-ollama-model-lifecycle-20260530` (4 325-line scraper/registry POC)
+  and `archive/codex-colibri-provider-poc-20260718` (Colibri admission POC,
+  local-only branch, worktree + branch removed on owner request).
+  Delete them with `git push origin --delete archive/<name>` once the work is
+  definitively dropped.
+- **Local:** 41 merged/superseded branches deleted, the stale
+  `.worktrees/omlx-provider` removed, and the 2026-06-10 stash
+  (`WIP: news-agent before vault-bugfix`) archived as the local-only ref
+  `refs/archive/stash-news-agent-20260610` (`09ce6441`) before dropping it —
+  its branch was patch-equivalent to `main`. Local branches are now `main` only.
+- **Blocker hit and resolved with owner approval:** repo ruleset
+  `"protect from accidentally deletion"` (id 16773690) covered `~ALL` with
+  `deletion` + `non_fast_forward` and **no bypass actors**, so GitHub rejected
+  every branch deletion (`push declined due to repository rule violations` /
+  API 422 `Cannot delete this branch`). Narrowed to
+  `conditions.ref_name.include = ["refs/heads/main"]`; rules, enforcement and
+  (empty) bypass list unchanged, so `main` keeps exactly the same protection.
+  Revert to blanket protection with:
+  `gh api -X PUT repos/haraldweiss/ai-provider-service/rulesets/16773690 -f name='protect from accidentally deletion' -f target=branch -f enforcement=active -F conditions[ref_name][include][]=~ALL …`
+  (or set `include` to `["~ALL"]` in the UI under Settings → Rules → Rulesets).
+- **Verified:** `git ls-remote --heads origin` → `refs/heads/main` only
+  (`2ea16c12`); both archive tags present; `pytest tests -q` → **659 passed**;
+  working tree clean and in sync; no code/deploy change, so the running
+  container (`231a153`, healthy, 0 restarts) is untouched.
+
 ### 2026-11-18 — Orphaned queue rows retired (deployed); no automatic re-run by design
 
 - **Trigger:** the same „check what is open/waiting" pass. Besides the docs
