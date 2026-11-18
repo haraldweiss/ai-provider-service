@@ -338,6 +338,39 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-11-18 — Orphaned queue rows retired (deployed); no automatic re-run by design
+
+- **Trigger:** the same „check what is open/waiting" pass. Besides the docs
+  alert, the production queue held **6 `pending`** rows from 2026-11-17
+  20:06–20:12 UTC (`attempts=0`, no `last_error`, provider `ollama`, WP
+  summarizer prompts) and **one `processing`** row from **2026-05-15**.
+- **Diagnosis:** drains hang off `health_tracker.just_recovered()` (down→up), and
+  `ollama` stayed nominally healthy the whole time — the worker log shows drains
+  only for `cline` (which flaps), never for `ollama`; the queued calls had hit
+  per-model timeouts while the health check kept passing. The expiry sweep at
+  the end of `drain_queue_for_provider` filtered `status='pending'` only, and the
+  stale-`processing` reset filters `expires_at > now`, so the May row could
+  never be retired by either path.
+- **Deliberately not "fixed" as a retry:** clients poll a queued item for only
+  **5 × 2 s** (`wp-content/plugins/wolfini-ai-categorizer-api.php`
+  `poll_queue_result()`), so a row past its TTL is orphaned — re-running it would
+  spend tokens on a result nobody reads. The 6 pending rows therefore expire
+  normally (20:06–20:12 UTC, caught by the new sweep).
+- **Fix:** new `dispatcher.expire_stale_queue_items()` retiring expired
+  `pending` **and** `processing` rows; used by `drain_queue_for_provider` and
+  called once per drain cycle from `worker._drain` (60 s), independent of
+  recovery. Tests: `tests/test_queue_expiry.py` (5 cases, incl. the crashed
+  `processing` row and the worker sweep without recovery).
+- **Deployed (oracle-vm):** repo ff → `231a153`; rollback tag
+  `localhost/ai-provider:pre-queue-expiry-20261118`; `./build.sh 231a153`
+  (+ `:latest`); `docker compose up -d` recreated `ai-provider`
+  (`created 2026-11-18T19:24:19Z`, `restarts=0`, `health=healthy`, `/health` 200).
+- **Verified live:** log `expired 1 orphaned queue item(s)` at 19:24:28;
+  `request_queue` `processing` 1 → **0**, `expired` 4411 → **4412**;
+  `/v1/models` 200, `opencode_go/kimi-k3` chat 200, `wolfinisoftware.de` 200,
+  `chat.wolfinisoftware.de` 200. Rollback: recreate the container from
+  `pre-queue-expiry-20261118` (same compose spec, no data migration involved).
+
 ### 2026-11-18 — OpenCode documentation alert reviewed: no code defect, stale wording corrected
 
 - **Trigger:** „check if anything is still open or in waiting state … I saw some
