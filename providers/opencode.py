@@ -4,9 +4,15 @@
 ``OpencodeGoClient`` — Go / Go Plus (subscription-backed catalog).
 
 Shared by both: the client-specific User-Agent, the per-conversation
-``x-opencode-session`` header (mandatory upstream, AGENTS §3.12) and the
-reasoning_content fallback. Free-model discovery is Zen-only: Go serves the
-plan's catalog, free variants included, so nothing is filtered there.
+``x-opencode-session`` header and the reasoning_content fallback. Free-model
+discovery is Zen-only: Go serves the plan's catalog, free variants included, so
+nothing is filtered there.
+
+The session header stays mandatory for third-party clients: without it the Go
+base answers ``400 MissingSessionID`` (re-verified 2026-11-18; the 2026-10-18
+probe saw HTTP 500). The docs sentence "no longer necessary to send that
+specific header" describes OpenCode's own client, which now emits its native
+session header — it does not apply to this gateway (AGENTS §3.12).
 """
 
 from __future__ import annotations
@@ -392,9 +398,12 @@ class OpencodeGoClient(OpencodeClient):
       the dispatcher routes it to the configured fallback (AGENTS §3.11).
 
     The inherited per-conversation ``x-opencode-session`` header and client
-    User-Agent are mandatory here — a request without the session header fails
-    upstream on both the v2 inference and the /zen/go/v1 route (verified
-    2026-10-18: HTTP 500).
+    User-Agent stay mandatory for third-party clients — without the session
+    header both the v2 inference and the /zen/go/v1 route answer
+    ``400 MissingSessionID`` (re-verified 2026-11-18; the 2026-10-18 probe saw
+    HTTP 500). The docs wording "no longer necessary to send that specific
+    header" refers to OpenCode's own client, which now sends its native session
+    header.
     """
 
     _base_url_attr = 'OPENCODE_GO_BASE_URL'
