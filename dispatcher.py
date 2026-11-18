@@ -471,6 +471,30 @@ def dispatch(
     )
 
 
+def expire_stale_queue_items(now=None) -> int:
+    """Mark queue items whose TTL has passed as ``expired``; return the count.
+
+    Clients poll a queued request for only a few seconds, so anything still
+    queued when its TTL ends is orphaned. Both statuses must be swept:
+    ``processing`` rows are included because the stale-reset in
+    ``drain_queue_for_provider`` only revives rows that have *not* expired yet,
+    so a worker that died on an expired row left ``status='processing'``
+    forever (found 2026-11-18: a row from 2026-05-15 was still ``processing``
+    while six orphaned ``pending`` rows waited for a drain that only runs on a
+    provider health down->up transition).
+    """
+    now = now or datetime.now(timezone.utc)
+    stale = (RequestQueue.query
+             .filter(RequestQueue.status.in_(('pending', 'processing')))
+             .filter(RequestQueue.expires_at <= now)
+             .all())
+    for q in stale:
+        q.status = 'expired'
+    if stale:
+        db.session.commit()
+    return len(stale)
+
+
 def drain_queue_for_provider(provider_id: str, max_items: int = 50) -> dict:
     """Verarbeitet pending Queue-Einträge für einen wieder erreichbaren Provider.
     Wird vom Worker aufgerufen, sobald Provider von down → up wechselt."""
@@ -522,14 +546,7 @@ def drain_queue_for_provider(provider_id: str, max_items: int = 50) -> dict:
             failed += 1
         db.session.commit()
 
-    # Expired markieren
-    expired = RequestQueue.query.filter(
-        RequestQueue.status == 'pending',
-        RequestQueue.expires_at <= now,
-    ).all()
-    for q in expired:
-        q.status = 'expired'
-    if expired:
-        db.session.commit()
+    # Expired markieren (pending + hängengebliebene processing-Zeilen)
+    expired = expire_stale_queue_items(now)
 
-    return {'processed': processed, 'failed': failed, 'expired': len(expired)}
+    return {'processed': processed, 'failed': failed, 'expired': expired}

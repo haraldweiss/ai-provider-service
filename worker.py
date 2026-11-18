@@ -17,7 +17,7 @@ from config import Config
 from providers import get_client, PROVIDER_REGISTRY
 from storage.models import ProviderConfig
 import health_tracker
-from dispatcher import drain_queue_for_provider
+from dispatcher import drain_queue_for_provider, expire_stale_queue_items
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,16 @@ def _refresh_free_models(app: Flask) -> None:
 def _drain(app: Flask) -> None:
     """Separater Durchlauf: Queue-Drain für alle recovered Provider."""
     with app.app_context():
+        # Housekeeping first: expire orphaned pending/processing rows even when
+        # no provider transitioned. Queue drains hang off just_recovered(), so a
+        # provider that never flips (e.g. Ollama reachable while a single model
+        # call times out) would otherwise keep dead rows forever.
+        try:
+            expired = expire_stale_queue_items()
+            if expired:
+                logger.info('expired %d orphaned queue item(s)', expired)
+        except Exception as e:
+            logger.warning(f'queue expiry crashed: {e}')
         for pid in PROVIDER_REGISTRY:
             if health_tracker.just_recovered(pid):
                 logger.info(f'{pid} recovered → draining queue')
