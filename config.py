@@ -64,8 +64,15 @@ class Config:
 
     # opencode.ai Go plan — subscription-backed OpenAI-compatible endpoint.
     # Distinct from the Zen/Console key above: Go serves the plan's model
-    # catalog (paid models included) and the x-opencode-session header is
-    # mandatory (AGENTS §3.12).
+    # catalog (paid models included) and the x-opencode-session header stays
+    # mandatory for third-party clients (upstream answers 400 MissingSessionID
+    # without it; re-verified 2026-11-18 — AGENTS §3.12).
+    #
+    # Never point Go traffic at the generic /inference/openai/v1 base shown on
+    # the Console "Inference API" page: that route is pay-as-you-go and bills
+    # the workspace balance (402 Insufficient balance when empty), while
+    # /inference/go/* is covered by the Go subscription. The generic
+    # /inference/v1/models list is likewise not the Go model list.
     #
     # OpenCode v2 documents two separate application-facing bases for Go (the
     # "Endpoints" table in /v2/docs/console/go): chat lives under

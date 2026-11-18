@@ -159,7 +159,7 @@ All provider clients must send app identification headers where the provider sup
 
 | Provider | Headers | Status |
 |----------|---------|--------|
-| **OpenCode (Zen + Go)** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Required** (session ab 09/06; ohne den Header antwortet Go mit HTTP 500) |
+| **OpenCode (Zen + Go)** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Required** (still required for third-party clients — without it Go answers `400 MissingSessionID`, re-verified 2026-11-18; the 2026-10-18 probe saw HTTP 500) |
 | **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service`<br>`X-Task-ID: <uuid>` (nur Chat-Requests) | Optional (but recommended) |
 | **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (but recommended) |
 | **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (for request tracking) |
@@ -169,7 +169,7 @@ All provider clients must send app identification headers where the provider sup
 
 **Implementation requirements:**
 
-1. **OpenCode** (`providers/opencode.py`): Must send `x-opencode-session` per chat request. OpenCode Go's docs require the value to be a **stable session ID per conversation** (routing + prompt-cache affinity), not one global constant — `_conversation_session_id()` derives a sha256 of the stable prefix (system prompt + first user turn), so turns of one conversation share an ID while different conversations differ. The client must also send its **own User-Agent** (`ai-provider-service/<Config.SERVICE_VERSION>`) instead of the generic OpenAI-SDK UA (`_default_headers()`). Starting 2026-09-06, requests without the session header error.
+1. **OpenCode** (`providers/opencode.py`): Must send `x-opencode-session` per chat request. OpenCode Go's docs require the value to be a **stable session ID per conversation** (routing + prompt-cache affinity), not one global constant — `_conversation_session_id()` derives a sha256 of the stable prefix (system prompt + first user turn), so turns of one conversation share an ID while different conversations differ. The client must also send its **own User-Agent** (`ai-provider-service/<Config.SERVICE_VERSION>`) instead of the generic OpenAI-SDK UA (`_default_headers()`). Without the session header the Go base answers `400 MissingSessionID` (re-verified 2026-11-18). The docs sentence "no longer necessary to send that specific header" refers to OpenCode's own client, which now emits its native session header.
 2. **Cline** (`providers/cline.py`): Sends `HTTP-Referer` and `X-Title` for app attribution, plus an optional unique `X-Task-ID` on chat requests.
    Cline also sends `X-Response-Format: openai`, required by the current API for standard non-streaming OpenAI response shape, including ClinePass.
 3. **OpenRouter** (`providers/openrouter.py`): Should include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` for app attribution.
@@ -187,6 +187,27 @@ one rate per model (last listed tier), pending context-aware pricing support.
 
 **Keeping these rules current:** Host monitor `scripts/check_provider_docs.py` watches 13 public documentation sources (see README). Host Sendmail is required: the gateway container has no sendmail, so the legacy `flask check-provider-docs` cron cannot deliver alerts. Preserve full HTML prose and soft-wrapped Markdown requirements; validate stored/report state and never advance a changed baseline when mail submission fails. Alert on changes, new source/collector failures and recovery; retain good rules on failure. The OpenCode price page also runs through the real pricing parser. Monitor only: no key reads, inference, routing edits or automatic deployments. Mammouth/custom have no configured verified docs source. When alerted, review the relevant provider client and this table. OpenCode's free tier was live-tested on 2026-09-23 against all 9 discovered free models and is still client-locked (`403 FreeTierError`) even with an `opencode/*` User-Agent, so free models stay hidden; set `OPENCODE_ADVERTISE_FREE_MODELS=1` only if the upstream lock lifts.
 
+**OpenCode inference docs review (2026-11-18, monitor alert):** the Console docs
+moved to `/docs/console/api/inference/` and now describe one base per API family
+(`/inference/openai/v1/chat/completions`, `…/openai/v1/responses`,
+`/inference/anthropic/v1/messages`, `/inference/google/v1beta/models/<model>:generateContent`)
+plus a generic list at `/inference/v1/models`. The Go page states that every text
+model also works through the other APIs because Console translates, so the
+existing Go chat base stays correct — verified live 2026-11-18 through this
+gateway: `opencode_go/claude-haiku-5-5`, `qwen4-max` and `gemini-4-argon` all
+answered 200 via `/inference/go/openai/v1`, and `gpt-6-luna` likewise (a 400 is
+only produced when `max_tokens` < 16, because it is translated to Responses
+`max_output_tokens`). **Never move Go traffic to the generic
+`/inference/openai/v1` base:** it is pay-as-you-go and returned
+`402 Insufficient balance` in the same test, while `/inference/go/*` is covered by
+the subscription. `/inference/go/v1/models` remains the Go model list (the generic
+`/inference/v1/models` answers too, but is not the Go catalog).
+`x-opencode-session` stays mandatory for third-party clients — the same probe
+without it returned `400 MissingSessionID` ("Request is missing
+x-opencode-session and cannot be routed efficiently"); the docs' "no longer
+necessary" wording covers OpenCode's own client. Own-User-Agent guidance is
+unchanged and already implemented.
+
 **Adding a new provider:**
 
 When integrating a new provider, check their documentation for app attribution or identification headers. If they support it:
@@ -196,7 +217,7 @@ When integrating a new provider, check their documentation for app attribution o
 
 **Why this matters:**
 
-- **OpenCode**: Will reject requests without `x-opencode-session` starting 09/06; Go also expects a client-specific User-Agent and a stable per-conversation session ID
+- **OpenCode**: Rejects requests without `x-opencode-session` (`400 MissingSessionID`, re-verified 2026-11-18); Go also expects a client-specific User-Agent and a stable per-conversation session ID
 - **OpenRouter/Cline**: App appears in their rankings and leaderboards, driving awareness
 - **Debugging**: Providers can identify and troubleshoot our traffic more easily
 - **Compliance**: Some providers require identification for certain access tiers
@@ -316,6 +337,50 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 ---
 
 ## 7. Handoff zone
+
+### 2026-11-18 — OpenCode documentation alert reviewed: no code defect, stale wording corrected
+
+- **Trigger:** „check if anything is still open or in waiting state … I saw some
+  documentation changes … regarding opencode". The provider-docs monitor had
+  mailed one change notification that day (log: `notifications=1` at 12:17 UTC,
+  `status=ok`, 13 sources; state `/var/lib/ai-provider-monitor/provider-docs.json`
+  healthy, `collector_error=null`). Nothing in the repo was open or waiting:
+  0 open PRs, 0 open issues, 0 draft PRs; the local clone was only 7 commits
+  behind `origin/main` (dependency pins from PR #70) and was fast-forwarded to
+  `2794af0`.
+- **What upstream changed (Console docs):** new page
+  `/docs/console/api/inference/` documents one base per API family
+  (`/inference/openai/v1/chat/completions`, `…/openai/v1/responses`,
+  `/inference/anthropic/v1/messages`,
+  `/inference/google/v1beta/models/<model>:generateContent`) plus a generic
+  `/inference/v1/models`. The Go page adds that **every text model also works
+  through the other APIs (Console translates)** and says the session header is
+  "no longer necessary to send that specific header" (for OpenCode's own client).
+- **Live verification (2026-11-18, through the gateway and directly):**
+  `opencode_go/claude-haiku-5-5`, `qwen4-max` and `gemini-4-argon` → **200** via
+  `/inference/go/openai/v1` (family translation confirmed); `gpt-6-luna` → **200**
+  once `max_tokens` ≥ 16 (below that the translated Responses call returns 400
+  `integer_below_min_value` on `max_output_tokens`). The generic
+  `/inference/openai/v1` chat base answered **402 Insufficient balance** with the
+  same key — it is pay-as-you-go, so moving Go traffic there would bill the
+  workspace balance. Dropping `x-opencode-session` on the Go base returned
+  **400 `MissingSessionID`** ("Request is missing x-opencode-session and cannot
+  be routed efficiently"), i.e. third-party clients must keep sending it.
+- **Conclusion:** no provider behaviour, routing or key change was needed. The
+  only defects were internal statements that contradicted the current upstream
+  evidence ("mandatory → HTTP 500") and the missing pay-as-you-go warning.
+- **Fixed:** `config.py` comment (session header + explicit "never point Go at
+  `/inference/openai/v1`"), `providers/opencode.py` module and
+  `OpencodeGoClient` docstrings, README (header table, "OpenCode" section, the
+  `opencode_go` free-only paragraph), AGENTS §3.12 (table, implementation bullet,
+  "why this matters", new review paragraph). New regression test
+  `test_opencode_go_defaults_never_use_the_pay_as_you_go_base` locks the default
+  Go bases so a future "align with the docs" edit cannot silently switch billing
+  mode.
+- **Not rebuilt/not deployed:** comments, docs and one test only — the running
+  image `2794af0` is functionally identical, so no rebuild or container
+  recreate was performed (an image rebuild would change nothing but the
+  docstring bytes).
 
 ### 2026-11-14 — Pi Ollama URL and Cline Pass discovery
 

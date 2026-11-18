@@ -44,7 +44,7 @@ Alle Provider-Clients senden App-Identifikations-Header an die Provider-APIs. Di
 
 | Provider | Header | Status |
 |----------|--------|--------|
-| **OpenCode (Zen + Go)** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Pflicht** (Session ab 09/06; ohne den Header antwortet Go mit HTTP 500) |
+| **OpenCode (Zen + Go)** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Pflicht** für Fremd-Clients (ohne den Header antwortet Go mit `400 MissingSessionID`, erneut verifiziert 2026-11-18; am 2026-10-18 war es HTTP 500) |
 | **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service`<br>`X-Task-ID: <uuid>` (nur Chat) | Optional (empfohlen) |
 | **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (empfohlen) |
 | **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (Request-Tracking) |
@@ -52,12 +52,31 @@ Alle Provider-Clients senden App-Identifikations-Header an die Provider-APIs. Di
 | **Z.AI** | Keine dokumentiert | N/A |
 | **Ollama/oMLX** | N/A (lokale Provider) | N/A |
 
-### OpenCode (Pflicht ab 2026-09-06)
+### OpenCode (Pflicht für Fremd-Clients)
 
 OpenCode Go erfordert pro Chat-Request einen `x-opencode-session` Header. Laut
 Doku muss der Wert eine **stabile Session-ID pro Konversation** sein (Routing +
 Prompt-Cache-Affinität), kein globaler Konstante — außerdem muss sich der Client
 mit einem **eigenen User-Agent** identifizieren (nicht der generische OpenAI-SDK-Name).
+
+Die Doku-Formulierung „no longer necessary to send that specific header"
+(Stand 2026-11-18) meint den **OpenCode-eigenen Client**, der inzwischen seinen
+nativen Session-Header sendet — für Fremd-Clients wie dieses Gateway gilt sie
+nicht: ohne `x-opencode-session` antwortet die Go-Basis mit
+`400 MissingSessionID` („Request is missing x-opencode-session and cannot be
+routed efficiently"), erneut live geprüft am 2026-11-18.
+
+**Base-URL-Falle:** Die Console-Doku zeigt unter *Inference API* die generischen
+Familien-Basen (`/inference/openai/v1/chat/completions`, `…/responses`,
+`/inference/anthropic/v1/messages`, `/inference/google/…`) und eine
+Modellliste unter `/inference/v1/models`. Diese generische Basis ist
+**Pay-as-you-go** und belastet das Workspace-Guthaben (`402 Insufficient
+balance`, wenn es leer ist). Go-Traffic bleibt deshalb auf
+`/inference/go/openai/v1` (Chat) und `/inference/go/v1/models` (Modellliste) —
+diese Routen sind vom Abo gedeckt. Console übersetzt die Modell-Familien, daher
+laufen auch Claude-/Qwen-/Gemini-Modelle über die OpenAI-Chat-Route (live
+verifiziert 2026-11-18); GPT-Modelle brauchen `max_tokens >= 16`, weil sie auf
+`max_output_tokens` der Responses-API abgebildet werden.
 
 **Implementierung** (`providers/opencode.py`):
 ```python
@@ -776,7 +795,10 @@ App-Endpoints** — Chat `https://opencode.ai/inference/go/openai/v1` und
 Modellliste `https://opencode.ai/inference/go/v1/models`
 (`OPENCODE_GO_BASE_URL` / `OPENCODE_GO_MODELS_BASE_URL`; beide auf
 `https://opencode.ai/zen/go/v1` umstellbar, das bedient beides unter einer
-Basis). Der `x-opencode-session` Header ist dort Pflicht (ohne ihn HTTP 500).
+Basis). Der `x-opencode-session` Header ist dort Pflicht für Fremd-Clients (ohne
+ihn `400 MissingSessionID`, Stand 2026-11-18). Die in der Console-Doku gezeigte
+generische Basis `/inference/openai/v1` ist **Pay-as-you-go** (`402 Insufficient
+balance` bei leerem Guthaben) und bleibt für Go-Traffic ungenutzt.
 Eine eigene `opencode_go`-ProviderConfig schlägt den Server-Key; über
 `OPENCODE_GO_SERVER_KEY_ALLOWED_USERS` (leer = alle User) lässt sich das
 Abo-Kontingent einschränken.
