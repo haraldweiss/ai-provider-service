@@ -22,7 +22,7 @@ Die aktuelle Open-WebUI-Betriebsanleitung ist dort verlinkt.
   - **Network-Errors** (Timeout, ConnectionError) → sofortiger Fallback
   - **HTTP 429/402** (Rate Limit / Insufficient Balance) → Fallback auf nächsten verfügbaren Provider
   - **HTTP 400/422** (Bad Request) → kein Fallback (request-spezifischer Fehler, würde überall scheitern)
-- **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist
+- **Queue-Persistenz**: bei Ollama-Ausfall werden Requests in SQLite gequeued und automatisch nachgearbeitet, sobald Ollama wieder online ist; abgelaufene Einträge — auch hängengebliebene `processing`-Zeilen — schließt der periodische Sweep als `expired` (siehe Abschnitt *Queue*)
 - **Health-Filtering**: `/v1/models` zeigt nur Modelle tatsächlich erreichbarer Provider. Seit dem OpenCode-Breach 2026-10-17 ist der **Zen**-Provider (`opencode`, Console-Key wurde invalidiert + Free-Tier weiterhin app-locked) tot; Modelle liefert **`opencode_go`** (Go/Go-Plus-Abo, `OPENCODE_GO_API_KEY`), dessen Katalog vollständig gelistet wird. Die alten Zen-Free-Modelle bleiben versteckt (`OPENCODE_ADVERTISE_FREE_MODELS=1` stellt das alte Verhalten wieder her, sobald upstream den Lock aufhebt)
 - **Async Model Cache**: Die `/v1/models`-Liste wird pro User gecacht (TTL `MODEL_CACHE_TTL_SEC`, Default 60s). Der Background-Worker refresht gecachte User bei halber TTL proaktiv; Health-Transitions (Provider up↔down) invalidieren sofort. Erster Request eines Users baut die Liste synchron (Cold-Miss) — danach bedient der Cache, ohne dass Requests auf Provider-`get_models()`-HTTP-Calls warten.
 - **Health-Monitoring**: Background-Worker pollt alle Provider regelmäßig
@@ -1127,6 +1127,24 @@ GET    /queue/<id>                              → Status + Result
 GET    /queue?user_id=<id>&status=<s>           → Liste
 DELETE /queue/<id>                              → cancel
 ```
+
+**Lebenszyklus:** Requests werden nur gequeued, wenn der Provider nicht
+erreichbar ist und `queue_when_unavailable` gesetzt ist (`queue_ttl_hours`,
+Default 24). Abgearbeitet wird beim Health-Übergang down→up
+(`health_tracker.just_recovered()`).
+
+**Ablauf-Sweep (seit 2026-11-18):** `expire_stale_queue_items()` schließt
+Einträge mit `status IN ('pending','processing')`, deren `expires_at` vorbei ist,
+als `expired`. Er läuft einmal pro Drain-Zyklus (Default 60 s), unabhängig von
+einem Recovery — vorher hing die Ablaufmarkierung an einem Provider-Flap, sodass
+eine abgestürzte `processing`-Zeile dauerhaft „processing" blieb (in Produktion
+fünf Monate lang). Bewusst **kein** erneuter Versuch abgelaufener Payloads:
+Clients pollen ein gequeutes Item nur wenige Sekunden (die WordPress-AIC
+beispielsweise 5 × 2 s), ein Nacharbeiten würde also Tokens für ein Ergebnis
+verbrauchen, das niemand mehr abholt. Ein Provider, dessen Health-Check grün
+bleibt, während einzelne Modellaufrufe in den Timeout laufen, kann seine
+Queue-Einträge deshalb nicht nachträglich bedienen — der Aufrufer muss neu
+anfragen.
 
 ## Integration aus Konsumenten-Apps
 
