@@ -13,6 +13,7 @@ from typing import Optional
 from database import db
 from storage.models import ProviderConfig, RequestQueue
 from providers import get_client, PROVIDER_REGISTRY
+from providers.dsml import normalize_dsml_result
 from config import Config
 import health_tracker
 from observability.tracing import llm_call_span, record_llm_io, record_llm_usage
@@ -297,6 +298,7 @@ def _execute(
         with llm_call_span(provider_id, model, user_id=user_id,
                            origin_app=origin_app) as span:
             result = client.create_message(model, messages, max_tokens, tools=tools)
+            result = normalize_dsml_result(result, tools)
             latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
             health_tracker.set_status(provider_id, True)
             usage = (result or {}).get('usage') or {}
