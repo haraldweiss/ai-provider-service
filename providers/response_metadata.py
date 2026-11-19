@@ -41,4 +41,9 @@ def completion_metadata(response: Any, message: Any = None) -> dict:
             })
         if normalized:
             result.update(tool_calls=normalized, stop_reason='tool_use')
+    choices = field(response, 'choices', [])
+    if isinstance(choices, list) and choices:
+        reason = field(choices[0], 'finish_reason')
+        if reason in ('length', 'content_filter'):
+            result['stop_reason'] = reason
     return result

@@ -338,6 +338,39 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-11-19 — DSML compatibility + provider docs review
+
+- Owner requested gateway recovery for DeepSeek V4.1 DSML shown as text in Cline.
+  Local Cline session 07:15–07:16 CET used the built-in `cline-pass` provider
+  directly; gateway changes apply only to clients routed through this service.
+- Shared `providers/dsml.py` normalization runs in `dispatcher._execute` after
+  provider execution and before tracing/usage output. Converts complete offered
+  calls only (V4.1 `calls`, legacy `tool_calls`, single/double Unicode/ASCII pipes,
+  bare invokes); preserves unknown/malformed/fenced calls as text. Typed JSON
+  parameters must parse; non-finite JSON and missing required arguments are not
+  promoted. Native IDs/arguments win, duplicates are suppressed, empty native
+  placeholders repaired only when exactly one complete call is unambiguous.
+- `completion_metadata` preserves upstream length/content-filter finish reasons
+  so truncated output is not promoted. Existing provider usage/model/cost fields
+  and Ollama JSON/XML compatibility are retained. The older Ollama DSML helper
+  delegates to this same parser (legacy call IDs preserved), preventing it from
+  pre-promoting malformed examples before the common boundary.
+- RED: 17 failures reproduced text-only JSON/SSE and missing DSML conversion;
+  three further safety cases failed before fixes. Independent code and Python
+  reviews found nested-wrapper, quoted/misclosed-fence and filtered-output
+  promotion; all were reproduced RED→GREEN. Anthropic duplicate content and
+  list-contained fences are covered too. Final local suite: 700 passed, 85.77%
+  coverage; focused DSML + Ollama: 59 passed. Compilation and diff checks pass.
+  Production deployment will follow successful PR CI test and Docker smoke.
+- Exact documentation email: 2026-11-19 06:17 UTC, Spark ID 221290,
+  `openai (+2 / -1)`. Editorial model-family wording, Markdown link formatting,
+  added deprecation link only; no runtime requirement changed. Current overview
+  and client confirmed SDK bearer auth, per-call UUID X-Client-Request-Id and
+  dynamic models. No provider behavior changed for this alert. Documentation
+  and metadata/OpenAI API suites: 67 passed. All monitor sources healthy,
+  collector_error=null; host Postfix delivery confirmed at 06:17:03 UTC.
+
+
 ### 2026-11-18 — Branch/queue hygiene: 51 remote branches removed, ruleset narrowed to `main`
 
 - **Trigger:** „check the remote branches not merged if there is anything useful,

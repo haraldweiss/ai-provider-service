@@ -862,6 +862,25 @@ Grammar-400 wie `Value looks like object, but can't find closing '}'`
 zurückgibt, retryt der Gateway den gleichen Ollama-Call ohne native `tools` und
 lässt die DSML/JSON-Text-Konvertierung greifen.
 
+**DSML compatibility (2026-11-19):** The shared dispatch boundary also recovers
+complete DSML invocations leaked by hosted providers, including Cline Pass
+DeepSeek V4.1 (`<｜DSML｜ calls>`) and legacy `tool_calls` envelopes. Single or
+double fullwidth/ASCII pipes and bare complete invocations are supported. Only
+tools explicitly offered by the caller are eligible; unknown calls, malformed
+parameters, fenced examples and truncated responses remain text. Native call IDs
+and arguments take precedence, identical textual duplicates are suppressed, and
+an empty native placeholder is repaired only from one unambiguous complete
+matching invocation. Non-tool prose, model and usage/cost metadata are preserved.
+This applies to `/chat`, OpenAI JSON/SSE responses and fallback requests. It does
+not intercept Cline's direct built-in ClinePass connection.
+
+**Provider documentation review (2026-11-19):** The 06:17 UTC monitor alert only
+changes OpenAI overview wording/link formatting and adds the deprecation link.
+There is no new endpoint, authentication, header or payload requirement; the
+existing SDK authentication, UUID request IDs and dynamic model discovery remain
+correct. Review sources: [API overview](https://developers.openai.com/api/reference/overview.md)
+and [deprecations](https://developers.openai.com/api/docs/deprecations.md).
+
 **Tool-Argument-Normalisierung für Ollama (Fix 2026-09-22):** OpenAI-Clients
 (pi, Open WebUI, OpenAI-SDK) senden `messages[].tool_calls[].function.arguments`
 als JSON-*String* (OpenAI-Spec), Ollamas `/api/chat` erwartet aber ein

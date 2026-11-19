@@ -22,6 +22,7 @@ from xml.etree import ElementTree
 import requests
 
 from providers.base import BaseClient
+from providers.dsml import normalize_dsml_result
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -88,23 +89,6 @@ def _normalize_tool_calls(message: dict, tools: list[dict] | None = None) -> lis
     return calls
 
 
-_DSML = r'(?:｜｜DSML｜｜|\|\|DSML\|\|)'
-_DSML_TOOL_CALLS_RE = re.compile(
-    rf'<\s*{_DSML}\s*tool_calls\s*>(?P<body>.*?)'
-    rf'</\s*{_DSML}\s*tool_calls\s*>',
-    re.DOTALL,
-)
-_DSML_INVOKE_RE = re.compile(
-    rf'<\s*{_DSML}\s*invoke\s+name="(?P<name>[^"]+)"\s*>'
-    rf'(?P<body>.*?)</\s*{_DSML}\s*invoke\s*>',
-    re.DOTALL,
-)
-_DSML_PARAMETER_RE = re.compile(
-    rf'<\s*{_DSML}\s*parameter\s+name="(?P<name>[^"]+)"'
-    r'(?:\s+string="(?P<string>[^"]+)")?\s*>'
-    rf'(?P<value>.*?)</\s*{_DSML}\s*parameter\s*>',
-    re.DOTALL,
-)
 _XML_TOOL_NAME_RE = re.compile(r'^[A-Za-z_][\w.-]*$')
 
 
@@ -118,48 +102,13 @@ def _dsml_param_value(raw: str, string_flag: str | None):
     return value
 
 
-def _append_dsml_invokes(block: str, allowed: set[str], calls: list[dict]) -> int:
-    before = len(calls)
-    for invoke in _DSML_INVOKE_RE.finditer(block):
-        name = invoke.group('name').strip()
-        if not name or (allowed and name not in allowed):
-            continue
-        params = {}
-        for param in _DSML_PARAMETER_RE.finditer(invoke.group('body')):
-            params[param.group('name')] = _dsml_param_value(
-                param.group('value'), param.group('string'),
-            )
-        calls.append({
-            'id': f'call_{len(calls)}',
-            'name': name,
-            'input': params,
-        })
-    return len(calls) - before
-
-
 def _extract_dsml_tool_calls(
-    text: str, tools: list[dict] | None = None,
+    text: str, tools: list[dict] | None = None, stop_reason: str | None = None,
 ) -> tuple[str, list[dict]]:
-    allowed = _allowed_tool_names(tools)
-    calls: list[dict] = []
-
-    def replace_block(match: re.Match) -> str:
-        before = len(calls)
-        block = match.group('body')
-        _append_dsml_invokes(block, allowed, calls)
-        return '' if len(calls) > before else match.group(0)
-
-    if not allowed:
-        return text, []
-    cleaned = _DSML_TOOL_CALLS_RE.sub(replace_block, text)
-
-    def replace_bare_invoke(match: re.Match) -> str:
-        before = len(calls)
-        _append_dsml_invokes(match.group(0), allowed, calls)
-        return '' if len(calls) > before else match.group(0)
-
-    cleaned = _DSML_INVOKE_RE.sub(replace_bare_invoke, cleaned).strip()
-    return cleaned, calls
+    result = normalize_dsml_result({'content': text, 'stop_reason': stop_reason}, tools)
+    calls = [{**call, 'id': f'call_{index}'}
+             for index, call in enumerate(result.get('tool_calls', []))]
+    return result['content'], calls
 
 
 def _extract_json_text_tool_calls(
@@ -325,7 +274,7 @@ def _result_from_ollama_data(
     text = message.get('content', '')
     tool_calls = _normalize_tool_calls(message, tools=tools)
     if not tool_calls and text:
-        text, tool_calls = _extract_dsml_tool_calls(text, tools=tools)
+        text, tool_calls = _extract_dsml_tool_calls(text, tools=tools, stop_reason=data.get('done_reason'))
     if not tool_calls and text:
         text, tool_calls = _extract_xml_text_tool_calls(text, tools=tools)
     if not tool_calls and text:
