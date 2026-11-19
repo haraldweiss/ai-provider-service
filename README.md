@@ -873,6 +873,11 @@ an empty native placeholder is repaired only from one unambiguous complete
 matching invocation. Non-tool prose, model and usage/cost metadata are preserved.
 This applies to `/chat`, OpenAI JSON/SSE responses and fallback requests. It does
 not intercept Cline's direct built-in ClinePass connection.
+Deployed on Oracle as `localhost/ai-provider:5d4717f` after CI and a sanitized,
+network-isolated JSON/SSE replay. Real Cline Pass tool-call probes also passed
+in both formats (native upstream calls; no execution). Recovery metadata and
+image-only Compose override: `/root/ai-provider-dsml-20261119T064327Z/`; preserve
+current application data when rolling back.
 
 **Provider documentation review (2026-11-19):** The 06:17 UTC monitor alert only
 changes OpenAI overview wording/link formatting and adds the deprecation link.
