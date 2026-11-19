@@ -20,11 +20,11 @@ execution in `dispatcher._execute`; existing API JSON/SSE serializers are reused
 ## Task 2: Documentation, integration and deploy
 
 - [x] Update README and AGENTS.md with semantics and evidence.
-- [ ] Commit, push feature branch, create PR; wait for CI test and Docker smoke.
-- [ ] Merge with Merge: commit; pull main on Oracle and build with build.sh.
-- [ ] Verify candidate before recreation, preserve root-only rollback metadata;
+- [x] Commit, push feature branch, create PR; wait for CI test and Docker smoke.
+- [x] Merge with Merge: commit; pull main on Oracle and build with build.sh.
+- [x] Verify candidate before recreation, preserve root-only rollback metadata;
   verify running code hashes, active services and live tool-call response shape.
-- [ ] Record final deploy evidence and keep Git/README/AGENTS current.
+- [x] Record final deploy evidence and keep Git/README/AGENTS current.
 
 ## Review focus
 
@@ -43,3 +43,10 @@ wrappers, filtered responses, duplicate native content). No deferred findings.
 The user added the provider docs alert review during implementation. Exact
 06:17 UTC OpenAI overview alert was editorial/link-only; 67 relevant tests passed.
 No provider protocol change warranted. Details in AGENTS.md and README.
+
+Task 2 complete: PR #71 all CI gates passed; merged 5d4717f, pulled and built on
+Oracle. Network-isolated sanitized image replay JSON/SSE PASS; new container
+healthy/0 restarts, all changed runtime hashes match source, environment/mounts
+preserved and other 13 IDs unchanged. Real Cline Pass JSON/SSE calls each returned
+one valid native echo_audit call; no tool executed. Public health/site/chat 200.
+Private backup/evidence: /root/ai-provider-dsml-20261119T064327Z/.

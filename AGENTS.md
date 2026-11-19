@@ -361,7 +361,26 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   promotion; all were reproduced RED→GREEN. Anthropic duplicate content and
   list-contained fences are covered too. Final local suite: 700 passed, 85.77%
   coverage; focused DSML + Ollama: 59 passed. Compilation and diff checks pass.
-  Production deployment will follow successful PR CI test and Docker smoke.
+  PR #71 CI test, Docker build/boot smoke and secret safety all passed; merged
+  as `5d4717f`, pulled on Oracle, built with `build.sh` and deployed.
+- Live image `localhost/ai-provider:5d4717f`, ID `2b57c4ae…`, container
+  `77ea3bd4…`: healthy, 0 restarts. Host↔container hashes match all four changed
+  runtime files; all environment values, mounts, ports, ulimits and restart
+  policy preserved. Other 13 running IDs unchanged (14 running in total).
+- Before replacement, the image passed a network-isolated, in-memory-DB replay
+  through the real Cline adapter/dispatcher/OpenAI JSON+SSE endpoints with
+  sanitized V4.1 DSML fixtures. After deployment, real Cline Pass DeepSeek V4.1
+  JSON and SSE requests both returned 200, one correctly parameterized native
+  `echo_audit` call and `finish_reason=tool_calls`; no tool was executed. These
+  two upstream probes happened to return native calls, so they are not evidence
+  of upstream DSML leakage; deterministic image replay is the recovery proof.
+- Local/public provider health, main website and chat all HTTP 200. Private
+  recovery/evidence `/root/ai-provider-dsml-20261119T064327Z/` (700/600) includes
+  original inspect/resolved Compose, consistent SQLite backup (integrity ok),
+  image replay, build log and deployment checks. Previous image retained as
+  `localhost/ai-provider:pre-dsml-20261119`; `rollback.override.yml` restores
+  image only with current Compose. Preserve current data; no automatic DB restore.
+
 - Exact documentation email: 2026-11-19 06:17 UTC, Spark ID 221290,
   `openai (+2 / -1)`. Editorial model-family wording, Markdown link formatting,
   added deprecation link only; no runtime requirement changed. Current overview
