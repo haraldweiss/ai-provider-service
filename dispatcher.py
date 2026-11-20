@@ -133,9 +133,9 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
     Sonderfall opencode: Free-Modelle laufen über den zentralen OPENCODE_API_KEY
     (ohne eigene Konfiguration). Paid-Modelle brauchen einen eigenen API-Key.
 
-    Sonderfall openrouter: Free-Modelle funktionieren sogar ohne API-Key.
-    Mit System-Key (OPENROUTER_API_KEY) im free-only Modus; eigener Key
-    schaltet Paid-Modelle frei.
+    Sonderfall openrouter: Ohne eigenen Key bleibt die Free-Modellliste
+    sichtbar. Inferenz braucht den System-Key (OPENROUTER_API_KEY) im
+    free-only Modus; ein eigener Key schaltet Paid-Modelle frei.
     """
     pc = ProviderConfig.query.filter_by(user_id=user_id, provider_id=provider_id).first()
     if pc:
@@ -153,7 +153,7 @@ def _load_config(user_id: str, provider_id: str) -> Optional[dict]:
             return {'api_key': Config.OPENCODE_GO_API_KEY}
         return None
 
-    # openrouter: free models work even without system key, otherwise free-only
+    # OpenRouter: keep free-model discovery visible; inference needs a valid key.
     if provider_id == 'openrouter':
         if Config.OPENROUTER_API_KEY:
             return {'_free_only': True, 'api_key': Config.OPENROUTER_API_KEY}
