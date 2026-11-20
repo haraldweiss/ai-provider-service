@@ -126,6 +126,24 @@ self.client = OpenAI(
 
 **App-Seite**: `https://openrouter.ai/apps?url=ai-provider-service.wolfinisoftware.de`
 
+**Dokumentationsreview (2026-11-20):** Der Quickstart zeigt jetzt bevorzugt
+`/responses`; `/chat/completions` und das OpenAI-SDK bleiben unterstützt.
+Unser Chat-Adapter behält daher seine bestehende API. Bearer-Authentifizierung
+und App-Header entsprechen weiterhin der aktuellen Dokumentation.
+Auch Free-Inferenz braucht einen gültigen OpenRouter-Key: Nutzer ohne eigenen
+Key verwenden den konfigurierten Server-Key, keine anonyme Inferenz.
+
+Die Image-API bietet neuerdings `response_format=url`; `b64_json` bleibt der
+Default. Unser Bridge-Endpoint fordert keine URLs an und liefert weiterhin
+Data-URIs. Der Reasoning-Formatname `google-vertex-responses-v1` wurde in
+`google-vertex-meta-responses-v1` umbenannt; unser Adapter vergleicht diese Werte
+nicht. Daraus ergibt sich keine notwendige Runtime- oder Konfigurationsänderung.
+Quellen: [Quickstart](https://openrouter.ai/docs/quickstart),
+[API-Referenz](https://openrouter.ai/docs/api_reference/overview),
+[Authentifizierung](https://openrouter.ai/docs/api_reference/authentication),
+[Changelog](https://openrouter.ai/docs/changelog),
+[Image-API](https://openrouter.ai/docs/api/api-reference/images/generate-an-image).
+
 ### OpenAI (Optional)
 
 OpenAI unterstützt `X-Client-Request-Id` für Request-Tracking und Debugging.
@@ -803,7 +821,9 @@ Eine eigene `opencode_go`-ProviderConfig schlägt den Server-Key; über
 `OPENCODE_GO_SERVER_KEY_ALLOWED_USERS` (leer = alle User) lässt sich das
 Abo-Kontingent einschränken.
 OpenRouter ist ohne persönlichen Key ebenfalls sichtbar, listet dann aber nur
-dynamisch erkannte Free-Modelle. `flask refresh-free-models` aktualisiert beide
+dynamisch erkannte Free-Modelle. Die Inferenz verwendet dabei den konfigurierten
+Server-Key; auch Free-Modelle erlauben keine anonyme Inferenz.
+`flask refresh-free-models` aktualisiert beide
 Free-Modell-Caches; OpenRouter fällt bei einem Refresh-Fehler auf den letzten
 Cache zurück. Lokale Ollama-Modelle erscheinen automatisch, sobald sie auf
 einem Tunnel-Backend verfügbar sind (z.B. `ollama/ornith:latest`).

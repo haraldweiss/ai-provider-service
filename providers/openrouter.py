@@ -1,9 +1,9 @@
 """OpenRouter Client — OpenAI-compatible hosted gateway with free model support.
 
-OpenRouter offers many free models that require no API key. This client
-discovers free models from the API and filters to free-only when the system
-key is used (or no key is configured), following the same pattern as
-providers/opencode.py.
+OpenRouter inference requires a valid API key, including for free models.
+This client discovers free models from the API and filters to free-only when
+the dispatcher requests it for users without a personal key; inference then
+uses the configured server key.
 """
 
 from __future__ import annotations
@@ -101,9 +101,9 @@ def _refresh_free_models(client: OpenAI, fallback: list[str] | None = None) -> l
 def _make_openai_client(api_key: str | None, base_url: str) -> OpenAI:
     """Create an OpenAI client that works across SDK versions.
 
-    OpenRouter allows anonymous access for free models, but the OpenAI SDK
-    requires an api_key to be set. Use a placeholder when none is configured
-    so the client can be instantiated for anonymous/free-model use.
+    The OpenAI SDK requires an api_key even to instantiate the client. Keep
+    a placeholder when none is configured so public model discovery can still
+    work; it is not a valid credential for inference, including free models.
     
     Includes app attribution headers for OpenRouter rankings.
     """

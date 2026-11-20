@@ -338,6 +338,46 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 
 ## 7. Handoff zone
 
+### 2026-11-20 — OpenRouter documentation compatibility review
+
+- Owner requested a review of current OpenRouter documentation and any necessary
+  service changes. Reviewed monitored authentication/quickstart pages, API
+  overview, November 18/19 changelog entries and the image-generation reference.
+- Quickstart examples now favor `/responses`; `/chat/completions` remains
+  supported, including the existing OpenAI SDK adapter. Bearer authentication
+  and attribution headers remain compatible. No endpoint/SDK migration needed.
+- `/images` now optionally returns signed URLs with `response_format=url`;
+  `b64_json` remains the default. Our bridge does not request URLs, so the
+  existing Data-URI contract remains valid. Do not infer a default-format change
+  merely from the changelog removing the required `b64_json` schema property.
+- Reasoning-format rename `google-vertex-responses-v1` →
+  `google-vertex-meta-responses-v1` needs no change here: the adapter does not
+  compare or validate these enum strings. New TTS/model-filter APIs are additive.
+- Corrected false anonymous-free-inference claims in `providers/openrouter.py`
+  and `dispatcher.py`; README now explains that free inference still requires a
+  valid server/personal key. The placeholder only permits client construction
+  and public model discovery. Documentation/comments only; no runtime,
+  credentials, routing, privacy policy or production configuration changed.
+- Verification: 120 focused OpenRouter, image/video, response metadata and
+  documentation/model-monitor tests passed. Existing deployed adapter and local/
+  public `/health` healthy (HTTP 200), container healthy with 0 restarts. Live
+  gateway `openrouter/nvidia/nemotron-3-ultra-550b-a55b:free` → HTTP 200,
+  nonempty content, `finish_reason=stop`, no error. Initial 16-token adapter
+  probe exhausted its output allowance without visible text; 512-token gateway
+  probe completed normally. The docs monitor snapshot at 00:17 UTC has 13
+  healthy sources and `collector_error=null`.
+- Separate catalog observation: the 02:00 UTC OpenRouter monitor lists
+  `cohere/north-mini-code:free` and `poolside/laguna-s-2.1:free` probe candidates
+  as missing from the upstream catalog; Nemotron Ultra succeeds. Gateway list
+  has no stale IDs or missing configured IDs. No model-chain change was made
+  as part of this documentation compatibility review.
+- No rebuild/container recreate required for this documentation-only change.
+  Sources: https://openrouter.ai/docs/quickstart,
+  https://openrouter.ai/docs/api_reference/authentication,
+  https://openrouter.ai/docs/api_reference/overview,
+  https://openrouter.ai/docs/changelog,
+  https://openrouter.ai/docs/api/api-reference/images/generate-an-image.
+
 ### 2026-11-19 — DSML compatibility + provider docs review
 
 - Owner requested gateway recovery for DeepSeek V4.1 DSML shown as text in Cline.
