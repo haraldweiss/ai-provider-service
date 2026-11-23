@@ -7,6 +7,20 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from providers import get_client, PROVIDER_REGISTRY
 
+_REAL_SLEEP = time.sleep
+
+
+@pytest.fixture
+def provider_sleep():
+    provider_time = MagicMock(wraps=time)
+    provider_time.sleep = MagicMock()
+    with patch('providers.openrouter.time', provider_time):
+        yield provider_time.sleep
+
+
+def test_provider_retry_sleep_is_isolated_from_background_workers(provider_sleep):
+    assert time.sleep is _REAL_SLEEP
+
 
 @patch('providers.openrouter.OpenAI')
 def test_free_only_rejects_paid_model_before_request(mock_openai):
@@ -181,9 +195,8 @@ def _success_response(text: str = 'ok') -> MagicMock:
     return resp
 
 
-@patch('providers.openrouter.time.sleep')
 @patch('providers.openrouter.OpenAI')
-def test_create_message_retries_after_429(mock_openai, mock_sleep):
+def test_create_message_retries_after_429(mock_openai, provider_sleep):
     from providers.openrouter import OpenRouterClient
     create = mock_openai.return_value.chat.completions.create
     create.side_effect = [_rate_limit_error(), _success_response('recovered')]
@@ -194,12 +207,11 @@ def test_create_message_retries_after_429(mock_openai, mock_sleep):
 
     assert create.call_count == 2
     assert out['content'][0]['text'] == 'recovered'
-    mock_sleep.assert_called_once()
+    provider_sleep.assert_called_once()
 
 
-@patch('providers.openrouter.time.sleep')
 @patch('providers.openrouter.OpenAI')
-def test_create_message_honours_retry_after_header(mock_openai, mock_sleep):
+def test_create_message_honours_retry_after_header(mock_openai, provider_sleep):
     from providers.openrouter import OpenRouterClient
     create = mock_openai.return_value.chat.completions.create
     create.side_effect = [_rate_limit_error(retry_after='7'), _success_response()]
@@ -208,12 +220,11 @@ def test_create_message_honours_retry_after_header(mock_openai, mock_sleep):
         'm', [{'role': 'user', 'content': 'hi'}], 10
     )
 
-    mock_sleep.assert_called_once_with(7.0)
+    provider_sleep.assert_called_once_with(7.0)
 
 
-@patch('providers.openrouter.time.sleep')
 @patch('providers.openrouter.OpenAI')
-def test_create_message_reraises_after_exhausting_retries(mock_openai, mock_sleep):
+def test_create_message_reraises_after_exhausting_retries(mock_openai, provider_sleep):
     from providers.openrouter import OpenRouterClient
     create = mock_openai.return_value.chat.completions.create
     create.side_effect = _rate_limit_error()
@@ -224,7 +235,7 @@ def test_create_message_reraises_after_exhausting_retries(mock_openai, mock_slee
         )
 
     assert create.call_count == 3
-    assert mock_sleep.call_count == 2
+    assert provider_sleep.call_count == 2
 
 
 def test_retry_after_seconds_none_without_header():
