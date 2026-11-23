@@ -3084,3 +3084,16 @@ Related secret-safety CI changes: [wolfini_de_web](https://github.com/haraldweis
 - Combined Python 3.12 tests: 616 passed, 85.05% coverage (80% gate). Fresh PR CI
   still verifies Docker build/start, /health and opencode provider discovery before
   merge. No deployment or live provider requests.
+
+
+### Container crypto build preservation (2026-11-23)
+
+The Dockerfile builds the pinned cryptography 50.0.2 / static OpenSSL 3.5.9 wheel
+in a disposable native builder. Preserve its pip constraint, source SHA checks,
+final package/backend verification and `pip check`; the stock 50.0.2 wheel has
+OpenSSL 4.0.3. A cryptography bump requires coordinated source/hash/gate review.
+Run `python3 security/cryptography/smoke-image.py <sha-tagged-image>` after the
+normal build helper and before container recreation. Preserve the runtime image
+contract, all data mounts and existing Compose image-selection overrides until
+explicitly switching them to the verified release. Full procedure:
+[security/cryptography/README.md](security/cryptography/README.md).

@@ -1,11 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # © 2026 Harald Weiss
 #
-# Single-stage build for ai-provider-service.
-# Using Debian Bookworm (glibc 2.36+) for compatibility with cryptography
-# native bindings and other binary wheels.
+# Multi-stage build for ai-provider-service.
+# Matching Debian/Python bases keep the compiled wheel native to the runtime.
 
-FROM docker.io/library/python:3.12-slim
+# Build natively on the same Python/Debian base as the runtime stage.
+FROM docker.io/library/python:3.12-slim AS crypto-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config libffi-dev rustc cargo perl curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+COPY security/cryptography/build-wheel.sh /usr/local/bin/build-crypto-wheel
+RUN bash /usr/local/bin/build-crypto-wheel 50.0.2 /crypto-build
+
+FROM docker.io/library/python:3.12-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl gosu && \
     rm -rf /var/lib/apt/lists/*
@@ -13,7 +20,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gosu && \
 WORKDIR /app
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY security/cryptography/constraints.txt security/cryptography/verify-runtime.py /opt/cryptography/
+COPY --from=crypto-builder /crypto-build/wheels/ /opt/crypto-wheels/
+RUN pip install --no-cache-dir -c /opt/cryptography/constraints.txt -r requirements.txt && \
+    (cd /opt/crypto-wheels && sha256sum --check SHA256SUMS) && \
+    pip install --no-cache-dir --no-index --no-deps --force-reinstall /opt/crypto-wheels/*.whl && \
+    python /opt/cryptography/verify-runtime.py --expected-cryptography 50.0.2 && \
+    pip check && \
+    rm -rf /opt/crypto-wheels
 
 COPY . .
 
