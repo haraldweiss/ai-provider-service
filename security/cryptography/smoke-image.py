@@ -6,6 +6,21 @@ from pathlib import Path
 import subprocess
 
 
+def contract_mismatch(config, expected):
+    """Return the first differing runtime-contract key, or ``None``.
+
+    Docker omits empty string fields from ``image inspect`` output (an unset
+    ``User`` is not serialized at all, verified on Docker 29.10.0), so a missing
+    key may only satisfy an empty expectation. Every other difference - a
+    non-empty value, ``None`` or a missing non-empty field - is a mismatch.
+    """
+    for key, value in expected.items():
+        actual = config.get(key) if key in config else ("" if value == "" else None)
+        if actual != value:
+            return key
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image")
@@ -17,9 +32,9 @@ def main():
         check=True, text=True, capture_output=True,
     )
     config = json.loads(inspected.stdout)[0]["Config"]
-    for key, value in expected.items():
-        if config.get(key) != value:
-            raise SystemExit(f"runtime_contract_mismatch: {key}")
+    mismatch = contract_mismatch(config, expected)
+    if mismatch:
+        raise SystemExit(f"runtime_contract_mismatch: {mismatch}")
     run = [args.engine, "run", "--rm", "--network", "none", "--read-only",
            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
            "--entrypoint", "python", args.image]
