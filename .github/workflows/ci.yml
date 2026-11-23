@@ -27,6 +27,8 @@ jobs:
           cache: pip
       - name: Install deps
         run: pip install -r requirements.txt pytest pytest-cov
+      - name: Verify crypto build gates
+        run: python security/cryptography/test-gates.py
       - name: 'pytest + coverage (target: 80%)'
         run: pytest tests/ -q --cov=. --cov-report=term-missing --cov-fail-under=80
 
@@ -37,6 +39,9 @@ jobs:
 
       - name: Build image
         run: docker build -t ai-provider:ci .
+
+      - name: Verify bundled OpenSSL and runtime image contract
+        run: python3 security/cryptography/smoke-image.py ai-provider:ci
 
       - name: Generate valid Fernet MASTER_KEY
         id: keys

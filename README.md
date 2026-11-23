@@ -1542,3 +1542,15 @@ example files, and password-bearing commands. Existing history was audited
 separately; this CI job is not a claim that historical credentials are safe.
 If a credential was committed, revoke or rotate it before considering the leak
 resolved. Do not print secret values in scan logs, reviews, or handoffs.
+
+
+### Container cryptography build (2026-11-23)
+
+Container builds compile cryptography **50.0.2** with static **OpenSSL 3.5.9**
+from SHA-256-pinned sources; the public 50.0.2 wheel bundles OpenSSL 4.0.3.
+Allow several minutes and native compiler resources for a cold build. The final
+image checks both versions, disposable-key operations and dependency consistency;
+CI also checks the existing runtime user, entrypoint and ports. Future incompatible
+cryptography bounds deliberately fail the build until this recipe is reviewed.
+Build and migration commands, prerequisites and rollback constraints are in
+[security/cryptography/README.md](security/cryptography/README.md).

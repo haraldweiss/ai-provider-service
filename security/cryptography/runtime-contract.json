@@ -1,0 +1,38 @@
+{
+  "User": "",
+  "WorkingDir": "/app",
+  "Entrypoint": [
+    "/docker-entrypoint.sh"
+  ],
+  "Cmd": [
+    "gunicorn",
+    "--workers",
+    "2",
+    "--worker-class",
+    "gthread",
+    "--threads",
+    "4",
+    "--bind",
+    "0.0.0.0:8767",
+    "--timeout",
+    "180",
+    "--access-logfile",
+    "-",
+    "--error-logfile",
+    "-",
+    "app:create_app()"
+  ],
+  "ExposedPorts": {
+    "8767/tcp": {}
+  },
+  "Healthcheck": {
+    "Test": [
+      "CMD-SHELL",
+      "curl -fsS http://127.0.0.1:8767/health || exit 1"
+    ],
+    "Interval": 30000000000,
+    "Timeout": 20000000000,
+    "StartPeriod": 20000000000,
+    "Retries": 3
+  }
+}

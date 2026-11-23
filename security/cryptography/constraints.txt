@@ -1,0 +1,2 @@
+# Deliberate security gate: update the pinned sources, backend and smoke together.
+cryptography==50.0.2
