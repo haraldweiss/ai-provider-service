@@ -246,3 +246,96 @@ def test_retry_after_seconds_none_without_header():
 def test_retry_after_seconds_caps_huge_values():
     from providers.openrouter import _retry_after_seconds
     assert _retry_after_seconds(_rate_limit_error(retry_after='9999')) == 30.0
+
+
+def _models_client(mock_openai, entries):
+    instance = MagicMock()
+    instance.models.list.return_value.data = entries
+    mock_openai.return_value = instance
+    return instance
+
+
+@patch('providers.openrouter.OpenAI')
+def test_get_models_hides_models_without_chat_endpoint(mock_openai):
+    from providers.openrouter import OpenRouterClient
+
+    chat = SimpleNamespace(id='openai/gpt-5', endpoints=['/api/v1/chat/completions'])
+    batch = SimpleNamespace(id='anthropic/claude-opus-4.8:batch', endpoints=['/api/v1/batches'])
+    legacy = SimpleNamespace(id='legacy/model')  # no endpoints field → assume chat
+    _models_client(mock_openai, [chat, batch, legacy])
+
+    models = OpenRouterClient({'api_key': 'sk-test'}).get_models()
+    assert models == ['legacy/model', 'openai/gpt-5']
+
+
+@patch('providers.openrouter.OpenAI')
+def test_free_discovery_skips_models_without_chat_endpoint(mock_openai, tmp_path, monkeypatch):
+    import providers.openrouter as orouter
+
+    monkeypatch.setattr(orouter, '_FREE_CACHE_FILE', str(tmp_path / 'free.json'))
+    free_chat = SimpleNamespace(id='vendor/free:free', pricing={'prompt': '0', 'completion': '0'},
+                                endpoints=['/api/v1/chat/completions'])
+    free_batch = SimpleNamespace(id='vendor/free:batch', pricing={'prompt': '0', 'completion': '0'},
+                                 endpoints=['/api/v1/batches'])
+    _models_client(mock_openai, [free_chat, free_batch])
+
+    models = orouter._refresh_free_models(mock_openai.return_value)
+    assert models == ['vendor/free:free']
+
+
+@patch('providers.openrouter.OpenAI')
+def test_attribution_headers_use_a_documented_category(mock_openai):
+    from providers.openrouter import OpenRouterClient
+
+    OpenRouterClient({'api_key': 'sk-test'})
+    _, kwargs = mock_openai.call_args
+    headers = kwargs['default_headers']
+    assert headers['HTTP-Referer'] == 'https://ai-provider-service.wolfinisoftware.de'
+    assert headers['X-OpenRouter-Categories'] == 'general-chat'
+
+
+def _response_with_choice(**fields):
+    response = MagicMock()
+    response.choices = [SimpleNamespace(**fields)]
+    response.usage = MagicMock(prompt_tokens=1, completion_tokens=1)
+    return response
+
+
+@patch('providers.openrouter.OpenAI')
+def test_upstream_error_payload_raises_instead_of_empty_message(mock_openai):
+    from providers.openrouter import OpenRouterClient, OpenRouterUpstreamError
+
+    mock_openai.return_value.chat.completions.create.return_value = _response_with_choice(
+        message=SimpleNamespace(content=None),
+        finish_reason='error',
+        error={'code': 429, 'message': 'upstream rate limited'},
+    )
+    client = OpenRouterClient({'api_key': 'sk-test'})
+    with pytest.raises(OpenRouterUpstreamError) as excinfo:
+        client.create_message('free-model', [{'role': 'user', 'content': 'hi'}])
+    assert excinfo.value.status_code == 429
+    assert 'upstream rate limited' in str(excinfo.value)
+
+
+@patch('providers.openrouter.OpenAI')
+def test_finish_reason_error_without_payload_raises(mock_openai):
+    from providers.openrouter import OpenRouterClient, OpenRouterUpstreamError
+
+    mock_openai.return_value.chat.completions.create.return_value = _response_with_choice(
+        message=SimpleNamespace(content=''), finish_reason='error',
+    )
+    with pytest.raises(OpenRouterUpstreamError, match='finish_reason=error'):
+        OpenRouterClient({'api_key': 'sk-test'}).create_message(
+            'model-x', [{'role': 'user', 'content': 'hi'}])
+
+
+@patch('providers.openrouter.OpenAI')
+def test_empty_choices_raise_instead_of_index_error(mock_openai):
+    from providers.openrouter import OpenRouterClient, OpenRouterUpstreamError
+
+    response = MagicMock()
+    response.choices = []
+    mock_openai.return_value.chat.completions.create.return_value = response
+    with pytest.raises(OpenRouterUpstreamError, match='empty choices'):
+        OpenRouterClient({'api_key': 'sk-test'}).create_message(
+            'model-x', [{'role': 'user', 'content': 'hi'}])

@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 _FREE_CACHE_FILE = '/tmp/openrouter_free_models.json'
 _FREE_CACHE_TTL = 86400
 
+# OpenRouter's catalog mixes API families: `:batch` variants only serve the
+# asynchronous Batch API, and future families may add non-chat endpoints. This
+# gateway only offers chat completions, so models that do not declare that
+# endpoint are not advertised (`/v1/models` is what clients pick from).
+_CHAT_ENDPOINT = '/api/v1/chat/completions'
+
+# App attribution. HTTP-Referer is required for attribution; categories must be
+# one of OpenRouter's marketplace values, since unknown values are dropped
+# without an error (https://openrouter.ai/docs/app-attribution).
+_ATTRIBUTION_CATEGORIES = 'general-chat'
+
 # Free-tier models are served from a shared upstream pool, so a 429 is usually
 # a momentary throttle rather than a hard failure. Retry a couple of times with
 # backoff (honouring Retry-After when OpenRouter sends it) before letting the
@@ -55,6 +66,49 @@ def _is_free_model(api_model) -> bool:
         return False
 
 
+def _serves_chat(api_model) -> bool:
+    """True unless the model declares a catalog without chat completions.
+
+    Models from other OpenAI-compatible endpoints do not carry `endpoints`, so
+    they are assumed to serve chat.
+    """
+    endpoints = getattr(api_model, 'endpoints', None)
+    if isinstance(endpoints, (list, tuple)) and endpoints:
+        return _CHAT_ENDPOINT in endpoints
+    return True
+
+
+class OpenRouterUpstreamError(RuntimeError):
+    """OpenRouter answered HTTP 200 but the choice carries a failure.
+
+    Such responses (rate-limited free pool, provider quota, filtered output)
+    used to become an empty assistant message. Surfacing them lets dispatch()
+    fall back to another provider instead.
+    """
+
+    def __init__(self, model: str, code, detail: str):
+        if isinstance(code, bool) or not isinstance(code, int):
+            code = None
+        self.status_code = code
+        message = f'OpenRouter upstream error for {model}'
+        if code is not None:
+            message += f' (code {code})'
+        if detail:
+            message += f': {detail[:300]}'
+        super().__init__(message)
+
+
+def _choice_error(choice):
+    """Return (code, detail) when a 200 choice reports an upstream failure."""
+    error = getattr(choice, 'error', None)
+    if isinstance(error, dict):
+        return error.get('code'), str(error.get('message') or '')
+    if getattr(choice, 'finish_reason', None) == 'error':
+        return None, 'upstream reported finish_reason=error'
+    return None
+
+
+
 def _get_cached_free_models(client: OpenAI) -> list[str]:
     """Fetch free models from cache or API."""
     now = time.time()
@@ -81,7 +135,8 @@ def _refresh_free_models(client: OpenAI, fallback: list[str] | None = None) -> l
     try:
         raw = client.models.list()
         free_models = sorted(
-            m.id for m in _iter_model_entries(raw) if _is_free_model(m)
+            m.id for m in _iter_model_entries(raw)
+            if _serves_chat(m) and _is_free_model(m)
         )
     except Exception as e:
         logger.warning('OpenRouter free model discovery failed: %s', e)
@@ -115,7 +170,7 @@ def _make_openai_client(api_key: str | None, base_url: str) -> OpenAI:
         default_headers={
             'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
             'X-OpenRouter-Title': 'ai-provider-service',
-            'X-OpenRouter-Categories': 'ai-gateway',
+            'X-OpenRouter-Categories': _ATTRIBUTION_CATEGORIES,
         }
     )
 
@@ -131,7 +186,10 @@ class OpenRouterClient(BaseClient):
 
     def get_models(self) -> list[str]:
         try:
-            all_models = sorted(m.id for m in self.client.models.list().data)
+            all_models = sorted(
+                m.id for m in _iter_model_entries(self.client.models.list())
+                if _serves_chat(m)
+            )
             if self._free_only:
                 free_set = set(self.get_free_models())
                 filtered = [m for m in all_models if m in free_set]
@@ -185,7 +243,15 @@ class OpenRouterClient(BaseClient):
         if r is None:  # pragma: no cover - loop always breaks or raises
             raise RuntimeError('OpenRouter: no response after retries')
 
-        choice = r.choices[0]
+        choices = getattr(r, 'choices', None) or []
+        if not choices:
+            raise OpenRouterUpstreamError(model, None, 'empty choices array')
+        choice = choices[0]
+        failure = _choice_error(choice)
+        if failure is not None:
+            code, detail = failure
+            raise OpenRouterUpstreamError(model, code, detail)
+
         msg = getattr(choice, 'message', None) or {}
         text = ''
         if hasattr(msg, 'content'):
