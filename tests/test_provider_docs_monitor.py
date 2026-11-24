@@ -207,3 +207,54 @@ def test_collect_from_container_runs_committed_source_without_file_copy(monkeypa
 
     monkeypatch.setattr(monitor.subprocess, 'run', run)
     assert monitor.collect_from_container('gateway') == report(['Auth.'])
+
+
+TABLE_OLD = '''Call specific-api with the key.
+
+| Header | Required |
+| ------------------------ | ------------ |
+| Authorization | Yes |
+'''
+
+TABLE_NEW = '''Call specific-api with the key.
+
+| Header | Required |
+| --- | --- |
+|  Authorization  |  Yes  |
+'''
+
+
+def test_table_padding_changes_do_not_alert(tmp_path):
+    source = {'id': 'test', 'url': 'https://docs.example.test/api',
+              'format': 'markdown', 'anchor': 'specific-api'}
+    old = monitor.collect(lambda url: TABLE_OLD, sources=[source])
+    new = monitor.collect(lambda url: TABLE_NEW, sources=[source])
+    assert old['sources']['test']['rules'] == new['sources']['test']['rules']
+    assert any('| Authorization | Yes |' in rule
+               for rule in new['sources']['test']['rules'])
+    path = tmp_path / 'state.json'
+    messages = []
+    check(path, old, messages)
+    assert check(path, new, messages) == 0
+    assert messages == []
+
+
+def test_table_content_change_still_alerts(tmp_path):
+    source = {'id': 'test', 'url': 'https://docs.example.test/api',
+              'format': 'markdown', 'anchor': 'specific-api'}
+    old = monitor.collect(lambda url: TABLE_OLD, sources=[source])
+    new = monitor.collect(lambda url: TABLE_NEW.replace('Yes', 'No'),
+                          sources=[source])
+    path = tmp_path / 'state.json'
+    messages = []
+    check(path, old, messages)
+    assert check(path, new, messages) == 0
+    assert len(messages) == 1
+    assert 'Authorization | No' in messages[0]
+
+
+def test_normalize_rule_keeps_prose_and_escaped_pipes():
+    assert monitor.normalize_rule('  Send   Bearer  auth. ') == 'Send Bearer auth.'
+    escaped = '| Query | `a \\| b` |'
+    assert monitor.normalize_rule(escaped) == escaped
+    assert monitor.normalize_rule('|---|:---:|---:|') == '| --- | --- | --- |'
