@@ -847,7 +847,7 @@ gelesen. Details zum Check vom 2026-10-21 stehen in `AGENTS.md` §7.
  | `opencode_go/deepseek-v4.1-flash` | opencode.ai Go-Abo (Subventioniert; Session-Header Pflicht) |
  | `opencode_go/kimi-k3` | opencode.ai Go-Abo, weiteres Modell derselben Abo-Quelle |
  | `opencode/glm-5.1` | GLM via opencode Zen (global gateway; seit dem Breach 2026-10-17 ohne gültigen Server-Key — Modelle nur mit persönlichem Key) |
- | `claude/claude-sonnet-4-6-20250514` | Claude, wenn konfiguriert und API-Key gesetzt |
+ | `claude/claude-sonnet-5-5` | Claude, wenn konfiguriert und API-Key gesetzt (Modelle live via Anthropic Models API) |
  | `cline/anthropic/claude-sonnet-4-6` | Cline (api.cline.bot), wenn konfiguriert und API-Key gesetzt |
 
 **Streaming:** `stream=true` liefert SSE (Server-Sent Events) — auch wenn der
@@ -942,7 +942,10 @@ Vorrang vor der Preistabelle; ungültige Werte (negativ/NaN/Inf) werden ignorier
 **Anthropic-Cache-Tokens:** `dispatcher` zählt `cache_creation_input_tokens`,
 `cache_read_input_tokens` und `cache_creation_1h_input_tokens` in die
 gespeicherten `input_tokens` und `pricing.calc_cost_usd()` bepreist sie mit den
-Anthropic-Multiplikatoren (1.25×/2× für Writes, 0.1× für Reads).
+Anthropic-Multiplikatoren (1.25×/2× für Writes). Reads kosten 0.1× der
+Basis-Input-Rate, bei den neuesten Modellen weniger (0.025× bei Fable/Mythos
+5.x, 0.05× bei Opus 5.5/Sonnet 5.5). Claude Haiku 5.5 bepreist Prompts über
+100k Input-Tokens (inkl. Cache-Writes/-Reads) mit 5× — beides modellabhängig.
 
 **OpenAI-Content-Parts:** `messages[].content` darf ein String oder eine
 OpenAI-kompatible Content-Part-Liste sein, z.B.
@@ -992,7 +995,7 @@ Damit Pi den Service als OpenAI-kompatiblen Provider nutzen kann:
   3. **Modelle** sind dann als `ai-provider-service/...` in Pi wählbar:
      - `--model ai-provider-service/opencode_go/kimi-k3` — opencode.ai Go (global gateway)
      - `--model ai-provider-service/ollama/qwen3.6:latest` — Lokales Ollama
-     - `--model ai-provider-service/claude/claude-sonnet-4-6-20250514` — Claude
+     - `--model ai-provider-service/claude/claude-sonnet-5-5` — Claude
 
 **Hinweis:** Der Service läuft auf dem **oracle-vm** hinter Apache Reverse-Proxy.
 Die URL ist `https://ai-provider-service.wolfinisoftware.de/`. Bei lokalem
@@ -1275,8 +1278,9 @@ auf bestimmte `user_id`s beschränkt ist:
 - **Claude** (`CLAUDE_SERVER_KEY_ALLOWED_USERS`) — leer = offen für alle
   (single-tenant Default).
 - **Claude models** (`CLAUDE_MODEL_LIST`) — Komma-separierte Modell-Liste,
-  überschreibt die statische `KNOWN_MODELS`-Liste aus `providers/claude.py`.
-  Ohne Setzung werden die Default-Modelle verwendet.
+  überschreibt sowohl das Models API (live) als auch die statische
+  `KNOWN_MODELS`-Fallback-Liste aus `providers/claude.py`.
+  Ohne Setzung werden die vom API-Key nutzbaren Modelle angeboten.
 - **z.ai** (`ZAI_SERVER_KEY_ALLOWED_USERS`) — leer = **nur `ADMIN_USER_ID`**
   darf den zentralen `ZAI_API_KEY` nutzen (Owner-only Default, inkl. der
   kostenlosen GLM-Flash-Modelle). Alle anderen User müssen einen eigenen
@@ -1510,8 +1514,11 @@ CLI:
   eigenen Health-Cache (akzeptabel — Stale-Detection ist konservativ).
 - **Keine Cost-Tracking-API:** Cost-Logs bleiben in der Konsumenten-App
   (z.B. Bewerbungstracker `ApiCall`-Tabelle).
-- **Anthropic-Models statisch:** kein offizielles `/models`-Endpoint —
-  wird in `providers/claude.py:KNOWN_MODELS` gepflegt.
+**Anthropic-Models live:** der Client fragt das Models API (`GET /v1/models`)
+und bietet nur die für den jeweiligen API-Key nutzbaren Modelle an (active und
+deprecated, nie retired); die Liste wird 10 Minuten pro Prozess gecacht. Nur
+wenn der Call scheitert, greift die statische Fallback-Liste in
+`providers/claude.py:KNOWN_MODELS`. `CLAUDE_MODEL_LIST` überschreibt beides.
 
 ## Security
 

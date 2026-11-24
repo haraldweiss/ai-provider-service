@@ -244,7 +244,19 @@ When integrating a new provider, check their documentation for app attribution o
 - Anthropic cache counters (`cache_creation_input_tokens`,
   `cache_read_input_tokens`, `cache_creation_1h_input_tokens`) are counted into
   the stored `input_tokens` and priced with Anthropic's multipliers
-  (1.25×/2× writes, 0.1× reads) — see `pricing.calc_cost_usd`.
+  (1.25×/2× writes; cache reads 0.1× base input, but **model-dependent**:
+  0.025× on Fable/Mythos 5.x, 0.05× on Opus 5.5/Sonnet 5.5). Claude Haiku 5.5
+  bills prompts over 100k input tokens (uncached + cache writes + reads) at 5×.
+  Keep `pricing._CLAUDE_*` tables in sync with
+  https://platform.claude.com/docs/en/about-claude/pricing — see
+  `pricing.calc_cost_usd`.
+- `providers/claude.py` discovers models through Anthropic's Models API
+  (`GET /v1/models`, 10-min process cache, active+deprecated, never retired) and
+  falls back to `KNOWN_MODELS` only if that call fails; `CLAUDE_MODEL_LIST`
+  overrides both. Do not reduce the client to a hardcoded list again — the point
+  is that new Anthropic releases appear without a code change. The SDK's
+  `Anthropic(api_key=...)` already sends `Authorization: Bearer <ANTHROPIC_API_KEY>`; the
+  `x-api-key` header Anthropic now documents as a legacy fallback is not needed.
 
 ### 3.14 A pool endpoint's "model not found" must never mask a real failure
 
@@ -337,6 +349,49 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 ---
 
 ## 7. Handoff zone
+
+### 2026-11-24 — Claude docs alert reviewed: auth unchanged, models/pricing refreshed
+
+- **Trigger:** the provider-docs monitor mailed `Changed: claude (+4 / -4)` on
+  2026-11-21 00:17 UTC. All four reported rules were markdown table rows (request
+  sizes, response headers, request headers, pagination); the visible delta was
+  table padding/link formatting, so the live pages were re-checked for
+  semantic changes instead of trusting the truncated diff.
+- **Semantic check against the live pages:** Anthropic now documents
+  `Authorization: Bearer <ANTHROPIC_API_KEY>` as the primary auth scheme with `x-api-key` as a
+  **legacy fallback** ("still supported"), adds an optional
+  `anthropic-workspace-id` header, and documents the Models API
+  (`GET /v1/models`, incl. `lifecycle` active/deprecated/retired). API version
+  example is `2026-10-21`, which the installed SDK already sends.
+  **No auth change was needed:** `anthropic` 2.10.0 builds `auth_headers` from
+  `api_key` as `Authorization: Bearer <ANTHROPIC_API_KEY>` (`anthropic/_client.py`), so the
+  gateway already uses the documented primary scheme.
+- **Real gaps found and fixed:** `KNOWN_MODELS` still listed only Opus 4.7 /
+  Sonnet 4.6 / Haiku 4.5 and `DEFAULT_MODEL` was Haiku 4.5, while the current
+  lineup is Fable 5.2 / Opus 5.5 / Sonnet 5.5 / Haiku 5.5 (plus Opus 5, 4.8…
+  and Haiku 4.5). `pricing.py` had no rates for any of the newer models, used a
+  flat 0.1× cache-read multiplier, and ignored Haiku 5.5's >100k-token tier.
+  - `providers/claude.py`: models now come from the Models API (10-min
+    process-local cache, keyed by an API-key hash; API default = active +
+    deprecated, never retired), with `KNOWN_MODELS` as the failure fallback and
+    `CLAUDE_MODEL_LIST` still overriding both. `DEFAULT_MODEL` is now
+    `claude-haiku-5-5` (cheapest current model: $0.10/$0.50 per MTok).
+  - `pricing.py`: added current Claude rates; cache-read multiplier is
+    model-specific (0.025× Fable/Mythos 5.x, 0.05× Opus 5.5/Sonnet 5.5, 0.1×
+    otherwise); Haiku 5.5 prompts over 100k input tokens (uncached + cache
+    writes + reads) are billed at 5× the base rate.
+- **Verified:** new `tests/test_claude_provider.py` (8) and 4 pricing tests;
+  full suite **712 passed**, `ruff` clean, `git diff --check` clean.
+- **Not deployed.** Production has **no `ANTHROPIC_API_KEY`** in
+  `/etc/ai-provider/ai-provider.env` and no `claude` `ProviderConfig` row, so the
+  provider is unhealthy and no live Anthropic call could verify discovery. A
+  rebuild/recreate only carries the code change; the models endpoint stays
+  unaffected while `claude` is unkeyed.
+- **Watch note:** the docs monitor extracts raw markdown tables, so a
+  table-padding/link-formatting edit in Anthropic's docs produces a
+  four-line "changed" mail without a semantic change (this alert). Normalising
+  table rows before diffing would remove that class of false positive; not done
+  in this session.
 
 ### 2026-11-20 — OpenRouter documentation compatibility review
 
