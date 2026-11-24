@@ -46,7 +46,7 @@ Alle Provider-Clients senden App-Identifikations-Header an die Provider-APIs. Di
 |----------|--------|--------|
 | **OpenCode (Zen + Go)** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Pflicht** für Fremd-Clients (ohne den Header antwortet Go mit `400 MissingSessionID`, erneut verifiziert 2026-11-18; am 2026-10-18 war es HTTP 500) |
 | **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service`<br>`X-Task-ID: <uuid>` (nur Chat) | Optional (empfohlen) |
-| **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (empfohlen) |
+| **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: general-chat` | Optional (empfohlen) |
 | **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (Request-Tracking) |
 | **Anthropic/Claude** | Keine (Erkennung via System-Prompt-Analyse) | N/A |
 | **Z.AI** | Keine dokumentiert | N/A |
@@ -119,7 +119,7 @@ self.client = OpenAI(
     default_headers={
         'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
         'X-OpenRouter-Title': 'ai-provider-service',
-        'X-OpenRouter-Categories': 'ai-gateway'
+        'X-OpenRouter-Categories': 'general-chat'
     }
 )
 ```
@@ -130,6 +130,16 @@ self.client = OpenAI(
 `/responses`; `/chat/completions` und das OpenAI-SDK bleiben unterstützt.
 Unser Chat-Adapter behält daher seine bestehende API. Bearer-Authentifizierung
 und App-Header entsprechen weiterhin der aktuellen Dokumentation.
+
+**Dokumentationsreview (2026-11-24):** `X-OpenRouter-Categories` akzeptiert nur
+die dokumentierten Marketplace-Werte (`cli-agent`, `general-chat`,
+`cloud-agent`, …); unbekannte Werte werden **stillschweigend verworfen**, ein
+früheres `ai-gateway` war also wirkungslos. Der Client sendet jetzt
+`general-chat`. Außerdem filtert `/v1/models` auf Modelle, die den Endpoint
+`/api/v1/chat/completions` bedienen — der Katalog enthält u. a. `:batch`-Varianten,
+die nur die asynchrone Batch-API sprechen und für Chat-Clients unbrauchbar sind.
+Ein HTTP-200 mit `choices[].error` oder `finish_reason="error"` wird nicht mehr
+zur leeren Antwort, sondern als Upstream-Fehler behandelt (Fallback greift).
 Auch Free-Inferenz braucht einen gültigen OpenRouter-Key: Nutzer ohne eigenen
 Key verwenden den konfigurierten Server-Key, keine anonyme Inferenz.
 

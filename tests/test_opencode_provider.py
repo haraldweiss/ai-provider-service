@@ -163,3 +163,58 @@ def test_opencode_personal_key_models_unaffected(mock_openai, _mock_free, monkey
     _fake_models_client(mock_openai, ['a-free', 'paid-pro'])
     c = OpencodeClient({'api_key': 'sk-personal'})
     assert c.get_models() == ['a-free', 'paid-pro']
+
+
+def _status_error(status_code, message='error'):
+    """Build a real openai.APIStatusError, as the SDK raises for HTTP errors."""
+    import httpx
+    import openai
+    request = httpx.Request('POST', 'https://opencode.ai/inference/openai/v1/chat/completions')
+    response = httpx.Response(status_code, request=request)
+    return openai.APIStatusError(message, response=response, body=None)
+
+
+@patch('providers.opencode.OpenAI')
+def test_zen_402_does_not_retry_locked_free_models(mock_openai):
+    """Zen's free tier is client-locked, so a 402 must surface, not try free IDs."""
+    from providers.opencode import OpencodeClient
+
+    mock_openai.return_value.chat.completions.create.side_effect = _status_error(
+        402, 'Insufficient account funds')
+    client = OpencodeClient({'api_key': 'sk-test'})
+    with patch.object(client, 'get_free_models', return_value=['a-free', 'b-free']) as free:
+        with pytest.raises(Exception) as excinfo:
+            client.create_message('glm-5.3', [{'role': 'user', 'content': 'hi'}])
+    assert getattr(excinfo.value, 'status_code', None) == 402
+    assert mock_openai.return_value.chat.completions.create.call_count == 1
+    free.assert_not_called()
+
+
+@patch('providers.opencode.OpenAI')
+def test_zen_402_fails_over_to_free_model_when_advertised(mock_openai, monkeypatch):
+    """With the lock switch on, a 402 retries the free variant."""
+    from providers.opencode import OpencodeClient
+
+    monkeypatch.setenv('OPENCODE_ADVERTISE_FREE_MODELS', '1')
+    ok = MagicMock()
+    ok.choices = [MagicMock(message=MagicMock(content='free answer'))]
+    ok.usage = MagicMock(prompt_tokens=5, completion_tokens=2, cost=0)
+    mock_openai.return_value.chat.completions.create.side_effect = [
+        _status_error(402, 'Insufficient account funds'), ok,
+    ]
+    client = OpencodeClient({'api_key': 'sk-test'})
+    with patch.object(client, 'get_free_models', return_value=['glm-free']), \
+            patch('providers.opencode._send_notification'):
+        out = client.create_message('glm-5.3', [{'role': 'user', 'content': 'hi'}])
+
+    assert out['content'] == [{'text': 'free answer'}]
+    assert out['balance_failover'] is True
+    assert out['balance_failover_model'] == 'glm-5.3-free'
+
+
+def test_is_balance_error_recognises_402_and_legacy_401_body():
+    from providers.opencode import _is_balance_error
+    assert _is_balance_error(_status_error(402, 'Insufficient account funds'))
+    assert _is_balance_error(_status_error(401, 'Insufficient Balance'))
+    assert not _is_balance_error(_status_error(401, 'invalid api key'))
+    assert not _is_balance_error(_status_error(400, 'bad request'))

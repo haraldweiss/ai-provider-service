@@ -23,7 +23,8 @@ import os
 import re
 import subprocess
 import time
-from openai import OpenAI, AuthenticationError
+import openai
+from openai import OpenAI
 from providers.base import BaseClient
 from providers.response_metadata import completion_metadata, reported_cost
 from config import Config
@@ -34,6 +35,19 @@ APP_NAME = 'ai-provider-service'
 
 _MODEL_PREFIX_RE = re.compile(r'^(?:opencode-go/|opencode-)', re.IGNORECASE)
 _BALANCE_ERR_RE = re.compile(r'insufficient balance|CreditsError', re.IGNORECASE)
+
+
+def _is_balance_error(error: Exception) -> bool:
+    """True for an out-of-funds rejection.
+
+    opencode answers paid models with HTTP 402 "Insufficient account funds"
+    once the Console balance is empty; the OpenAI SDK raises a plain
+    ``APIStatusError`` for 402 (not ``AuthenticationError``). Older gateways
+    used 401 with an "Insufficient balance" body, so keep the message check.
+    """
+    if getattr(error, 'status_code', None) == 402:
+        return True
+    return bool(_BALANCE_ERR_RE.search(str(error)))
 
 
 def _user_agent() -> str:
@@ -294,6 +308,19 @@ class OpencodeClient(BaseClient):
         )
         return refresh_free_models(client)
 
+    def _free_failover_allowed(self) -> bool:
+        """Whether a paid-model balance error may retry free variants.
+
+        The Zen free tier is client-locked upstream since 2026-09-18 (HTTP 403
+        for every free model outside the OpenCode app), so retrying free
+        variants only collects 403s and delays the real error. The failover
+        stays available for the case where OPENCODE_ADVERTISE_FREE_MODELS=1
+        re-enables those models.
+        """
+        if not self._free_model_failover:
+            return False
+        return not self._hide_locked_free_models or _free_models_advertised()
+
     def _check_free_only(self, model: str) -> None:
         """Raise ValueError if this is a free-only session and model is paid."""
         if not self._free_only:
@@ -327,9 +354,8 @@ class OpencodeClient(BaseClient):
                     'output_tokens': getattr(r.usage, 'completion_tokens', None),
                 },
             }
-        except AuthenticationError as e:
-            err_body = str(e)
-            if not self._free_model_failover or not _BALANCE_ERR_RE.search(err_body):
+        except openai.APIStatusError as e:
+            if not self._free_failover_allowed() or not _is_balance_error(e):
                 raise
 
             tried_models = []
@@ -371,7 +397,7 @@ class OpencodeClient(BaseClient):
                         'balance_failover': True,
                         'balance_failover_model': fallback_model,
                     }
-                except AuthenticationError:
+                except openai.APIStatusError:
                     continue
 
             raise
