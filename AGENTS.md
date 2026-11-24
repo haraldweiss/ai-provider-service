@@ -382,16 +382,39 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
     writes + reads) are billed at 5× the base rate.
 - **Verified:** new `tests/test_claude_provider.py` (8) and 4 pricing tests;
   full suite **712 passed**, `ruff` clean, `git diff --check` clean.
-- **Not deployed.** Production has **no `ANTHROPIC_API_KEY`** in
-  `/etc/ai-provider/ai-provider.env` and no `claude` `ProviderConfig` row, so the
-  provider is unhealthy and no live Anthropic call could verify discovery. A
-  rebuild/recreate only carries the code change; the models endpoint stays
-  unaffected while `claude` is unkeyed.
-- **Watch note:** the docs monitor extracts raw markdown tables, so a
-  table-padding/link-formatting edit in Anthropic's docs produces a
-  four-line "changed" mail without a semantic change (this alert). Normalising
-  table rows before diffing would remove that class of false positive; not done
-  in this session.
+- **Provider state:** production has **no `ANTHROPIC_API_KEY`** in
+  `/etc/ai-provider/ai-provider.env` and no `claude` `ProviderConfig` row, so
+  `claude` stays `healthy=false` and discovery could not be verified live; it is
+  covered by unit tests only.
+- **Deployed 2026-11-24 19:13 UTC** (merged `ffb2a4f`, together with the pending
+  crypto/OpenSSL build preservation and dependency updates):
+  server checkout `3243fc4` → `ffb2a4f`; `sudo bash build.sh ffb2a4f` produced
+  `localhost/ai-provider:ffb2a4f` + `:latest` (manifest list `74a609f6d89f`);
+  `security/cryptography/smoke-image.py localhost/ai-provider:ffb2a4f` passed
+  (cryptography 50.0.2, OpenSSL 3.5.9, runtime contract); the managed override
+  pin moved from `sha256:964f7da0…` (`wolfini-ai-provider:crypto-20261120`) to
+  `localhost/ai-provider:ffb2a4f` (backup
+  `/root/docker-compose.override.yml.bak-<UTC>`), then
+  `sudo docker compose up -d --no-build --force-recreate ai-provider`.
+  Container `healthy`, `RestartCount=0`, created `2026-11-24T19:13:13Z`; binds,
+  ports, ulimits, healthcheck, entrypoint/cmd and the env variable set are
+  unchanged. Runtime: anthropic 2.13.0, cryptography 50.0.2 / OpenSSL 3.5.9.
+  In-image pricing spot checks returned the expected values (Opus 5.5 $24 per
+  2M tokens, Haiku 5.5 $0.50 output-only, >100k tier, 0.025×/0.05× cache reads).
+  `/v1/models` 887 (cline 471, openrouter 360, opencode_go 37, ollama 19 — the
+  keyed OpenRouter catalog is account-filtered; anonymous upstream shows 470),
+  chat smoke `ollama/oracle-llama3.2:3b` → 200 `OK`, public `/health` 200,
+  `/admin/ui/users` with `X-Forwarded-User` 200, DB WAL + `quick_check ok`,
+  queue 0 pending, zero `database is locked` / `usage_event logging failed`
+  lines since start. Rollback: repin the override to
+  `localhost/wolfini-ai-provider:crypto-20261120` (or `:5d4717f`) and recreate.
+- **Monitor noise fixed (same session):** the docs monitor compared raw
+  markdown tables, so this alert was table padding/link formatting. `collect()`
+  now normalizes table rows (`normalize_rule()`: collapse whitespace, strip cell
+  padding, collapse separator rows to `---`) before diffing, so formatting-only
+  edits stay quiet while cell content changes still alert. Tests:
+  `tests/test_provider_docs_monitor.py` (+3). Escaped pipes (`\|`) are left
+  untouched because they cannot be split reliably.
 
 ### 2026-11-20 — OpenRouter documentation compatibility review
 

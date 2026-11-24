@@ -180,9 +180,11 @@ hinterlegt. Neue Provider mit öffentlicher API-Doku hier ergänzen.
 Vier parallele Fetches mit je einem Transport-Retry lesen begrenzte Antworten;
 Markdown-Absätze und HTML-Prosa bleiben über Zeilenumbrüche/Inline-Tags hinweg
 vollständig. Header, Authentifizierung, Endpoints, Limits und Deprecations werden
-verglichen. Die OpenCode-Preisseite muss zusätzlich den produktiven Preisparser
-bestehen. Fehlende API-Merkmale, leere Regeln oder Fetch-Fehler gelten als
-Monitorproblem; zuletzt gültige Regeln bleiben erhalten.
+verglichen. Markdown-Tabellen werden vor dem Vergleich normalisiert (Zell-Padding
+und Breite der Trennzeilen), damit reine Formatierungs-Edits keine Mail auslösen;
+Zellinhalte selbst bleiben verglichen. Die OpenCode-Preisseite muss zusätzlich
+den produktiven Preisparser bestehen. Fehlende API-Merkmale, leere Regeln oder
+Fetch-Fehler gelten als Monitorproblem; zuletzt gültige Regeln bleiben erhalten.
 
 Host-Sendmail informiert `harald.weiss@wolfinisoftware.de` bei Änderungen,
 neuen Problemen und Erholung. Gleiche Probleme und gesunde unveränderte Läufe

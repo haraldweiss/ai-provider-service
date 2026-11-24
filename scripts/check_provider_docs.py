@@ -93,6 +93,31 @@ def markdown_blocks(markup):
     return blocks
 
 
+_SEPARATOR_CELL = re.compile(r'^:?-{3,}:?$')
+
+
+def normalize_rule(text):
+    """Normalize one watched rule so formatting-only edits do not alert.
+
+    Documentation tables get re-padded and their separator rows get wider or
+    narrower without any requirement changing (this happened to the Claude API
+    overview on 2026-11-21). Collapsing whitespace plus normalizing table rows
+    keeps the diff on content. Escaped pipes are left untouched because they
+    cannot be split reliably.
+    """
+    collapsed = re.sub(r'\s+', ' ', text).strip()
+    if not (collapsed.startswith('|') and collapsed.endswith('|')):
+        return collapsed
+    if '\\|' in collapsed:
+        return collapsed
+    cells = []
+    for cell in collapsed[1:-1].split('|'):
+        cell = cell.strip()
+        cells.append('---' if _SEPARATOR_CELL.match(cell) else cell)
+    return '| ' + ' | '.join(cells) + ' |'
+
+
+
 def collect(fetcher=None, sources=None):
     """Fetch public docs concurrently; never invoke inference or load keys."""
     from provider_docs import html_to_text
@@ -116,7 +141,7 @@ def collect(fetcher=None, sources=None):
             if source['anchor'].lower() not in '\n'.join(blocks).lower():
                 return source['id'], {'rules': [], 'error': 'required API text missing'}
             rules = sorted(set(
-                re.sub(r'\s+', ' ', line).strip()
+                normalize_rule(line)
                 for line in blocks
                 if line.strip() and any(term in line.lower() for term in WATCH_TERMS)
             ))
