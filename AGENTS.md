@@ -415,6 +415,16 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   edits stay quiet while cell content changes still alert. Tests:
   `tests/test_provider_docs_monitor.py` (+3). Escaped pipes (`\|`) are left
   untouched because they cannot be split reliably.
+  Installed from merged main (`b6a8684`) as root-owned 0644
+  `/usr/local/libexec/ai-provider/check_provider_docs.py` (sha256 `799a5b7c…`,
+  byte-identical to the committed file); `/etc/cron.d/ai-provider-docs` and the
+  logrotate config are unchanged. The first manual run notified once
+  (`notifications=1`) because the baseline was re-normalized — claude,
+  cline-auth, ollama-api, omlx, openrouter-auth carried padded table rows — and
+  the second run was quiet. Proof the one-time diff was formatting only: feeding
+  the pre-change collector (`ffb2a4f`) over the same live docs and normalizing its
+  rules reproduces the stored rules exactly for all 13 sources, as does a fresh
+  collect with the installed script.
 
 ### 2026-11-20 — OpenRouter documentation compatibility review
 
