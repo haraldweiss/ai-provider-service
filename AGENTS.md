@@ -446,13 +446,38 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   entries in `MEMORY_FREE_MODELS` that are no longer in OpenRouter's catalog
   (already reported on 2026-11-20/21/23), **not** a deploy regression.
   `Nemotron Ultra` probes `ok`; gateway stale/missing lists are empty.
-- **Open follow-up:** `MEMORY_FREE_MODELS` still names the two removed free
-  models, so nightly summaries try them before falling back and the daily
-  OpenRouter monitor keeps exiting 1. Pick and latency-test current free models
-  (candidates from the live list: `baidu/ernie-5.5-flash-preview:free`,
-  `inclusionai/ling-3.2-flash:free`, `liquid/lfm-3-1.7b:free`,
-  `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`,
-  `openrouter/free`), then update the root-owned env in a separate change.
+- **Free-model follow-up fixed (same session):** the two dead entries were
+  still first in `MEMORY_FREE_MODELS` **and** in eight DB fallback rows, so a
+  402/429 on those providers fell back to a model OpenRouter no longer serves.
+  - **Measured candidates** (600 `max_tokens`, summary-style prompt with 40
+    log lines, `_execute` path like the nightly job): `nemotron-3-nano-omni-30b-a3b-reasoning`
+    non-empty twice (3.8 s / 4.5 s, 1151–1397 chars), `nemotron-3-ultra-550b-a55b`
+    non-empty twice (12.2 s / 18.9 s), `recursive/flint-v1.0` 1 of 2 (5.3 s);
+    `particle-ai/particle-1`, `inclusionai/ling-3.2-flash`, `liquid/lfm-3-1.7b`,
+    `nvidia/nemotron-3.5-lightning` and `openrouter/free` returned **empty text**
+    at 600 tokens (reasoning/tool budget consumed), `baidu/ernie-5.5-flash-preview`
+    and `nemotron-3.5-super-vl` truncated at `finish_reason=length`. Do not put
+    empty-output models in this chain — `_call_model()` skips empty responses but
+    then wastes a turn and falls through to the slow local model.
+  - **Env:** `MEMORY_FREE_MODELS` is now
+    `openrouter::nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,openrouter::nvidia/nemotron-3-ultra-550b-a55b:free,openrouter::recursive/flint-v1.0:free,ollama::oracle-llama3.2:3b`
+    (backup `/root/ai-provider.env.bak-20261124T195623Z-memoryfree`; only that
+    line changed, file stays root:root 0600). Container recreated
+    (`--force-recreate`, image unchanged `91778cb`).
+  - **DB:** the eight `provider_configs` rows with
+    `fallback_model='openrouter/cohere/north-mini-code:free'` (users `test-user`,
+    `wolfini_de_web`, `lisa`, `wolfinichat`, `pi-agent` ×3, `harald`) now point at
+    `openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` (61 chars,
+    within the 64-char column). Backup
+    `/opt/ai-provider-data/storage.db.bak-20261124T195742Z-openrouter-fallback`
+    (sqlite backup API).
+  - **Verified:** the production chain (`_call_model` with
+    `Config.MEMORY_FREE_MODELS`) answered via `nemotron-3-nano-omni` in 4.5 s,
+    867 chars. The fallback target answered `OK` (cost 0) under the exact
+    free-only config (`_free_only=True`, server key). The OpenRouter monitor now
+    reports **359 models, 3 probes, 0 problems, exit 0** (probes
+    nano-omni / ultra / flint all `ok`; gateway stale/missing empty). No mail is
+    sent for a clean run; the 02:00 cron is green again.
 
 ### 2026-11-24 — Claude docs alert reviewed: auth unchanged, models/pricing refreshed
 

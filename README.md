@@ -1482,7 +1482,7 @@ MEMORY_ENABLED=true
 VAULT_PATH=/app/data/vault
 SUMMARY_PROFILE=cheap-first
 SUMMARY_MAX_NOTES_PER_DAY=200
-MEMORY_FREE_MODELS=openrouter::cohere/north-mini-code:free,openrouter::poolside/laguna-s-2.1:free,openrouter::nvidia/nemotron-3-ultra-550b-a55b:free,ollama::oracle-llama3.2:3b
+MEMORY_FREE_MODELS=openrouter::nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,openrouter::nvidia/nemotron-3-ultra-550b-a55b:free,openrouter::recursive/flint-v1.0:free,ollama::oracle-llama3.2:3b
 ```
 
 `MEMORY_FREE_MODELS` is read at container start (change it with
