@@ -424,8 +424,35 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
   Zen 402 behaviour with/without the lock switch, `_is_balance_error` matrix);
   `ruff` clean for the changed files (the three pre-existing E402 findings in
   `tests/test_openrouter_provider.py` remain).
-- **Not yet deployed** at the time of writing; the image/recreate step is a
-  separate decision.
+- **Deployed 2026-11-24 19:43 UTC:** merged `91778cb`; server checkout
+  `b6a8684` → `91778cb`; `sudo bash build.sh 91778cb` →
+  `localhost/ai-provider:91778cb` (+ `:latest`), crypto smoke passed
+  (cryptography 50.0.2 / OpenSSL 3.5.9, runtime contract), override pin moved
+  from `ffb2a4f` to `91778cb` (backup `/root/docker-compose.override.yml.bak-*`),
+  `docker compose up -d --no-build --force-recreate ai-provider`. Container
+  `healthy`, `RestartCount=0`, created `2026-11-24T19:43:49Z`; local and public
+  `/health` 200; changed code present in the image.
+  `/v1/models` 868 total (cline 470, openrouter 342, opencode_go 37, ollama 19) —
+  OpenRouter dropped from 360 to 342 because `:batch`-only IDs are no longer
+  advertised (71 `:batch` IDs remain under **cline**; that list comes from
+  Cline's own `/models` for its single chat API and is trusted as-is).
+  Chat smokes: `ollama/oracle-llama3.2:3b` → `OK`,
+  `openrouter/openrouter/free` → 200 `stop`, `opencode_go/claude-haiku-5-5` → `OK`.
+- **Host monitor updated:** `scripts/check_openrouter_models.py` installed as
+  root-owned 0644 `/usr/local/libexec/ai-provider/check_openrouter_models.py`
+  (sha256 `96c7d4a0…`, byte-identical to `91778cb`). Its manual run reports
+  **359 models, 3 probes, 2 problems, exit 1** — the two problems are the
+  pre-existing `cohere/north-mini-code:free` and `poolside/laguna-s-2.1:free`
+  entries in `MEMORY_FREE_MODELS` that are no longer in OpenRouter's catalog
+  (already reported on 2026-11-20/21/23), **not** a deploy regression.
+  `Nemotron Ultra` probes `ok`; gateway stale/missing lists are empty.
+- **Open follow-up:** `MEMORY_FREE_MODELS` still names the two removed free
+  models, so nightly summaries try them before falling back and the daily
+  OpenRouter monitor keeps exiting 1. Pick and latency-test current free models
+  (candidates from the live list: `baidu/ernie-5.5-flash-preview:free`,
+  `inclusionai/ling-3.2-flash:free`, `liquid/lfm-3-1.7b:free`,
+  `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`,
+  `openrouter/free`), then update the root-owned env in a separate change.
 
 ### 2026-11-24 — Claude docs alert reviewed: auth unchanged, models/pricing refreshed
 
