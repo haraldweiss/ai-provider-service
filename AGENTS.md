@@ -161,7 +161,7 @@ All provider clients must send app identification headers where the provider sup
 |----------|---------|--------|
 | **OpenCode (Zen + Go)** | `User-Agent: ai-provider-service/<version>`<br>`x-opencode-session: <stable per-conversation id>` | **Required** (still required for third-party clients — without it Go answers `400 MissingSessionID`, re-verified 2026-11-18; the 2026-10-18 probe saw HTTP 500) |
 | **Cline** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-Title: ai-provider-service`<br>`X-Task-ID: <uuid>` (nur Chat-Requests) | Optional (but recommended) |
-| **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: ai-gateway` | Optional (but recommended) |
+| **OpenRouter** | `HTTP-Referer: https://ai-provider-service.wolfinisoftware.de`<br>`X-OpenRouter-Title: ai-provider-service`<br>`X-OpenRouter-Categories: general-chat` | Optional (but recommended) |
 | **OpenAI** | `X-Client-Request-Id: <uuid>` | Optional (for request tracking) |
 | **Anthropic/Claude** | None (uses system prompt analysis for detection) | N/A |
 | **Z.AI** | None documented | N/A |
@@ -172,7 +172,7 @@ All provider clients must send app identification headers where the provider sup
 1. **OpenCode** (`providers/opencode.py`): Must send `x-opencode-session` per chat request. OpenCode Go's docs require the value to be a **stable session ID per conversation** (routing + prompt-cache affinity), not one global constant — `_conversation_session_id()` derives a sha256 of the stable prefix (system prompt + first user turn), so turns of one conversation share an ID while different conversations differ. The client must also send its **own User-Agent** (`ai-provider-service/<Config.SERVICE_VERSION>`) instead of the generic OpenAI-SDK UA (`_default_headers()`). Without the session header the Go base answers `400 MissingSessionID` (re-verified 2026-11-18). The docs sentence "no longer necessary to send that specific header" refers to OpenCode's own client, which now emits its native session header.
 2. **Cline** (`providers/cline.py`): Sends `HTTP-Referer` and `X-Title` for app attribution, plus an optional unique `X-Task-ID` on chat requests.
    Cline also sends `X-Response-Format: openai`, required by the current API for standard non-streaming OpenAI response shape, including ClinePass.
-3. **OpenRouter** (`providers/openrouter.py`): Should include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` for app attribution.
+3. **OpenRouter** (`providers/openrouter.py`): Should include `HTTP-Referer`, `X-OpenRouter-Title`, and `X-OpenRouter-Categories` for app attribution. Categories must be one of OpenRouter's documented marketplace values (`cli-agent`, `general-chat`, `cloud-agent`, `programming-app`, …) — unknown values are dropped without an error, so an invented value silently disables the categorization (the old `ai-gateway` did exactly that).
 4. **OpenAI** (`providers/openai_client.py`): May include `X-Client-Request-Id` for request tracking (optional).
 
 **Console docs scraper (2026-11-12):** Canonical sources are
@@ -288,6 +288,30 @@ Verification:
 venv/bin/python -m pytest tests/test_ollama_provider.py -q   # 18 passed
 ```
 
+### 3.15 Advertised models must be callable, and HTTP 200 is not success
+
+`/v1/models` is the selection surface for clients, so it must only list models
+the gateway can actually serve on the endpoints it exposes. Two provider rules
+follow from that:
+
+- **Endpoint-scoped catalogs.** OpenRouter's `/api/v1/models` mixes API
+  families: `:batch` variants only serve the asynchronous Batch API and cannot
+  answer a chat request. `providers/openrouter.py` therefore filters on
+  `endpoints` containing `/api/v1/chat/completions` (models without an
+  `endpoints` field are assumed chat-capable). Do not remove that filter to
+  "show the full catalog" — it would re-add dead selections. Apply the same
+  reasoning to any provider that grows several API families.
+- **In-body failures.** A provider can answer HTTP 200 and still report a
+  failure (OpenRouter `choices[].error`, `finish_reason="error"`, rate-limited
+  free pool, empty `choices`). Returning the empty content as a successful
+  completion hides the failure and skips fallback. Clients must raise an error
+  carrying the upstream status so `dispatch()` can route to the fallback; an
+  empty answer is never an acceptable substitute for an upstream error.
+
+The 2026-11-24 review: 92 of 470 text models were `:batch`-only, and
+`X-OpenRouter-Categories: ai-gateway` was not a documented category, so
+OpenRouter silently dropped it (now `general-chat`).
+
 ---
 
 ## 4. Verification standards
@@ -349,6 +373,59 @@ If a sibling repo is touched in the same session (`wolfini_de_web`, `KI-Usage-Tr
 ---
 
 ## 7. Handoff zone
+
+### 2026-11-24 (2) — OpenRouter + OpenCode implementation review
+
+- **Trigger:** owner asked to review both providers. Checked OpenRouter
+  authentication/overview/app-attribution/models docs, OpenCode Go + Inference
+  API + billing/model pages, the live catalogs and two live probes (OpenCode Go
+  `claude-haiku-5-5`, OpenRouter free model).
+- **Confirmed correct, no change:** Bearer auth; attribution headers
+  (`HTTP-Referer` is the required identifier, `X-OpenRouter-Title`, plus
+  `X-OpenRouter-Categories`); `/chat/completions` remains supported although the
+  quickstart now favours `/responses`; OpenCode's own User-Agent and
+  per-conversation `x-opencode-session` are still required for text models
+  (only decision/embedding requests are exempt, and we do not expose those);
+  Go model list on `/inference/go/v1/models`; Zen free-tier is client-locked
+  upstream (HTTP 403) and stays hidden; provider-reported `usage.cost` is
+  present and preferred over the price table, so Go overage ("Extra Usage")
+  stays priced correctly even though `opencode_go` is estimated at 0 (live Go
+  probe: `cost=0`, `billing_source=go`, `allowance=1.28e-05`).
+- **Fixed — OpenRouter:**
+  1. `/v1/models` now only advertises models whose catalog `endpoints` include
+     `/api/v1/chat/completions`. 92 of 470 text models were `:batch`-only and
+     therefore unusable from a chat client (free-model discovery filtered the
+     same way). Models without an `endpoints` field are assumed chat-capable.
+  2. `X-OpenRouter-Categories` changed from `ai-gateway` to `general-chat`:
+     OpenRouter documents a closed category list and silently drops unknown
+     values, so the old value had no effect. The daily OpenRouter monitor script
+     sends the same header and was aligned.
+  3. An HTTP 200 carrying `choices[].error`, `finish_reason="error"` or an empty
+     `choices` array now raises `OpenRouterUpstreamError` (keeping the upstream
+     `code` when present) instead of returning an empty assistant message. 4xx
+     codes still flow through `dispatch()` (402/429 → fallback); 5xx/unknown map
+     to the normal fallback path. New rule §3.15.
+- **Fixed — OpenCode (Zen):** the balance→free-model failover was dead for the
+  documented failure mode: paid models answer **HTTP 402**, which the OpenAI SDK
+  raises as `APIStatusError`, not `AuthenticationError`. `_is_balance_error()`
+  now recognises 402 (plus legacy 401 balance bodies), and the failover is
+  gated by `_free_failover_allowed()` on free models actually being advertised.
+  Without that gate a "repaired" failover would hammer every free variant while
+  the tier is client-locked and collect 403s. Go behaviour is unchanged (never
+  retries free variants).
+- **Observed, not implemented:** the new Go usage endpoint
+  (`/inference/go/v1/usage`, meters `rolling`/`weekly`/`monthly`) is not
+  exposed; DeepSeek V4.1 Flash/V4 Pro and LongCat 2.5 require workspace region
+  `Global`, and Muse Spark Contributor requires the training opt-in, so those
+  models can answer upstream 4xx until the workspace privacy settings allow
+  them; decision/embedding APIs are out of scope for this chat gateway.
+- **Verified:** full suite **724 passed** (+9 new tests: chat-endpoint
+  filtering, in-body error handling, empty choices, attribution category,
+  Zen 402 behaviour with/without the lock switch, `_is_balance_error` matrix);
+  `ruff` clean for the changed files (the three pre-existing E402 findings in
+  `tests/test_openrouter_provider.py` remain).
+- **Not yet deployed** at the time of writing; the image/recreate step is a
+  separate decision.
 
 ### 2026-11-24 — Claude docs alert reviewed: auth unchanged, models/pricing refreshed
 

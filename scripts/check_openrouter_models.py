@@ -114,7 +114,7 @@ def collect():
     headers = {'Authorization': 'Bearer ' + Config.OPENROUTER_API_KEY,
                'HTTP-Referer': 'https://ai-provider-service.wolfinisoftware.de',
                'X-OpenRouter-Title': 'ai-provider-service',
-               'X-OpenRouter-Categories': 'ai-gateway'}
+               'X-OpenRouter-Categories': 'general-chat'}
     response = requests.get(base + '/models', headers=headers, timeout=(5, 25))
     response.raise_for_status()
     catalog = normalize_catalog(response.json())
