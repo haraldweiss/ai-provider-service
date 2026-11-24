@@ -14,9 +14,26 @@ from typing import Optional
 
 # USD pro 1M Tokens. Quelle: manuell, Stand Mai 2026.
 _PRICING_USD_PER_MTOK: dict[tuple[str, str], dict[str, float]] = {
-    ('claude', 'claude-opus-4-7'):    {'in': 5.0, 'out': 25.0},
-    ('claude', 'claude-sonnet-4-6'):  {'in':  3.0, 'out': 15.0},
-    ('claude', 'claude-haiku-4-5'):   {'in':  1.0, 'out':  5.0},
+    # Anthropic Claude API — Stand 2026-11-24.
+    # Quelle: https://platform.claude.com/docs/en/about-claude/pricing
+    ('claude', 'claude-fable-5-2'):    {'in':  8.0, 'out': 40.0},
+    ('claude', 'claude-mythos-5-2'):   {'in':  8.0, 'out': 40.0},
+    ('claude', 'claude-fable-5-1'):    {'in': 10.0, 'out': 50.0},
+    ('claude', 'claude-mythos-5-1'):   {'in': 10.0, 'out': 50.0},
+    ('claude', 'claude-fable-5'):      {'in': 10.0, 'out': 50.0},
+    ('claude', 'claude-mythos-5'):     {'in': 10.0, 'out': 50.0},
+    ('claude', 'claude-opus-5-5'):     {'in':  4.0, 'out': 20.0},
+    ('claude', 'claude-opus-5'):       {'in':  5.0, 'out': 25.0},
+    ('claude', 'claude-opus-4-8'):     {'in':  5.0, 'out': 25.0},
+    ('claude', 'claude-opus-4-7'):     {'in':  5.0, 'out': 25.0},
+    ('claude', 'claude-opus-4-6'):     {'in':  5.0, 'out': 25.0},
+    ('claude', 'claude-opus-4-5'):     {'in':  5.0, 'out': 25.0},
+    ('claude', 'claude-sonnet-5-5'):   {'in':  2.0, 'out': 10.0},
+    ('claude', 'claude-sonnet-5'):     {'in':  2.0, 'out': 10.0},
+    ('claude', 'claude-sonnet-4-6'):   {'in':  3.0, 'out': 15.0},
+    ('claude', 'claude-sonnet-4-5'):   {'in':  3.0, 'out': 15.0},
+    ('claude', 'claude-haiku-5-5'):    {'in':  0.10, 'out': 0.50},
+    ('claude', 'claude-haiku-4-5'):    {'in':  1.0, 'out':  5.0},
     ('openai', 'gpt-4o'):             {'in':  2.5, 'out': 10.0},
     ('openai', 'gpt-4o-mini'):        {'in':  0.15, 'out': 0.6},
     # opencode.ai Zen rate card — Stand Mai 2026, USD per 1M tokens.
@@ -173,6 +190,26 @@ def _strip_version(model: str) -> str:
     return re.sub(r'-(?:\d{8}|\d{4}-\d{2}-\d{2})$', '', model)
 
 
+# Anthropic bills cache hits at a model-specific fraction of the base input
+# price. Standard is 0.1x; the newest models discount reads further.
+# Quelle: https://platform.claude.com/docs/en/about-claude/pricing#prompt-caching
+_CLAUDE_CACHE_READ_MULTIPLIER = {
+    'claude-fable-5-2': 0.025,
+    'claude-mythos-5-2': 0.025,
+    'claude-fable-5-1': 0.025,
+    'claude-mythos-5-1': 0.025,
+    'claude-opus-5-5': 0.05,
+    'claude-sonnet-5-5': 0.05,
+}
+_CLAUDE_DEFAULT_CACHE_READ_MULTIPLIER = 0.1
+
+# Claude Haiku 5.5 prices prompts over 100k input tokens (uncached input +
+# cache writes + cache reads) at 5x the base rates. Every other model keeps
+# standard pricing across the full context window.
+# Quelle: https://platform.claude.com/docs/en/about-claude/pricing#long-context-pricing
+_CLAUDE_LONG_PROMPT_TIERS = {'claude-haiku-5-5': (100_000, 5.0)}
+
+
 def calc_cost_usd(
     provider_id: str, model: str,
     input_tokens: Optional[int], output_tokens: Optional[int],
@@ -189,17 +226,31 @@ def calc_cost_usd(
     # None — Sub-Projekt B kann das Endpoint-aware machen (lokale LM-Studio
     # Endpoints als kostenfrei erkennen).
     _pricing = _load_merged_pricing()
-    rates = _pricing.get((provider_id, model)) \
-        or _pricing.get((provider_id, _strip_version(model)))
+    rates = _pricing.get((provider_id, model))
+    model_key = model
+    if not rates:
+        model_key = _strip_version(model)
+        rates = _pricing.get((provider_id, model_key))
     if not rates:
         return None
     cached_cost = 0
     if provider_id == 'claude':
         # Cache counters are separate from Anthropic's uncached input_tokens.
+        read_multiplier = _CLAUDE_CACHE_READ_MULTIPLIER.get(
+            model_key, _CLAUDE_DEFAULT_CACHE_READ_MULTIPLIER)
         writes_1h = min(cache_creation_input_tokens, cache_creation_1h_input_tokens)
         cached_cost = rates['in'] * (
             (cache_creation_input_tokens - writes_1h) * 1.25
-            + writes_1h * 2 + cache_read_input_tokens * 0.1)
+            + writes_1h * 2 + cache_read_input_tokens * read_multiplier)
+        long_prompt = _CLAUDE_LONG_PROMPT_TIERS.get(model_key)
+        if long_prompt:
+            threshold, multiplier = long_prompt
+            prompt_tokens = (input_tokens + cache_creation_input_tokens
+                             + cache_read_input_tokens)
+            if prompt_tokens > threshold:
+                rates = {'in': rates['in'] * multiplier,
+                         'out': rates['out'] * multiplier}
+                cached_cost *= multiplier
     return round(
         (input_tokens * rates['in'] + output_tokens * rates['out'] + cached_cost) / 1_000_000,
         6,
